@@ -4,9 +4,28 @@ All notable project-level changes are summarized here.
 
 This file is intentionally concise. The authoritative behavioral specification remains the current contract.
 
+## v1.3.0
+
+Local Web UX release. The CLI remains fully supported; both surfaces drive the same synchronization engine.
+
+### Added
+
+- Local Web UX (`ui.mjs` + `ui/index.html`): explicit Preview → retained-plan → Apply workflow in the browser.
+- Shared plan/commit engine boundary: `buildPlan` plans without writing; `commitPlan` writes with byte-level staleness protection.
+- Stale-preview protection based on exact settings bytes: an Apply after any settings change is refused with `STALE_PREVIEW`.
+- Loopback-only server (`127.0.0.1`, default port `18751`) with per-process browser authorization token and Host/Origin protections.
+- Comprehensive 154-test local release suite: 70 legacy/v1.2 regression tests plus 84 v1.3 engine/server/UI contract tests, run by one explicit `npm test` command.
+
+### Safety / hardening
+
+- Page load never synchronizes; no polling, no automatic sync, no automatic retry.
+- One explicit Apply confirmation per write; timestamped backup before every successful update.
+- No frontend/runtime dependency additions; no dev dependencies.
+- No telemetry, no remote assets, no authenticated model probes.
+
 ## v1.2.0
 
-Current release line.
+Previous release line.
 
 ### Added
 

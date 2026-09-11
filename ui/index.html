@@ -1,0 +1,885 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>OCMS-S — Local Web UX</title>
+<style>
+  :root {
+    --bg: #0b0d10;
+    --panel: #12151a;
+    --panel-2: #171b21;
+    --line: #262c34;
+    --line-soft: #1e232a;
+    --text: #d7dde5;
+    --dim: #8b96a3;
+    --faint: #5c6672;
+    --accent: #5aa9e6;
+    --ok: #7ec46a;
+    --warn: #d9a441;
+    --err: #e06c6c;
+    --info: #7aa7c7;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, Menlo, monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  .app-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+    flex-wrap: wrap;
+  }
+  .brand { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .app-name { font-size: 16px; font-weight: 700; letter-spacing: 0.06em; }
+  .app-sub { color: var(--dim); font-size: 12px; }
+  .header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .version { color: var(--dim); font-size: 12px; }
+
+  .state-badge {
+    padding: 2px 10px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    background: var(--panel-2);
+    color: var(--dim);
+  }
+  .state-badge[data-state="IDLE"] { color: var(--dim); }
+  .state-badge[data-state="READY"] { color: var(--accent); border-color: var(--accent); }
+  .state-badge[data-state="NO_CHANGE"] { color: var(--info); border-color: var(--info); }
+  .state-badge[data-state="BLOCKED"] { color: var(--warn); border-color: var(--warn); }
+  .state-badge[data-state="APPLYING"] { color: var(--accent); border-color: var(--accent); }
+  .state-badge[data-state="UPDATED"] { color: var(--ok); border-color: var(--ok); }
+  .state-badge[data-state="ERROR"] { color: var(--err); border-color: var(--err); }
+
+  main {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 12px;
+    padding: 12px 16px 24px;
+    align-items: start;
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 12px 14px;
+    min-width: 0;
+  }
+  .panel h2 {
+    margin: 0 0 10px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+  .panel.wide { grid-column: 1 / -1; }
+
+  .target-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .badge {
+    display: inline-block;
+    padding: 1px 8px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--dim);
+    background: var(--panel-2);
+  }
+  .badge.production { color: var(--err); border-color: var(--err); }
+  .badge.scratch { color: var(--ok); border-color: var(--ok); }
+  .path {
+    font-family: inherit;
+    color: var(--text);
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .sources { list-style: none; margin: 0; padding: 0; }
+  .sources li {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 3px 0;
+    border-bottom: 1px dotted var(--line-soft);
+  }
+  .sources li:last-child { border-bottom: none; }
+  .sources .src-label { color: var(--dim); }
+  .sources .src-value { text-align: right; overflow-wrap: anywhere; }
+
+  .buttons { display: flex; gap: 10px; flex-wrap: wrap; }
+  button {
+    font: inherit;
+    padding: 6px 14px;
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+  }
+  button:hover:not(:disabled) { border-color: var(--dim); }
+  button:disabled { cursor: not-allowed; color: var(--faint); border-color: var(--line-soft); opacity: 0.7; }
+  button:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  #apply-btn {
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 700;
+  }
+  #apply-btn:disabled { border-color: var(--line-soft); color: var(--faint); font-weight: 400; }
+
+  .counters {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 8px;
+    margin: 0;
+  }
+  .counters .counter {
+    background: var(--panel-2);
+    border: 1px solid var(--line-soft);
+    border-radius: 3px;
+    padding: 6px 10px;
+    min-width: 0;
+  }
+  .counters dt { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); margin: 0 0 2px; }
+  .counters dd { margin: 0; font-size: 18px; font-weight: 700; overflow-wrap: anywhere; }
+  .counter.warn dd { color: var(--warn); }
+
+  details {
+    border: 1px solid var(--line-soft);
+    border-radius: 3px;
+    margin-bottom: 8px;
+    background: var(--panel-2);
+  }
+  details:last-child { margin-bottom: 0; }
+  summary {
+    cursor: pointer;
+    padding: 5px 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--dim);
+    user-select: none;
+  }
+  summary:hover { color: var(--text); }
+  details[open] summary { border-bottom: 1px dotted var(--line-soft); }
+  .items { list-style: none; margin: 0; padding: 6px 10px; }
+  .items li {
+    padding: 2px 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    color: var(--text);
+  }
+  .items li.warning { color: var(--warn); }
+  .items .empty { color: var(--faint); }
+
+  .status-bar {
+    position: sticky;
+    bottom: 0;
+    border-top: 1px solid var(--line);
+    background: var(--panel);
+    padding: 8px 16px;
+    color: var(--dim);
+    min-height: 36px;
+    overflow-wrap: anywhere;
+  }
+  .status-bar[data-tone="error"] { color: var(--err); }
+  .status-bar[data-tone="ok"] { color: var(--ok); }
+  .status-bar[data-tone="warn"] { color: var(--warn); }
+  .status-bar[data-tone="info"] { color: var(--info); }
+  .status-bar[data-tone="busy"] { color: var(--accent); }
+
+  dialog {
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 16px 18px;
+    max-width: 520px;
+    width: calc(100vw - 48px);
+  }
+  dialog::backdrop { background: rgba(4, 6, 8, 0.72); }
+  dialog h2 {
+    margin: 0 0 10px;
+    font-size: 14px;
+    letter-spacing: 0.06em;
+  }
+  .confirm-target { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 0 0 10px; }
+  dialog dl.confirm-counts {
+    margin: 0 0 10px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 2px 16px;
+    border: 1px solid var(--line-soft);
+    border-radius: 3px;
+    padding: 8px 12px;
+    background: var(--panel-2);
+  }
+  dialog dl.confirm-counts dt { color: var(--dim); font-weight: 400; }
+  dialog dl.confirm-counts dd { margin: 0; text-align: right; font-weight: 700; }
+  .confirm-note { color: var(--warn); margin: 0 0 12px; }
+  .confirm-note.production { color: var(--err); font-weight: 700; }
+
+  @media (max-width: 720px) {
+    main { grid-template-columns: 1fr; padding: 10px; }
+    .panel.wide { grid-column: auto; }
+    .app-header { padding: 8px 10px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+<body data-state="IDLE">
+
+<header class="app-header">
+  <div class="brand">
+    <span class="app-name">OCMS-S</span>
+    <span class="app-sub">Local Web UX</span>
+  </div>
+  <div class="header-right">
+    <span id="version" class="version"></span>
+    <span id="state-badge" class="state-badge" data-state="IDLE">IDLE</span>
+  </div>
+</header>
+
+<main id="main">
+
+  <section class="panel" aria-labelledby="target-heading">
+    <h2 id="target-heading">Settings Target</h2>
+    <div class="target-row">
+      <span id="target-classification" class="badge">UNKNOWN</span>
+      <code id="target-path" class="path">waiting for server information</code>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="sources-heading">
+    <h2 id="sources-heading">Upstream Sources</h2>
+    <ul id="sources-list" class="sources">
+      <li><span class="src-label">Go roster</span><span class="src-value" id="src-go-roster">&mdash;</span></li>
+      <li><span class="src-label">Zen roster</span><span class="src-value" id="src-zen-roster">&mdash;</span></li>
+      <li><span class="src-label">Model catalog</span><span class="src-value" id="src-catalog">&mdash;</span></li>
+      <li><span class="src-label">Go docs</span><span class="src-value" id="src-go-docs">&mdash;</span></li>
+      <li><span class="src-label">Zen docs</span><span class="src-value" id="src-zen-docs">&mdash;</span></li>
+    </ul>
+  </section>
+
+  <section class="panel" aria-labelledby="actions-heading">
+    <h2 id="actions-heading">Actions</h2>
+    <div class="buttons">
+      <button id="refresh-btn" type="button" disabled>Refresh Preview</button>
+      <button id="apply-btn" type="button" disabled>Apply Sync</button>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="preview-heading">
+    <h2 id="preview-heading">Synchronization Preview</h2>
+    <dl class="counters">
+      <div class="counter"><dt>Added</dt><dd id="count-added">&mdash;</dd></div>
+      <div class="counter"><dt>Removed</dt><dd id="count-removed">&mdash;</dd></div>
+      <div class="counter"><dt>Moved</dt><dd id="count-moved">&mdash;</dd></div>
+      <div class="counter"><dt>Metadata</dt><dd id="count-metadata">&mdash;</dd></div>
+      <div class="counter warn"><dt>Preserved</dt><dd id="count-preserved">&mdash;</dd></div>
+      <div class="counter warn"><dt>Skipped</dt><dd id="count-skipped">&mdash;</dd></div>
+      <div class="counter"><dt>Fallback</dt><dd id="count-fallback">&mdash;</dd></div>
+    </dl>
+  </section>
+
+  <section class="panel wide" aria-labelledby="details-heading">
+    <h2 id="details-heading">Details</h2>
+    <details id="details-added">
+      <summary>Added</summary>
+      <ul class="items" id="list-added"><li class="empty">no preview yet</li></ul>
+    </details>
+    <details id="details-removed">
+      <summary>Removed</summary>
+      <ul class="items" id="list-removed"><li class="empty">no preview yet</li></ul>
+    </details>
+    <details id="details-moved">
+      <summary>Moved</summary>
+      <ul class="items" id="list-moved"><li class="empty">no preview yet</li></ul>
+    </details>
+    <details id="details-metadata">
+      <summary>Metadata changed</summary>
+      <ul class="items" id="list-metadata"><li class="empty">no preview yet</li></ul>
+    </details>
+    <details id="details-preserved">
+      <summary>Preserved unresolved</summary>
+      <ul class="items" id="list-preserved"><li class="empty">no preview yet</li></ul>
+    </details>
+    <details id="details-skipped">
+      <summary>Skipped unresolved</summary>
+      <ul class="items" id="list-skipped"><li class="empty">no preview yet</li></ul>
+    </details>
+    <details id="details-fallback">
+      <summary>Free counterpart fallback</summary>
+      <ul class="items" id="list-fallback"><li class="empty">no preview yet</li></ul>
+    </details>
+  </section>
+
+</main>
+
+<div id="status" class="status-bar" role="status" aria-live="polite" data-tone="info">
+  loading&hellip;
+</div>
+
+<dialog id="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-note">
+  <h2 id="confirm-title">Apply synchronization now?</h2>
+  <p class="confirm-target">
+    <span id="confirm-classification" class="badge">UNKNOWN</span>
+    <code id="confirm-path" class="path"></code>
+  </p>
+  <dl class="confirm-counts">
+    <dt>Added</dt><dd id="confirm-count-added">&mdash;</dd>
+    <dt>Removed</dt><dd id="confirm-count-removed">&mdash;</dd>
+    <dt>Moved</dt><dd id="confirm-count-moved">&mdash;</dd>
+    <dt>Metadata changed</dt><dd id="confirm-count-metadata">&mdash;</dd>
+    <dt>Preserved unresolved</dt><dd id="confirm-count-preserved">&mdash;</dd>
+    <dt>Skipped unresolved</dt><dd id="confirm-count-skipped">&mdash;</dd>
+    <dt>Fallback resolved</dt><dd id="confirm-count-fallback">&mdash;</dd>
+  </dl>
+  <p id="confirm-note" class="confirm-note">A timestamped backup will be created before replacement.</p>
+  <div class="buttons">
+    <button id="confirm-cancel" type="button">Cancel</button>
+    <button id="confirm-apply" type="button">Apply</button>
+  </div>
+</dialog>
+
+<noscript><div class="status-bar" data-tone="error">This control surface requires JavaScript.</div></noscript>
+
+<script>
+(() => {
+  'use strict';
+
+  // Server-injected values. The token lives only in this variable for the
+  // lifetime of the page; it is never stored, displayed, or logged.
+  const TOKEN = '__OCMS_TOKEN__';
+  const APP_VERSION = (() => {
+    const injected = '__OCMS_VERSION__';
+    return injected.startsWith('__OCMS') ? 'v1.3.0' : 'v' + injected;
+  })();
+
+  const STATE_LABELS = {
+    IDLE: 'IDLE',
+    READY: 'READY',
+    NO_CHANGE: 'NO CHANGE',
+    BLOCKED: 'BLOCKED',
+    APPLYING: 'APPLYING',
+    UPDATED: 'UPDATED',
+    ERROR: 'ERROR',
+  };
+
+  const SOURCE_SLOTS = [
+    { id: 'src-go-roster', label: 'Go roster', keys: ['goRoster', 'go_roster', 'go-roster'] },
+    { id: 'src-zen-roster', label: 'Zen roster', keys: ['zenRoster', 'zen_roster', 'zen-roster'] },
+    { id: 'src-catalog', label: 'Model catalog', keys: ['catalog', 'api'] },
+    { id: 'src-go-docs', label: 'Go docs', keys: ['goDocs', 'go_docs', 'go-docs'] },
+    { id: 'src-zen-docs', label: 'Zen docs', keys: ['zenDocs', 'zen_docs', 'zen-docs'] },
+  ];
+
+  const $ = (id) => document.getElementById(id);
+
+  const stateBadge = $('state-badge');
+  const versionEl = $('version');
+  const targetPathEl = $('target-path');
+  const targetClassEl = $('target-classification');
+  const refreshBtn = $('refresh-btn');
+  const applyBtn = $('apply-btn');
+  const statusEl = $('status');
+  const confirmDialog = $('confirm-dialog');
+  const confirmCancel = $('confirm-cancel');
+  const confirmApply = $('confirm-apply');
+  const confirmClassEl = $('confirm-classification');
+  const confirmPathEl = $('confirm-path');
+  const confirmNoteEl = $('confirm-note');
+
+  // Engine-owned state mirror. The browser holds no authority: every value
+  // rendered below is copied from server responses.
+  let state = 'IDLE';
+  let previewId = null;       // in-memory only; never persisted, never restored
+  let lastPreview = null;     // last successful preview envelope for display
+  let busy = false;           // a request is in flight
+  let applying = false;       // apply is in flight (double-submit guard)
+  let serverInfoKnown = false;
+
+  // --- text-safe rendering helpers ---------------------------------------
+
+  function clearNode(node) {
+    node.replaceChildren();
+  }
+
+  function textItem(listEl, text, className) {
+    const li = document.createElement('li');
+    if (className) li.className = className;
+    li.textContent = text;
+    listEl.append(li);
+    return li;
+  }
+
+  function setNotice(message, tone) {
+    clearNode(statusEl);
+    statusEl.textContent = message;
+    statusEl.dataset.tone = tone || 'info';
+  }
+
+  function countOf(value) {
+    if (!Array.isArray(value)) return null;
+    return value.length;
+  }
+
+  function setCount(id, value) {
+    const n = countOf(value);
+    $(id).textContent = n === null ? '\u2014' : String(n);
+  }
+
+  function itemText(parts) {
+    return parts
+      .filter((p) => typeof p === 'string' && p.length > 0)
+      .join('  \u00b7  ');
+  }
+
+  // Stable identifier text for a change item regardless of server shape.
+  function idOf(item) {
+    if (!item || typeof item !== 'object') return '';
+    if (typeof item.id === 'string' && item.id) return item.id;
+    if (typeof item.key === 'string' && item.key) return item.key;
+    return '';
+  }
+
+  function fieldOf(item, names) {
+    if (!item || typeof item !== 'object') return undefined;
+    for (const name of names) {
+      if (Object.prototype.hasOwnProperty.call(item, name)) {
+        const value = item[name];
+        if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+          return String(value);
+        }
+      }
+    }
+    return undefined;
+  }
+
+  function classificationBadge(el, production) {
+    if (production === true) {
+      el.textContent = 'PRODUCTION';
+      el.classList.add('production');
+      el.classList.remove('scratch');
+    } else if (production === false) {
+      el.textContent = 'SCRATCH';
+      el.classList.add('scratch');
+      el.classList.remove('production');
+    } else {
+      el.textContent = 'UNKNOWN';
+      el.classList.remove('production', 'scratch');
+    }
+  }
+
+  function renderTarget(target) {
+    if (!target || typeof target !== 'object') {
+      targetPathEl.textContent = 'unknown';
+      classificationBadge(targetClassEl, undefined);
+      return;
+    }
+    const displayPath = fieldOf(target, ['displayPath', 'path']);
+    targetPathEl.textContent = typeof displayPath === 'string' && displayPath ? displayPath : 'unknown';
+    // Classification comes from the server only; never derived from the path.
+    classificationBadge(targetClassEl, target.production);
+  }
+
+  function sourceDisplay(value) {
+    if (typeof value === 'string' || typeof value === 'number') return String(value);
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      if (typeof value.count === 'number') return String(value.count);
+      if (Array.isArray(value.ids)) return String(value.ids.length);
+      const keys = Object.keys(value);
+      return keys.length === 0 ? '\u2014' : keys.length + ' field(s)';
+    }
+    if (Array.isArray(value)) return String(value.length);
+    return '\u2014';
+  }
+
+  function renderSources(sources) {
+    const reported = sources && typeof sources === 'object' ? sources : null;
+    const lowerKeys = reported
+      ? Object.fromEntries(Object.keys(reported).map((k) => [k.toLowerCase(), k]))
+      : {};
+    for (const slot of SOURCE_SLOTS) {
+      const el = $(slot.id);
+      let value;
+      if (reported) {
+        for (const key of slot.keys) {
+          const actual = lowerKeys[key.toLowerCase()];
+          if (actual !== undefined) { value = reported[actual]; break; }
+        }
+      }
+      el.textContent = value === undefined ? '\u2014' : sourceDisplay(value);
+    }
+  }
+
+  const DETAIL_GROUPS = [
+    {
+      key: 'added',
+      summaryLabel: 'Added',
+      countId: 'count-added',
+      listId: 'list-added',
+      detailsId: 'details-added',
+      pick: (p) => p.changes && p.changes.added,
+      row: (item) => itemText([
+        idOf(item),
+        fieldOf(item, ['route']) !== undefined ? '-> ' + fieldOf(item, ['route']) : '',
+      ]),
+    },
+    {
+      key: 'removed',
+      summaryLabel: 'Removed',
+      countId: 'count-removed',
+      listId: 'list-removed',
+      detailsId: 'details-removed',
+      pick: (p) => p.changes && p.changes.removed,
+      row: (item) => itemText([
+        idOf(item),
+        fieldOf(item, ['route']) !== undefined ? '(was ' + fieldOf(item, ['route']) + ')' : '',
+      ]),
+    },
+    {
+      key: 'moved',
+      summaryLabel: 'Moved',
+      countId: 'count-moved',
+      listId: 'list-moved',
+      detailsId: 'details-moved',
+      pick: (p) => p.changes && p.changes.moved,
+      row: (item) => itemText([
+        idOf(item),
+        fieldOf(item, ['from', 'fromRoute', 'oldRoute']) !== undefined
+          ? fieldOf(item, ['from', 'fromRoute', 'oldRoute']) + ' -> ' + (fieldOf(item, ['to', 'toRoute', 'newRoute']) || '?')
+          : '',
+      ]),
+    },
+    {
+      key: 'metadata',
+      summaryLabel: 'Metadata changed',
+      countId: 'count-metadata',
+      listId: 'list-metadata',
+      detailsId: 'details-metadata',
+      pick: (p) => p.changes && p.changes.metadataChanged,
+      row: (item) => itemText([
+        idOf(item),
+        fieldOf(item, ['route']) !== undefined ? 'in ' + fieldOf(item, ['route']) : '',
+      ]),
+    },
+    {
+      key: 'preserved',
+      summaryLabel: 'Preserved unresolved',
+      countId: 'count-preserved',
+      listId: 'list-preserved',
+      detailsId: 'details-preserved',
+      pick: (p) => p.preservedUnresolved,
+      row: (item) => itemText([
+        itemText([fieldOf(item, ['gateway']), idOf(item)]).replace('  \u00b7  ', '/'),
+        fieldOf(item, ['reason']) !== undefined ? 'reason=' + fieldOf(item, ['reason']) : '',
+        fieldOf(item, ['route']) !== undefined ? 'route=' + fieldOf(item, ['route']) : '',
+      ]),
+      warn: true,
+    },
+    {
+      key: 'skipped',
+      summaryLabel: 'Skipped unresolved',
+      countId: 'count-skipped',
+      listId: 'list-skipped',
+      detailsId: 'details-skipped',
+      pick: (p) => p.skippedUnresolved,
+      row: (item) => itemText([
+        itemText([fieldOf(item, ['gateway']), idOf(item)]).replace('  \u00b7  ', '/'),
+        fieldOf(item, ['reason']) !== undefined ? 'reason=' + fieldOf(item, ['reason']) : '',
+      ]),
+      warn: true,
+    },
+    {
+      key: 'fallback',
+      summaryLabel: 'Free counterpart fallback',
+      countId: 'count-fallback',
+      listId: 'list-fallback',
+      detailsId: 'details-fallback',
+      pick: (p) => p.fallbackResolved,
+      row: (item) => itemText([
+        itemText([fieldOf(item, ['gateway']), idOf(item)]).replace('  \u00b7  ', '/'),
+        fieldOf(item, ['counterpart']) !== undefined ? 'via ' + fieldOf(item, ['counterpart']) : '',
+        fieldOf(item, ['route']) !== undefined ? '-> ' + fieldOf(item, ['route']) : '',
+        fieldOf(item, ['provenance']) !== undefined ? fieldOf(item, ['provenance']) : '',
+      ]),
+    },
+  ];
+
+  function renderPreview(preview) {
+    for (const group of DETAIL_GROUPS) {
+      const items = group.pick(preview);
+      const has = Array.isArray(items);
+      setCount(group.countId, has ? items : null);
+      const listEl = $(group.listId);
+      clearNode(listEl);
+      if (!has) {
+        textItem(listEl, 'not reported by server', 'empty');
+      } else if (items.length === 0) {
+        textItem(listEl, '(none)', 'empty');
+      } else {
+        for (const item of items) {
+          textItem(listEl, group.row(item) || '(unlabeled entry)', group.warn ? 'warning' : undefined);
+        }
+      }
+      const summaryEl = $(group.detailsId).querySelector('summary');
+      const n = has ? items.length : null;
+      summaryEl.textContent = group.summaryLabel + (n === null ? '' : ' (' + n + ')');
+    }
+    if (preview && preview.target) renderTarget(preview.target);
+    renderSources(preview && preview.sources);
+  }
+
+  function clearPreview() {
+    previewId = null;
+    lastPreview = null;
+    for (const group of DETAIL_GROUPS) {
+      $(group.countId).textContent = '\u2014';
+      const listEl = $(group.listId);
+      clearNode(listEl);
+      textItem(listEl, 'no preview yet', 'empty');
+      $(group.detailsId).querySelector('summary').textContent = group.summaryLabel;
+    }
+  }
+
+  // --- state machine -------------------------------------------------------
+
+  function setState(next) {
+    state = next;
+    document.body.dataset.state = next;
+    stateBadge.textContent = STATE_LABELS[next] || next;
+    stateBadge.dataset.state = next;
+    syncControls();
+  }
+
+  function syncControls() {
+    // Refresh: enabled whenever the server is known and nothing is in flight.
+    const refreshEnabled = serverInfoKnown && !busy && !applying;
+    // Apply: only in READY with a live previewId, and never while busy.
+    const applyEnabled = state === 'READY' && previewId !== null && !busy && !applying;
+    refreshBtn.disabled = !refreshEnabled;
+    applyBtn.disabled = !applyEnabled;
+  }
+
+  // --- API helpers ---------------------------------------------------------
+
+  function refusalOf(data, response) {
+    const code = data && typeof data.code === 'string' ? data.code : 'HTTP_' + response.status;
+    const message = data && typeof data.message === 'string' && data.message
+      ? data.message
+      : 'Request failed with status ' + response.status + '.';
+    const err = new Error(message);
+    err.code = code;
+    return err;
+  }
+
+  // POSTs carry the process token from memory. Bodies contain no planner
+  // input, no paths, no counts, and no authority beyond what each endpoint
+  // needs.
+  async function apiPost(path, body) {
+    const response = await fetch(path, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-OCMS-Token': TOKEN,
+      },
+      body: JSON.stringify(body),
+    });
+    let data = null;
+    try { data = await response.json(); } catch (parseErr) { data = null; }
+    if (!response.ok || (data && data.ok === false)) throw refusalOf(data, response);
+    return data;
+  }
+
+  // --- actions -------------------------------------------------------------
+
+  async function boot() {
+    setState('IDLE');
+    clearPreview();
+    serverInfoKnown = false;
+    syncControls();
+    setNotice('loading\u2026', 'busy');
+    try {
+      const response = await fetch('/api/state');
+      let data = null;
+      try { data = await response.json(); } catch (parseErr) { data = null; }
+      if (!response.ok || (data && data.ok === false)) throw refusalOf(data, response);
+      renderTarget(data && data.target);
+      serverInfoKnown = true;
+      setNotice('Server target loaded. Run Refresh Preview when ready.', 'info');
+    } catch (err) {
+      // No retry timer: an explicit page reload is the recovery path.
+      setState('ERROR');
+      setNotice(err && err.message ? err.message : 'Server information is unavailable.', 'error');
+      return;
+    }
+    syncControls();
+  }
+
+  async function refreshPreview() {
+    if (busy || applying) return;
+    busy = true;
+    document.body.setAttribute('aria-busy', 'true');
+    syncControls();
+    setNotice('Fetching preview from upstream sources\u2026', 'busy');
+    try {
+      const data = await apiPost('/api/preview', {});
+      lastPreview = data;
+      previewId = data && typeof data.previewId === 'string' && data.previewId ? data.previewId : null;
+      renderPreview(data);
+      const serverState = data && typeof data.state === 'string' ? data.state : '';
+      if (serverState === 'READY') {
+        setState('READY');
+        setNotice('Preview is READY. Review the details, then Apply if intended.', 'info');
+      } else if (serverState === 'NO_CHANGE') {
+        setState('NO_CHANGE');
+        setNotice('No managed changes are required.', 'ok');
+      } else if (serverState === 'BLOCKED') {
+        setState('BLOCKED');
+        const reasons = data && Array.isArray(data.blockedReasons) ? data.blockedReasons : [];
+        const reasonText = reasons
+          .map((r) => (r && typeof r.reason === 'string' ? r.reason : ''))
+          .filter((r) => r.length > 0)
+          .join(' | ');
+        setNotice('Synchronization blocked' + (reasonText ? ': ' + reasonText : '.'), 'warn');
+      } else {
+        setState('ERROR');
+        setNotice('Unexpected preview state from server.', 'error');
+      }
+    } catch (err) {
+      if (err && err.code === 'PREVIEW_BUSY') {
+        // Nonfatal: keep the current view; the user may act again explicitly.
+        setNotice(err.message, 'warn');
+      } else {
+        previewId = null;
+        setState('ERROR');
+        setNotice(err && err.message ? err.message : 'Preview request failed.', 'error');
+      }
+    } finally {
+      busy = false;
+      document.body.removeAttribute('aria-busy');
+      syncControls();
+    }
+  }
+
+  function openConfirmation() {
+    if (state !== 'READY' || !previewId || busy || applying) return;
+    // Display-only counts from the currently rendered preview; they carry no
+    // authority and are never sent back to the server.
+    if (lastPreview) {
+      confirmPathEl.textContent = fieldOf(lastPreview.target || {}, ['displayPath', 'path']) || targetPathEl.textContent;
+      classificationBadge(confirmClassEl, lastPreview.target ? lastPreview.target.production : undefined);
+      setConfirmCount('confirm-count-added', lastPreview.changes && lastPreview.changes.added);
+      setConfirmCount('confirm-count-removed', lastPreview.changes && lastPreview.changes.removed);
+      setConfirmCount('confirm-count-moved', lastPreview.changes && lastPreview.changes.moved);
+      setConfirmCount('confirm-count-metadata', lastPreview.changes && lastPreview.changes.metadataChanged);
+      setConfirmCount('confirm-count-preserved', lastPreview.preservedUnresolved);
+      setConfirmCount('confirm-count-skipped', lastPreview.skippedUnresolved);
+      setConfirmCount('confirm-count-fallback', lastPreview.fallbackResolved);
+      const production = lastPreview.target && lastPreview.target.production === true;
+      confirmNoteEl.textContent = production
+        ? 'PRODUCTION target: a timestamped backup will be created before replacement.'
+        : 'A timestamped backup will be created before replacement.';
+      confirmNoteEl.classList.toggle('production', production === true);
+    }
+    confirmDialog.showModal();
+  }
+
+  function setConfirmCount(id, value) {
+    const n = countOf(value);
+    $(id).textContent = n === null ? '\u2014' : String(n);
+  }
+
+  async function doApply() {
+    if (applying) return; // no double submission
+    if (state !== 'READY' || !previewId) {
+      confirmDialog.close();
+      return;
+    }
+    applying = true;
+    confirmDialog.close(); // focus returns to the invoker
+    setState('APPLYING');
+    setNotice('Applying synchronization\u2026', 'busy');
+    try {
+      const data = await apiPost('/api/apply', { previewId: previewId });
+      previewId = null;
+      setState('UPDATED');
+      const backupPath = data && typeof data.backupPath === 'string' && data.backupPath ? data.backupPath : null;
+      setNotice(
+        'Synchronization UPDATED.' + (backupPath ? ' Backup: ' + backupPath : ''),
+        'ok',
+      );
+    } catch (err) {
+      const code = err && err.code ? err.code : '';
+      if (code === 'STALE_PREVIEW') {
+        // Discard the stale identity; an explicit Refresh builds a new one.
+        previewId = null;
+        clearPreview();
+        setState('IDLE');
+        setNotice('Preview is stale. Run Refresh Preview to build a new one.', 'warn');
+      } else if (code === 'PREVIEW_NOT_READY') {
+        previewId = null;
+        setState('IDLE');
+        setNotice(err.message, 'warn');
+      } else if (code === 'PREVIEW_BUSY' || code === 'APPLY_BUSY') {
+        // Nonfatal: the current preview and state remain valid.
+        setNotice(err.message, 'warn');
+      } else {
+        previewId = null;
+        setState('ERROR');
+        setNotice(err && err.message ? err.message : 'Apply request failed.', 'error');
+      }
+    } finally {
+      applying = false;
+      syncControls();
+    }
+  }
+
+  // --- wiring --------------------------------------------------------------
+
+  refreshBtn.addEventListener('click', refreshPreview);
+  applyBtn.addEventListener('click', openConfirmation);
+  confirmCancel.addEventListener('click', () => confirmDialog.close());
+  confirmApply.addEventListener('click', doApply);
+  confirmDialog.addEventListener('close', () => {
+    // Native dialog behavior returns focus to the invoker; keep controls in
+    // sync with the current state.
+    syncControls();
+  });
+
+  versionEl.textContent = APP_VERSION;
+  boot();
+})();
+</script>
+</body>
+</html>
+

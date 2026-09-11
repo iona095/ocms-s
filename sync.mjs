@@ -15,6 +15,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { isDeepStrictEqual as deepEqual } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
@@ -109,6 +110,53 @@ export const NPM_HINT_TO_API = {
 
 function unresolved(message) {
   return new Error(message);
+}
+
+// ---------------------------------------------------------------------------
+// Digests (v1.3 Stage 1 shared engine seam). Node built-ins only.
+// ---------------------------------------------------------------------------
+
+// SHA-256 over exact input bytes (Buffer/string). Used for the settings
+// digest (exact original file bytes, never parsed or re-serialized YAML) and
+// for the canonical source snapshot serialization.
+function sha256Hex(data) {
+  return crypto.createHash('sha256').update(data).digest('hex');
+}
+
+// Deterministic canonical JSON: object own enumerable keys sorted
+// lexicographically (inherited properties excluded), array order preserved,
+// primitive values preserved. Equivalent insertion orders therefore produce
+// identical text, while array reordering changes it.
+function canonicalJson(value) {
+  if (value === undefined || value === null) return 'null';
+  const t = typeof value;
+  if (t === 'boolean' || t === 'string') return JSON.stringify(value);
+  if (t === 'number') return Number.isFinite(value) ? JSON.stringify(value) : 'null';
+  if (t === 'bigint') return JSON.stringify(String(value));
+  if (Array.isArray(value)) return '[' + value.map(canonicalJson).join(',') + ']';
+  if (t !== 'object') return 'null';
+  const keys = Object.keys(value).sort();
+  return '{' + keys.map((key) => JSON.stringify(key) + ':' + canonicalJson(value[key])).join(',') + '}';
+}
+
+// The normalized planning source bundle: exactly the planning-relevant
+// value (per-gateway rosters, catalog records, and docs maps). Nothing
+// nondeterministic (no timestamps) participates.
+function planningSourceBundle(sources) {
+  return {
+    rosters: {
+      go: sources && sources.rosters ? sources.rosters.go : undefined,
+      zen: sources && sources.rosters ? sources.rosters.zen : undefined,
+    },
+    catalog: {
+      go: sources && sources.catalog ? sources.catalog.go : undefined,
+      zen: sources && sources.catalog ? sources.catalog.zen : undefined,
+    },
+    docs: {
+      go: sources && sources.docs ? sources.docs.go : undefined,
+      zen: sources && sources.docs ? sources.docs.zen : undefined,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -918,38 +966,84 @@ function timestampStamp() {
   return new Date().toISOString().replace(/[:.]/g, '-');
 }
 
-// Run the plan/validate/backup/write lifecycle against already-acquired
-// sources and one explicit settings file. Network-free; tests drive this
-// with scratch fixtures. Never writes when validation fails.
-export function syncFromSources({ settingsPath, sources }) {
+// ---------------------------------------------------------------------------
+// Shared PLAN / WRITE engine seam (contract v1.3 Stage 1).
+//
+// buildPlan performs the complete planning path with zero disk mutation and
+// returns an engine-owned PlanResult. commitPlan executes an already-computed
+// READY plan against the current target bytes through the existing v1.2
+// transaction (stale-check -> backup -> temp -> verify -> rename). There is
+// exactly one planning path and one commit path; syncFromSources is now a
+// thin orchestrator over the two.
+// ---------------------------------------------------------------------------
+
+function refusalOutcome(reasons, stale) {
+  return {
+    result: 'NOT WRITTEN',
+    stale: stale === true,
+    added: [],
+    removed: [],
+    moved: [],
+    metadataChanged: [],
+    unresolved: reasons,
+  };
+}
+
+function blockedPlan(settingsPath, blockedReasons, generatedAt) {
+  return {
+    state: 'BLOCKED',
+    changed: false,
+    desired: null,
+    dispositions: [],
+    changes: { added: [], removed: [], moved: [], metadataChanged: [] },
+    preservedUnresolved: [],
+    skippedUnresolved: [],
+    fallbackResolved: [],
+    settingsPath,
+    settingsDigest: null,
+    sourceSnapshotDigest: null,
+    generatedAt,
+    blockedReasons,
+  };
+}
+
+function planFailureReason(err) {
+  return { reason: err && err.message ? err.message : String(err) };
+}
+
+// Plan the desired managed arrays from already-acquired sources and the
+// current settings file WITHOUT any disk mutation: no backup, no temp file,
+// no rename, no network. The settings file is read exactly once and the
+// digest is taken over the exact original bytes (never parsed or
+// re-serialized YAML).
+export function buildPlan({ settingsPath, sources }) {
+  const generatedAt = new Date().toISOString();
   try {
     validateSourceBundle(sources);
   } catch (err) {
-    return notWritten([{ reason: err && err.message ? err.message : String(err) }]);
+    return blockedPlan(settingsPath, [planFailureReason(err)], generatedAt);
   }
+  // The source snapshot digest binds to the normalized planning bundle.
+  const sourceSnapshotDigest = sha256Hex(canonicalJson(planningSourceBundle(sources)));
   let originalBytes;
   let current;
   try {
     ({ bytes: originalBytes, config: current } = readSettingsFile(settingsPath));
     validateExistingProviderShapes(current);
   } catch (err) {
-    return notWritten([{ reason: err && err.message ? err.message : String(err) }]);
+    return blockedPlan(settingsPath, [planFailureReason(err)], generatedAt);
   }
-  let plan;
-  let yamlText;
-  let diff;
-  let changed;
-  let preservedUnresolved;
-  let skippedUnresolved;
-  let fallbackResolved;
+  const settingsDigest = sha256Hex(originalBytes);
   try {
-    plan = planDesired({
+    const plan = planDesired({
       rosters: sources.rosters,
       catalog: sources.catalog,
       docs: sources.docs,
       current,
     });
-    if (!plan.ok) return notWritten(plan.unresolved);
+    if (!plan.ok) {
+      return blockedPlan(settingsPath, plan.unresolved, generatedAt);
+    }
     const dispositions = plan.dispositions || [];
     const skipped = { go: [], zen: [] };
     for (const entry of dispositions) {
@@ -958,35 +1052,119 @@ export function syncFromSources({ settingsPath, sources }) {
       }
     }
     checkMembership(plan.desired, sources.rosters, skipped);
-    preservedUnresolved = dispositions
+    const preservedUnresolved = dispositions
       .filter((entry) => entry.disposition === 'PRESERVED_UNRESOLVED')
       .map(({ gateway, id, reason, route }) => ({ gateway, id, reason, route }));
-    skippedUnresolved = dispositions
+    const skippedUnresolved = dispositions
       .filter((entry) => entry.disposition === 'SKIPPED_UNRESOLVED')
       .map(({ gateway, id, reason }) => ({ gateway, id, reason }));
-    fallbackResolved = dispositions
+    const fallbackResolved = dispositions
       .filter((entry) => entry.disposition === 'RESOLVED' && entry.provenance === 'FREE_COUNTERPART_FALLBACK')
       .map(({ gateway, id, counterpart, route, provenance }) => ({ gateway, id, counterpart, route, provenance }));
-    const next = buildNewConfig(current, plan.desired);
-    // Generated YAML must parse.
-    yamlText = assertYamlRoundTrip(next);
+    // Candidate config must round-trip through YAML and expose exactly the
+    // generated managed arrays. Validation only; nothing is written here.
+    const candidate = buildNewConfig(current, plan.desired);
+    const yamlText = assertYamlRoundTrip(candidate);
     const generated = parseYaml(yamlText);
     if (!generated || !isMapping(generated)) {
       throw unresolved('GENERATED_SETTINGS_INVALID: YAML root must be a mapping');
     }
     assertGeneratedManagedArrays(generated, plan.desired);
-    diff = diffDesired(plan.desired, plan.priors);
-    changed = !managedArraysMatch(current, plan.desired);
+    const changes = diffDesired(plan.desired, plan.priors);
+    const changed = !managedArraysMatch(current, plan.desired);
+    return {
+      state: changed ? 'READY' : 'NO_CHANGE',
+      changed,
+      desired: plan.desired,
+      dispositions,
+      changes,
+      preservedUnresolved,
+      skippedUnresolved,
+      fallbackResolved,
+      settingsPath,
+      settingsDigest,
+      sourceSnapshotDigest,
+      generatedAt,
+    };
   } catch (err) {
-    return notWritten([{ reason: err && err.message ? err.message : String(err) }]);
+    return blockedPlan(settingsPath, [planFailureReason(err)], generatedAt);
   }
-  if (!changed) return { result: 'NO CHANGE', ...diff, unresolved: [], preservedUnresolved, skippedUnresolved, fallbackResolved };
+}
 
-  const stamp = timestampStamp();
-  const backupPath = settingsPath + '.bak-' + stamp;
-  const tempPath = settingsPath + '.tmp';
+// A plan may be committed only when it is READY and carries a complete,
+// well-formed desired state plus the digest binding to its target bytes.
+function commitable(plan) {
+  if (!plan || typeof plan !== 'object' || Array.isArray(plan)) {
+    return { ok: false, reason: 'COMMIT_REFUSED: plan is missing or malformed' };
+  }
+  if (plan.state === 'BLOCKED') {
+    return { ok: false, reason: 'COMMIT_REFUSED: BLOCKED plan cannot be committed' };
+  }
+  if (plan.state === 'NO_CHANGE') {
+    return { ok: false, reason: 'COMMIT_REFUSED: NO_CHANGE plan cannot be committed' };
+  }
+  if (plan.state !== 'READY') {
+    return { ok: false, reason: 'COMMIT_REFUSED: plan has an unknown state' };
+  }
+  if (!isMapping(plan.desired)) {
+    return { ok: false, reason: 'COMMIT_REFUSED: plan.desired is missing or malformed' };
+  }
+  for (const route of MANAGED_ROUTE_KEYS) {
+    if (!Object.hasOwn(plan.desired, route) || !Array.isArray(plan.desired[route])) {
+      return { ok: false, reason: 'COMMIT_REFUSED: plan.desired.' + route + ' is missing or not an array' };
+    }
+  }
+  if (typeof plan.settingsPath !== 'string' || plan.settingsPath.length === 0) {
+    return { ok: false, reason: 'COMMIT_REFUSED: plan.settingsPath is missing' };
+  }
+  if (typeof plan.settingsDigest !== 'string' || !/^[0-9a-f]{64}$/.test(plan.settingsDigest)) {
+    return { ok: false, reason: 'COMMIT_REFUSED: plan.settingsDigest is missing or malformed' };
+  }
+  return { ok: true };
+}
+
+// Execute an already-computed READY plan against the current settings file.
+// commitPlan performs no source fetching, no replanning, and no source
+// interpretation: the retained desired arrays are the only authority. The
+// stale check runs first, before any backup or temp file exists.
+export function commitPlan(plan) {
+  const check = commitable(plan);
+  if (!check.ok) return refusalOutcome([{ reason: check.reason }]);
+  let currentBytes;
   try {
-    fs.writeFileSync(backupPath, originalBytes);
+    currentBytes = fs.readFileSync(plan.settingsPath);
+  } catch (err) {
+    return refusalOutcome([planFailureReason(err)]);
+  }
+  // Byte-level staleness first: an external edit (even parse-equivalent)
+  // refuses the commit and touches nothing.
+  if (sha256Hex(currentBytes) !== plan.settingsDigest) {
+    return refusalOutcome([{ reason: 'STALE_SETTINGS: current settings bytes differ from the planned snapshot' }], true);
+  }
+  let current;
+  try {
+    const config = parseYaml(currentBytes.toString('utf8'));
+    if (!config || typeof config !== 'object' || Array.isArray(config)) {
+      throw unresolved('SETTINGS_INVALID: settings root must be a mapping');
+    }
+    validateExistingProviderShapes(config);
+    current = config;
+  } catch (err) {
+    return refusalOutcome([planFailureReason(err)]);
+  }
+  const stamp = timestampStamp();
+  const backupPath = plan.settingsPath + '.bak-' + stamp;
+  const tempPath = plan.settingsPath + '.tmp';
+  try {
+    const next = buildNewConfig(current, plan.desired);
+    const yamlText = assertYamlRoundTrip(next);
+    const generated = parseYaml(yamlText);
+    if (!generated || !isMapping(generated)) {
+      throw unresolved('GENERATED_SETTINGS_INVALID: YAML root must be a mapping');
+    }
+    assertGeneratedManagedArrays(generated, plan.desired);
+    // Exact-byte backup of the settings as read immediately before commit.
+    fs.writeFileSync(backupPath, currentBytes);
     fs.writeFileSync(tempPath, yamlText, 'utf8');
     // Parse the temporary file before replacing the original.
     const reparsed = parseYaml(fs.readFileSync(tempPath, 'utf8'));
@@ -994,8 +1172,16 @@ export function syncFromSources({ settingsPath, sources }) {
       throw unresolved('GENERATED_SETTINGS_INVALID: temporary YAML root must be a mapping');
     }
     assertGeneratedManagedArrays(reparsed, plan.desired);
-    fs.renameSync(tempPath, settingsPath);
-    return { result: 'UPDATED', ...diff, unresolved: [], preservedUnresolved, skippedUnresolved, fallbackResolved };
+    fs.renameSync(tempPath, plan.settingsPath);
+    return {
+      result: 'UPDATED',
+      stale: false,
+      ...plan.changes,
+      unresolved: [],
+      preservedUnresolved: plan.preservedUnresolved,
+      skippedUnresolved: plan.skippedUnresolved,
+      fallbackResolved: plan.fallbackResolved,
+    };
   } catch (err) {
     // A failed temporary-file validation or replacement leaves the original
     // settings file in place. Cleanup is limited to this run's own temp path.
@@ -1004,8 +1190,30 @@ export function syncFromSources({ settingsPath, sources }) {
     } catch {
       // Preserve the original error/result even if temp cleanup is unavailable.
     }
-    return notWritten([{ reason: err && err.message ? err.message : String(err) }]);
+    return refusalOutcome([planFailureReason(err)]);
   }
+}
+
+// Run the plan/commit lifecycle against already-acquired sources and one
+// explicit settings file. Network-free; tests drive this with scratch
+// fixtures. Never writes when validation fails. This is now an orchestration
+// over the shared buildPlan / commitPlan seam only.
+export function syncFromSources({ settingsPath, sources }) {
+  const plan = buildPlan({ settingsPath, sources });
+  if (plan.state === 'BLOCKED') {
+    return notWritten(plan.blockedReasons);
+  }
+  if (plan.state === 'NO_CHANGE') {
+    return {
+      result: 'NO CHANGE',
+      ...plan.changes,
+      unresolved: [],
+      preservedUnresolved: plan.preservedUnresolved,
+      skippedUnresolved: plan.skippedUnresolved,
+      fallbackResolved: plan.fallbackResolved,
+    };
+  }
+  return commitPlan(plan);
 }
 
 // ---------------------------------------------------------------------------
