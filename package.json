@@ -1,0 +1,14 @@
+{
+  "name": "ocms-s",
+  "version": "1.2.0",
+  "description": "OpenCode Model Sync simple script (contract v1.2). Manual Go/Zen model sync for DSH settings.yaml.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "yaml": "^2.7.0",
+    "node-html-parser": "^6.1.13"
+  }
+}

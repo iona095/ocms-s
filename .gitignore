@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Local environment / secrets
+.env
+.env.*
+!.env.example
+
+# Logs and transient files
+*.log
+*.tmp
+*.bak
+coverage/
+
+# Production / scratch DSH settings
+settings.yaml
+settings.yaml.bak-*
+
+# Editor / OS metadata
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local inspection / preparation artifacts
+tree.txt
+PREPARED_FILES_SHA256.txt

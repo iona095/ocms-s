@@ -1,0 +1,5 @@
+# Normal text handling for ordinary repository files
+* text=auto
+
+# Contracts are audited as exact bytes; do not normalize their line endings.
+OpenCode*Contract*.md -text
