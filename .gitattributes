@@ -3,3 +3,10 @@
 
 # Contracts are audited as exact bytes; do not normalize their line endings.
 OpenCode*Contract*.md -text
+
+# v1.3 byte-identity anchors (tests/v1.4/compat.test.mjs hashes working-tree
+# bytes): checkout must preserve the audited LF bytes on every platform.
+# Without this, a fresh Windows checkout (core.autocrlf=true) yields CRLF and
+# the identity tests fail despite zero content change (RC CI 34697528778).
+sync.mjs -text
+ui/index.html -text
