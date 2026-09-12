@@ -20,17 +20,25 @@ const BIND_HOST = '127.0.0.1';
 const DEFAULT_PORT = 18751;
 const MAX_BODY_BYTES = 1024 * 1024;
 
-const CSP =
-  "default-src 'self'; " +
-  "script-src 'self' 'unsafe-inline'; " +
-  "style-src 'self' 'unsafe-inline'; " +
-  "img-src 'self' data:; " +
-  "font-src 'self'; " +
-  "connect-src 'self'; " +
-  "object-src 'none'; " +
-  "base-uri 'none'; " +
-  "frame-ancestors 'none'; " +
-  "form-action 'self'";
+// v1.4: the frame-ancestors directive is the ONLY embed-mode variable part of
+// the policy. Standalone keeps the byte-identical v1.3 policy; embed mode
+// carries exactly one normalized loopback origin (never a wildcard).
+function buildCsp(frameAncestors) {
+  return (
+    "default-src 'self'; " +
+    "script-src 'self' 'unsafe-inline'; " +
+    "style-src 'self' 'unsafe-inline'; " +
+    "img-src 'self' data:; " +
+    "font-src 'self'; " +
+    "connect-src 'self'; " +
+    "object-src 'none'; " +
+    "base-uri 'none'; " +
+    "frame-ancestors " + frameAncestors + "; " +
+    "form-action 'self'"
+  );
+}
+
+const CSP = buildCsp("'none'");
 
 function readPackageVersion() {
   const raw = fs.readFileSync(PACKAGE_PATH, 'utf8');
@@ -127,7 +135,7 @@ function originAllowed(req, boundPort) {
 }
 
 function applySecurityHeaders(res) {
-  res.setHeader('content-security-policy', CSP);
+  res.setHeader('content-security-policy', typeof res.ocmsCsp === 'string' ? res.ocmsCsp : CSP);
   res.setHeader('x-content-type-options', 'nosniff');
   res.setHeader('referrer-policy', 'no-referrer');
   res.setHeader('cache-control', 'no-store');
@@ -203,7 +211,7 @@ function knownSourceError(err) {
 }
 
 export async function startServer(options = {}) {
-  const { settingsPath, port, fetchFn, openBrowser } = options;
+  const { settingsPath, port, fetchFn, openBrowser, embedOrigin } = options;
   const resolvedTarget = path.resolve(settingsPath !== undefined ? String(settingsPath) : defaultSettingsPath());
   const resolvedDefault = path.resolve(defaultSettingsPath());
   const production = resolvedTarget.toLowerCase() === resolvedDefault.toLowerCase();
@@ -216,6 +224,10 @@ export async function startServer(options = {}) {
   }
   const fetchImpl = fetchFn !== undefined ? fetchFn : globalThis.fetch;
   if (typeof fetchImpl !== 'function') throw new Error('FETCH_IMPL_MISSING');
+
+  // Embed mode (v1.4): a validated exact parent origin widens only who may
+  // frame the page. Standalone stays unframeable (frame-ancestors 'none').
+  const serverCsp = embedOrigin !== undefined ? buildCsp(parseEmbedOrigin(embedOrigin)) : CSP;
 
   const template = loadTemplate();
   const version = readPackageVersion();
@@ -413,6 +425,7 @@ export async function startServer(options = {}) {
 
   const server = http.createServer((req, res) => {
     (async () => {
+      res.ocmsCsp = serverCsp;
       let pathname = '/';
       try {
         const u = new URL(req.url || '/', 'http://127.0.0.1');
@@ -549,17 +562,45 @@ export async function startServer(options = {}) {
 
 function printUsage() {
   try {
-    console.error('Usage: node ui.mjs [--settings=<path>] [--port=<port>] [--no-open]');
+    console.error('Usage: node ui.mjs [--settings=<path>] [--port=<port>] [--no-open] [--embed-origin=<origin>]');
   } catch {}
 }
 
-function parseCliArgs(argv) {
+// v1.4 embed-origin validator (contract sections 27/64): URL semantics, strict
+// scheme/host/port/path/query/fragment checks, normalized origin out. Any
+// malformed, non-loopback, suffix-confused, or decorated value is rejected.
+export function parseEmbedOrigin(raw) {
+  if (typeof raw !== 'string' || raw.length === 0) throw new Error('INVALID_EMBED_ORIGIN');
+  if (/\s/.test(raw)) throw new Error('INVALID_EMBED_ORIGIN');
+  if (raw === '*' || raw === "'none'") throw new Error('INVALID_EMBED_ORIGIN');
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error('INVALID_EMBED_ORIGIN');
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('INVALID_EMBED_ORIGIN');
+  if (url.username !== '' || url.password !== '') throw new Error('INVALID_EMBED_ORIGIN');
+  const host = url.hostname.toLowerCase();
+  if (host !== '127.0.0.1' && host !== 'localhost') throw new Error('INVALID_EMBED_ORIGIN');
+  if (!/^\d+$/.test(url.port)) throw new Error('INVALID_EMBED_ORIGIN');
+  const port = Number(url.port);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('INVALID_EMBED_ORIGIN');
+  if (url.pathname !== '/' && url.pathname !== '') throw new Error('INVALID_EMBED_ORIGIN');
+  if (url.search !== '' || url.hash !== '') throw new Error('INVALID_EMBED_ORIGIN');
+  return url.protocol + '//' + host + ':' + String(port);
+}
+
+export function parseCliArgs(argv) {
+  // argv is the flag list proper (node/script entries already removed).
   let settings;
   let settingsCount = 0;
   let port;
   let portCount = 0;
   let noOpen = false;
-  for (const arg of argv.slice(2)) {
+  let embedOrigin;
+  let embedCount = 0;
+  for (const arg of argv) {
     if (arg === '--no-open') {
       noOpen = true;
       continue;
@@ -584,15 +625,22 @@ function parseCliArgs(argv) {
       continue;
     }
     if (arg === '--settings' || arg.startsWith('--settings')) throw new Error('INVALID_SETTINGS');
+    if (arg.startsWith('--embed-origin=')) {
+      embedCount += 1;
+      if (embedCount > 1) throw new Error('DUPLICATE_EMBED_ORIGIN');
+      embedOrigin = parseEmbedOrigin(arg.slice('--embed-origin='.length));
+      continue;
+    }
+    if (arg.startsWith('--embed-origin')) throw new Error('INVALID_EMBED_ORIGIN');
     throw new Error('UNKNOWN_FLAG: ' + arg);
   }
-  return { settings, port, noOpen };
+  return { settings, port, noOpen, embedOrigin };
 }
 
 async function cliMain() {
   let parsed;
   try {
-    parsed = parseCliArgs(process.argv);
+    parsed = parseCliArgs(process.argv.slice(2));
   } catch (err) {
     printUsage();
     process.exitCode = 1;
@@ -601,7 +649,7 @@ async function cliMain() {
   const settingsPath = parsed.settings !== undefined ? parsed.settings : defaultSettingsPath();
   const listenPort = parsed.port !== undefined ? parsed.port : DEFAULT_PORT;
   try {
-    await startServer({ settingsPath, port: listenPort, fetchFn: globalThis.fetch, openBrowser: parsed.noOpen ? false : true });
+    await startServer({ settingsPath, port: listenPort, fetchFn: globalThis.fetch, openBrowser: parsed.noOpen ? false : true, embedOrigin: parsed.embedOrigin });
   } catch (err) {
     try { console.error(String((err && err.message) || err)); } catch {}
     process.exitCode = 1;

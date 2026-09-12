@@ -1,14 +1,43 @@
 {
   "name": "ocms-s",
-  "version": "1.3.0",
-  "description": "OpenCode Model Sync simple script (contract v1.3). Manual Go/Zen model sync for DSH settings.yaml.",
+  "version": "1.4.0",
+  "description": "OpenCode Model Sync simple script (contract v1.4). Manual Go/Zen model sync for DSH settings.yaml, plus optional DSH Models-tab lifecycle bundle.",
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test tests/sync.test.mjs tests/v1.3/engine-contract.test.mjs tests/v1.3/preview-contract.test.mjs tests/v1.3/apply-contract.test.mjs tests/v1.3/http-security.test.mjs tests/v1.3/concurrency.test.mjs tests/v1.3/ui-contract.test.mjs"
+    "test": "node --test tests/sync.test.mjs tests/v1.3/engine-contract.test.mjs tests/v1.3/preview-contract.test.mjs tests/v1.3/apply-contract.test.mjs tests/v1.3/http-security.test.mjs tests/v1.3/concurrency.test.mjs tests/v1.3/ui-contract.test.mjs tests/v1.4/embed-origin.test.mjs tests/v1.4/client-view.test.mjs tests/v1.4/lifecycle.test.mjs tests/v1.4/compat.test.mjs tests/v1.4/disposal-race.test.mjs"
   },
   "dependencies": {
     "yaml": "^2.7.0",
     "node-html-parser": "^6.1.13"
+  },
+  "main": "./dsh/host.mjs",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": []
+    }
+  },
+  "exports": {
+    ".": "./dsh/host.mjs",
+    "./client": "./dsh/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "sync.mjs",
+    "ui.mjs",
+    "ui/",
+    "dsh/host.mjs",
+    "dsh/lifecycle.mjs",
+    "dsh/client.js",
+    "cordis.patch.yml"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/dsh-typert-protocol": "0.1.5-rc.2",
+    "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/schemastery": "3.18.2"
   }
 }

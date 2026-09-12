@@ -4,6 +4,43 @@ All notable project-level changes are summarized here.
 
 This file is intentionally concise. The authoritative behavioral specification remains the current contract.
 
+## v1.4.0
+
+Optional DSH integration: OCMS-S as one DSH conversation view (tab label `Models`, slot `conversation.view`, id `models`, order `30`). DSH-owned scope is exclusively lifecycle (status/Start/Stop), exact child-process ownership, and iframe hosting. All sync authority stays in the released engine and Web UX.
+
+### Added
+
+- DSH Host plugin (`dsh/host.mjs`): one process-global lifecycle controller per Host instance; typed Remote `ocms` (`status`/`start`/`stop`); embed-origin validation; no auto-start triggers; disposal stops the exact owned child.
+- Pure lifecycle controller (`dsh/lifecycle.mjs`) with a `disposed`/generation fence: disposal synchronously invalidates any in-flight Start generation — no post-disposal spawn, no stale `ONLINE` (even with a late `READY`), exact-child `SIGKILL` during `STARTING`, permanent Start refusal after disposal.
+- Embed-origin validation (`parseEmbedOrigin`) in `ui.mjs` plus embed-mode CSP (only `frame-ancestors` changes to the single normalized loopback origin; standalone stays `frame-ancestors 'none'`); duplicate `--embed-origin` refused.
+- Built client bundle (`dsh/client.js`, rc.2 `window.__ModuleLoader__` form; `react` external, no second runtime) produced by `node dsh/build-client.mjs`.
+- Profile-bundle packaging (`cordis.patch.yml`, `dsh.bundle.patch` + `dsh.client` manifest, pinned peers `@deepseek-ai/dsh-typert-protocol 0.1.5-rc.2`, `@deepseek-ai/cordis 4.0.2`, `@deepseek-ai/schemastery 3.18.2`); install via `dsh plugin --profile <name> add <tarball>`.
+- 57 v1.4 tests (`tests/v1.4/`): embed-origin matrix, CSP standalone/embed, lifecycle state machine, readiness/spawn/external/stop/unexpected-exit/concurrency/disposal, disposal-vs-Start race regressions, client-view, and compatibility anchors. Full release suite is now 211 tests (70 legacy/v1.2 + 84 v1.3 + 57 v1.4) under one `npm test`.
+
+### Safety / hardening
+
+- No daemon/service/scheduler/tray/protocol/launcher; no automatic Start, Preview, or Apply from any DSH/boot/mount/session/tab/reconnect/HMR path.
+- `EXTERNAL` is informational refusal only: never kill, claim, scan, or embed the occupying listener.
+- Browser supplies only `start(embedOrigin)`; `nodeBin`/`uiPath`/`settingsPath` stay Host-owned. Iframe `src` comes only from trusted Host output with `sandbox="allow-scripts allow-same-origin"`, `referrerPolicy="no-referrer"`.
+- Production target remains `%USERPROFILE%\.dsh\settings.yaml` unless a Host-owned scratch `settingsPath` is configured.
+
+### Compatibility
+
+```text
+Top-level CLI:
+@deepseek-ai/dsh 0.1.5-rc.1
+
+Plugin-facing tested runtime:
+exact resolved DSH package graph recorded by the gate,
+with relevant internal packages at 0.1.5-rc.2.
+```
+
+### Verification
+
+- Independent HOLD→PASS audit: disposal race reproduced, repaired test-first, all three race regressions plus the full 57-test v1.4 suite independently pass.
+- Immutable: contract v1.4 SHA-256 `3a4461d099e8994c773c98cfe3d001b9fb872fc182c64d31eddf8e46d4f27831`; lifecycle `36f65604cd95322ba643d6ba7baa225d459270113ef75298ad9839e8d79a0c47`; `sync.mjs` `9211544a…` and `ui/index.html` `6610e735…` byte-identical to v1.3; lineage `50968d968ede3c0c847c6d127e1ff8059f790185`.
+- Normal `web`-profile acceptance: `Models` appears, initial `OFFLINE`, explicit Start → `ONLINE`, Stop → `OFFLINE`.
+
 ## v1.3.0
 
 Local Web UX release. The CLI remains fully supported; both surfaces drive the same synchronization engine.

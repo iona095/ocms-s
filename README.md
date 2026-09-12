@@ -2,13 +2,13 @@
 
 A small, manual Node.js utility that synchronizes **OpenCode Go** and **OpenCode Zen** model definitions into DSH `settings.yaml`.
 
-OCMS-S is deliberately narrow. It is **not** a DSH plugin, daemon, scheduler, account checker, quota monitor, or model-probing system.
+OCMS-S is deliberately narrow. It is **not** a daemon, scheduler, account checker, quota monitor, or model-probing system. v1.4 adds one optional DSH integration: a `Models` conversation-view tab that owns OCMS server lifecycle (status/Start/Stop) and iframe hosting only. All synchronization authority stays in the released engine and Web UX.
 
-Current project version: **v1.3.0**
+Current project version: **v1.4.0**
 
 Current authoritative specification:
 
-`OpenCode Model Sync — Simple Script Contract v1.3.md`
+`OpenCode Model Sync — Simple Script Contract v1.4.md`
 
 ---
 
@@ -216,15 +216,56 @@ no remote assets, no telemetry, no authenticated model probes
 
 ---
 
+## DSH Models tab (v1.4 bundle)
+
+v1.4 ships the root package as a DSH profile bundle: `cordis.patch.yml` + `dsh/host.mjs` + built `dsh/client.js` (+ `sync.mjs`, `ui.mjs`, `ui/`). The client registers one conversation view (`conversation.view`, id `models`, order `30`, label `Models`); the Host owns exactly one `ui.mjs` child per Host plugin instance.
+
+Build and install into your normal `web` profile:
+
+```powershell
+node dsh/build-client.mjs
+npm pack
+# records ocms-s-1.4.0.tgz; tarballs are never committed (*.tgz)
+dsh plugin --profile web add .\ocms-s-1.4.0.tgz
+```
+
+Then restart the DSH `web` profile and hard-refresh the browser. Expected:
+
+```text
+Chat | Trajectory | Subtitles | Context | Models
+OCMS-S OpenCode Model Sync
+SERVER OFFLINE
+[ Start Server ]
+```
+
+Installing the bundle never starts OCMS-S. Only an explicit **Start Server** spawns the single owned child (`STARTING` → `ONLINE` after bounded readiness against `GET /api/state`); the iframe `src` comes only from trusted Host output. `Stop Server` returns to `OFFLINE`. Client-view unmount, session close, and tab switch never stop the child; Host/plugin disposal always stops the exact owned child (disposal invalidates any in-flight Start generation, so no child spawns after disposal and no disposed `STARTING` operation returns to `ONLINE`).
+
+The embedded UI targets the standard production settings file unless the Host row carries a scratch `settingsPath` (development only). `Refresh Preview` only reads the five public sources; only an explicit confirmed Apply writes, and only to the displayed target. Do not Preview/Apply production settings unless you intend to modify them.
+
+DSH compatibility (do not shorten):
+
+```text
+Top-level CLI:
+@deepseek-ai/dsh 0.1.5-rc.1
+
+Plugin-facing tested runtime:
+exact resolved DSH package graph recorded by the gate,
+with relevant internal packages at 0.1.5-rc.2.
+```
+
+Bundle constraints: `dsh.bundle.patch` + `dsh.client { platform: "web", inject: [] }`, main `dsh/host.mjs`, pinned peers `@deepseek-ai/dsh-typert-protocol 0.1.5-rc.2`, `@deepseek-ai/cordis 4.0.2`, `@deepseek-ai/schemastery 3.18.2`. Legacy file-based plugin formats, prepare-tooling flows, and repository-based loader mechanisms are unsupported.
+
+---
+
 ## Run the test suite
 
 ```powershell
 npm test
 ```
 
-`npm test` runs the complete release suite with explicit cross-platform test paths (no wildcard expansion, so Windows/Node 20 behaves identically): 154 tests total — 70 legacy/v1.2 regression tests plus 84 v1.3 engine/server/UI contract tests.
+`npm test` runs the complete release suite with explicit cross-platform test paths (no wildcard expansion, so Windows/Node 20 behaves identically): 211 tests total — 70 legacy/v1.2 regression tests, 84 v1.3 engine/server/UI contract tests, and 57 v1.4 DSH-integration tests (embed-origin, client view, lifecycle, compat, disposal-race).
 
-You can also run the two suites separately:
+You can also run the suites separately:
 
 ```powershell
 node --test tests/sync.test.mjs
@@ -233,6 +274,11 @@ node --test tests/sync.test.mjs
 ```powershell
 $tests = Get-ChildItem .\tests\v1.3\*.test.mjs | Sort-Object Name | ForEach-Object FullName
 node --test $tests
+```
+
+```powershell
+$tests14 = Get-ChildItem .\tests\v1.4\*.test.mjs | Sort-Object Name | ForEach-Object FullName
+node --test $tests14
 ```
 
 You can also perform syntax checks:
@@ -602,9 +648,12 @@ OpenCode Model Sync — Simple Script Contract v1.0.md
 OpenCode Model Sync — Simple Script Contract v1.1.md
 OpenCode Model Sync — Simple Script Contract v1.2.md
 OpenCode Model Sync — Simple Script Contract v1.3.md
+OpenCode Model Sync — Simple Script Contract v1.4.md
 ```
 
-**v1.3 is the current authoritative contract.**
+**v1.4 is the current authoritative contract.**
+
+v1.4 identities (immutable): contract SHA-256 `3a4461d099e8994c773c98cfe3d001b9fb872fc182c64d31eddf8e46d4f27831` (171 lines); `dsh/lifecycle.mjs` `36f65604cd95322ba643d6ba7baa225d459270113ef75298ad9839e8d79a0c47`; `tests/v1.4/disposal-race.test.mjs` `3edbb9a76cb8dc9cb653efb2006f4810177258060f5885223ae40f826e6cb6d9`; v1.3 baseline `sync.mjs` `9211544a0bba60e3e19a78a8d089d84f9eacedb6105631489ebe377285188c07` and `ui/index.html` `6610e7354f64eb1edbd4827df65fa120c1410ba9121e33fcab87637d96deddf8` unchanged; lineage `HEAD`/`v1.3.0` `50968d968ede3c0c847c6d127e1ff8059f790185`.
 
 v1.0 and v1.1 are historical artifacts.
 
@@ -614,7 +663,7 @@ Do not create another file merely because an audit prompt refers logically to `C
 
 ## Project status
 
-OCMS-S v1.3 has undergone:
+OCMS-S v1.4 adds the DSH Models-tab lifecycle bundle on the unchanged v1.3 engine. It has undergone:
 
 - implementation hardening;
 - adversarial synthetic tests;
@@ -622,6 +671,8 @@ OCMS-S v1.3 has undergone:
 - synthetic live-source validation;
 - controlled production synchronization and idempotence verification (v1.2 line);
 - 84 v1.3 engine/server/UI contract tests plus manual scratch-browser hardening of the local Web UX.
+- 57 v1.4 DSH-integration tests, including the disposal-vs-Start race fence (no post-disposal spawn, no stale `ONLINE`, exact-child termination, permanent Start refusal after disposal), verified after an independent HOLD→PASS audit cycle.
+- Normal `web`-profile installation acceptance: `Models` tab appears, initial `OFFLINE`, explicit Start → `ONLINE` embedded UI, Stop → `OFFLINE`.
 
 Future changes should remain narrow and contract-driven.
 
@@ -644,23 +695,38 @@ ocms-s/
 ├── OpenCode Model Sync — Simple Script Contract v1.1.md
 ├── OpenCode Model Sync — Simple Script Contract v1.2.md
 ├── OpenCode Model Sync — Simple Script Contract v1.3.md
+├── OpenCode Model Sync — Simple Script Contract v1.4.md
 ├── README.md
+├── cordis.patch.yml
 ├── package.json
 ├── package-lock.json
 ├── sync.mjs
 ├── ui.mjs
+├── dsh/
+│   ├── host.mjs
+│   ├── lifecycle.mjs
+│   ├── client.mjs
+│   ├── client.js          # built via node dsh/build-client.mjs; committed
+│   └── build-client.mjs
 ├── ui/
 │   └── index.html
 └── tests/
     ├── sync.test.mjs
-    └── v1.3/
+    ├── v1.3/
+    │   ├── helpers.mjs
+    │   ├── engine-contract.test.mjs
+    │   ├── preview-contract.test.mjs
+    │   ├── apply-contract.test.mjs
+    │   ├── http-security.test.mjs
+    │   ├── concurrency.test.mjs
+    │   └── ui-contract.test.mjs
+    └── v1.4/
         ├── helpers.mjs
-        ├── engine-contract.test.mjs
-        ├── preview-contract.test.mjs
-        ├── apply-contract.test.mjs
-        ├── http-security.test.mjs
-        ├── concurrency.test.mjs
-        └── ui-contract.test.mjs
+        ├── embed-origin.test.mjs
+        ├── client-view.test.mjs
+        ├── lifecycle.test.mjs
+        ├── compat.test.mjs
+        └── disposal-race.test.mjs
 ```
 
 `node_modules/` is generated by `npm ci` and is intentionally excluded from Git.
@@ -687,6 +753,8 @@ Before accepting a change:
 npm ci
 node --check sync.mjs
 node --check ui.mjs
+node --check dsh/host.mjs
+node --check dsh/lifecycle.mjs
 node --check tests\sync.test.mjs
 npm test
 ```

@@ -25,3 +25,6 @@ Thumbs.db
 # Local inspection / preparation artifacts
 tree.txt
 PREPARED_FILES_SHA256.txt
+
+# Packed profile bundles (rebuilt via npm pack; never committed)
+*.tgz

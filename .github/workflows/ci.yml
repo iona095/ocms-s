@@ -33,7 +33,12 @@ jobs:
         shell: pwsh
         run: |
           node --check sync.mjs
+          node --check ui.mjs
+          node --check dsh/host.mjs
+          node --check dsh/lifecycle.mjs
+          node --check dsh/build-client.mjs
           node --check tests/sync.test.mjs
+          node --check tests/v1.4/disposal-race.test.mjs
 
       - name: Run tests
         run: npm test

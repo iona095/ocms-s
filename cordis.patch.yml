@@ -1,0 +1,8 @@
+# Bundle patch layer (rc.2 profile bundle): the row loads this package's main
+# entry (dsh/host.mjs) as the Host half — an ordinary Cordis function plugin;
+# the dsh.client declaration makes the web app load ./dsh/client.js as the
+# browser half. Scratch-profile installs may add Host-owned `config` here
+# (port / development settingsPath); production rows carry no settings path.
+- insert:
+    - id: ocms-s
+      name: ocms-s
