@@ -1,11 +1,11 @@
 {
   "name": "ocms-s",
-  "version": "1.4.0",
-  "description": "OpenCode Model Sync simple script (contract v1.4). Manual Go/Zen model sync for DSH settings.yaml, plus optional DSH Models-tab lifecycle bundle.",
+  "version": "1.4.1",
+  "description": "OpenCode Model Sync simple script (contract v1.4.1). Manual Go/Zen model sync for DSH settings.yaml, plus optional DSH Models-tab lifecycle bundle.",
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test tests/sync.test.mjs tests/v1.3/engine-contract.test.mjs tests/v1.3/preview-contract.test.mjs tests/v1.3/apply-contract.test.mjs tests/v1.3/http-security.test.mjs tests/v1.3/concurrency.test.mjs tests/v1.3/ui-contract.test.mjs tests/v1.4/embed-origin.test.mjs tests/v1.4/client-view.test.mjs tests/v1.4/lifecycle.test.mjs tests/v1.4/compat.test.mjs tests/v1.4/disposal-race.test.mjs"
+    "test": "node --test tests/sync.test.mjs tests/v1.3/engine-contract.test.mjs tests/v1.3/preview-contract.test.mjs tests/v1.3/apply-contract.test.mjs tests/v1.3/http-security.test.mjs tests/v1.3/concurrency.test.mjs tests/v1.3/ui-contract.test.mjs tests/v1.4/embed-origin.test.mjs tests/v1.4/client-view.test.mjs tests/v1.4/lifecycle.test.mjs tests/v1.4/compat.test.mjs tests/v1.4/disposal-race.test.mjs tests/v1.4.1/unsupported-protocol.test.mjs"
   },
   "dependencies": {
     "yaml": "^2.7.0",

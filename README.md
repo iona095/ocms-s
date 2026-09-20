@@ -263,7 +263,7 @@ Bundle constraints: `dsh.bundle.patch` + `dsh.client { platform: "web", inject: 
 npm test
 ```
 
-`npm test` runs the complete release suite with explicit cross-platform test paths (no wildcard expansion, so Windows/Node 20 behaves identically): 211 tests total — 70 legacy/v1.2 regression tests, 84 v1.3 engine/server/UI contract tests, and 57 v1.4 DSH-integration tests (embed-origin, client view, lifecycle, compat, disposal-race).
+`npm test` runs the complete release suite with explicit cross-platform test paths (no wildcard expansion, so Windows/Node 20 behaves identically): 227 tests total — 70 legacy/v1.2 regression tests, 84 v1.3 engine/server/UI contract tests, 57 v1.4 DSH-integration tests (embed-origin, client view, lifecycle, compat, disposal-race), and 14 v1.4.1 unsupported-protocol tests plus 2 v1.4.1 identity pins (225 pass, 2 authorized §14 skips).
 
 You can also run the suites separately:
 
@@ -279,6 +279,10 @@ node --test $tests
 ```powershell
 $tests14 = Get-ChildItem .\tests\v1.4\*.test.mjs | Sort-Object Name | ForEach-Object FullName
 node --test $tests14
+```
+
+```powershell
+node --test tests/v1.4.1/unsupported-protocol.test.mjs
 ```
 
 You can also perform syntax checks:
@@ -463,11 +467,12 @@ Every live roster model must finish planning as exactly one of:
 RESOLVED
 PRESERVED_UNRESOLVED
 SKIPPED_UNRESOLVED
+SKIPPED_UNSUPPORTED_PROTOCOL
 ```
 
 or the entire run must stop with a blocking safety condition.
 
-The two unresolved dispositions are reported explicitly:
+The three skipped/preserved dispositions are reported explicitly:
 
 ### `PRESERVED_UNRESOLVED`
 
@@ -502,6 +507,18 @@ A live model maps to the Google-style protocol, which is not represented by the 
 - unique existing route → preserve it conservatively
 - no existing route → skip only that model
 - ambiguous existing placement → `NOT WRITTEN`
+
+### `SKIPPED_UNSUPPORTED_PROTOCOL` (v1.4.1)
+
+OCMS-S manages only these supported OpenCode protocol surfaces: `chat/completions`, `messages`, and `responses`. A live model whose exact authority (exact docs endpoint, else the exact nested model-local `provider.npm` hint) establishes a protocol outside that set is reported as `SKIPPED_UNSUPPORTED_PROTOCOL` with reason `UNSUPPORTED_PROTOCOL` and its exact endpoint.
+
+- the model is intentionally omitted from all six managed arrays;
+- it never blocks unrelated supported models;
+- OCMS-S never guesses a supported route for it (no cross-protocol fallback, including from `-free` counterparts);
+- supported-protocol models keep strict metadata validation (`limit.output`, modalities, reasoning) and malformed authority still blocks the run;
+- an unsupported live model already present in a managed array is removed and reported under `removed`.
+
+The current real-world example is Jev 1.13 / Jev 1.13 Free (Zen), but this is generic behavior, not a Jev-specific rule. No new managed route was added and no inference probing is performed.
 
 ---
 
@@ -649,11 +666,14 @@ OpenCode Model Sync — Simple Script Contract v1.1.md
 OpenCode Model Sync — Simple Script Contract v1.2.md
 OpenCode Model Sync — Simple Script Contract v1.3.md
 OpenCode Model Sync — Simple Script Contract v1.4.md
+OpenCode Model Sync — Simple Script Contract v1.4.1.md
 ```
 
-**v1.4 is the current authoritative contract.**
+**v1.4.1 is the current authoritative contract** (additive over v1.4; v1.0–v1.4 unchanged).
 
 v1.4 identities (immutable): contract SHA-256 `3a4461d099e8994c773c98cfe3d001b9fb872fc182c64d31eddf8e46d4f27831` (171 lines); `dsh/lifecycle.mjs` `36f65604cd95322ba643d6ba7baa225d459270113ef75298ad9839e8d79a0c47`; `tests/v1.4/disposal-race.test.mjs` `3edbb9a76cb8dc9cb653efb2006f4810177258060f5885223ae40f826e6cb6d9`; v1.3 baseline `sync.mjs` `9211544a0bba60e3e19a78a8d089d84f9eacedb6105631489ebe377285188c07` and `ui/index.html` `6610e7354f64eb1edbd4827df65fa120c1410ba9121e33fcab87637d96deddf8` unchanged; lineage `HEAD`/`v1.3.0` `50968d968ede3c0c847c6d127e1ff8059f790185`.
+
+v1.4.1 identities (immutable): contract SHA-256 `f48e236f40ee5c15202f18c3e812d3f41742804304d0de0d070342c0adeeb05b` (392 lines); `sync.mjs` `cdd56032042775b39e3c09628e8988ef0ce7d6aa45fd9614196189157ef12b7d`; `ui/index.html` `d2383cd3fb545da64dd51a21ad570f1944fee95e8caf8c98286d9d8d85919658`; lineage `HEAD`/`v1.4.0` `48fb7419508f7f3b43266a045537c65c543784e4`.
 
 v1.0 and v1.1 are historical artifacts.
 
@@ -673,6 +693,8 @@ OCMS-S v1.4 adds the DSH Models-tab lifecycle bundle on the unchanged v1.3 engin
 - 84 v1.3 engine/server/UI contract tests plus manual scratch-browser hardening of the local Web UX.
 - 57 v1.4 DSH-integration tests, including the disposal-vs-Start race fence (no post-disposal spawn, no stale `ONLINE`, exact-child termination, permanent Start refusal after disposal), verified after an independent HOLD→PASS audit cycle.
 - Normal `web`-profile installation acceptance: `Models` tab appears, initial `OFFLINE`, explicit Start → `ONLINE` embedded UI, Stop → `OFFLINE`.
+
+OCMS-S v1.4.1 adds generic unsupported-protocol containment on the v1.4 engine: protocol classification (`classifyProtocolSupport`) before model-record construction, the `SKIPPED_UNSUPPORTED_PROTOCOL` disposition (visible in Preview/CLI report and the Web UX), unchanged strict validation for supported protocols, and unsupported `-free` containment. Verified test-first: 14 v1.4.1 tests; full suite 227 tests (225 pass, 2 authorized §14 skips); live scratch Preview accepts Jev 1.13 / Jev 1.13 Free as explicitly skipped with plan `READY`.
 
 Future changes should remain narrow and contract-driven.
 
@@ -696,6 +718,7 @@ ocms-s/
 ├── OpenCode Model Sync — Simple Script Contract v1.2.md
 ├── OpenCode Model Sync — Simple Script Contract v1.3.md
 ├── OpenCode Model Sync — Simple Script Contract v1.4.md
+├── OpenCode Model Sync — Simple Script Contract v1.4.1.md
 ├── README.md
 ├── cordis.patch.yml
 ├── package.json
@@ -720,13 +743,16 @@ ocms-s/
     │   ├── http-security.test.mjs
     │   ├── concurrency.test.mjs
     │   └── ui-contract.test.mjs
-    └── v1.4/
+    ├── v1.4/
+    │   ├── helpers.mjs
+    │   ├── embed-origin.test.mjs
+    │   ├── client-view.test.mjs
+    │   ├── lifecycle.test.mjs
+    │   ├── compat.test.mjs
+    │   └── disposal-race.test.mjs
+    └── v1.4.1/
         ├── helpers.mjs
-        ├── embed-origin.test.mjs
-        ├── client-view.test.mjs
-        ├── lifecycle.test.mjs
-        ├── compat.test.mjs
-        └── disposal-race.test.mjs
+        └── unsupported-protocol.test.mjs
 ```
 
 `node_modules/` is generated by `npm ci` and is intentionally excluded from Git.

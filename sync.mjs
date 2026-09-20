@@ -507,6 +507,61 @@ export function resolvePlacement({ gateway, id, docsMap, catalogRecord, priors }
 }
 
 // ---------------------------------------------------------------------------
+// Protocol support classification (contract v1.4.1 sections 5-6).
+//
+// One explicit seam shared by planning and placement: determine whether the
+// authoritative placement evidence for one (gateway, id) proves a SUPPORTED,
+// UNSUPPORTED, or UNRESOLVED protocol BEFORE strict model-record
+// construction. Reads only the exact docs string for this model ID and the
+// exact nested model-local provider.npm string. Never reads limit.*,
+// modalities, reasoning metadata, names, families, siblings, gateway-level
+// npm, priors, rosters, or any probe result. Never branches on model-ID
+// substrings. Never throws for classification inputs: malformed docs
+// identity and absent evidence both report UNRESOLVED so the existing path
+// stays fail-closed exactly as in v1.4.
+// ---------------------------------------------------------------------------
+
+// APIs selectable by endpointApi that belong to the managed protocol set.
+function isManagedApi(api) {
+  return api === 'openai-completions' || api === 'anthropic-messages' || api === 'openai-responses';
+}
+
+function usableSupportedHint(gateway, catalogRecord) {
+  const hint =
+    catalogRecord && isMapping(catalogRecord.provider) && Object.hasOwn(catalogRecord.provider, 'npm') &&
+    typeof catalogRecord.provider.npm === 'string'
+      ? catalogRecord.provider.npm
+      : undefined;
+  if (hint === undefined || !Object.hasOwn(NPM_HINT_TO_API, hint)) return undefined;
+  const mapped = NPM_HINT_TO_API[hint];
+  if (!isManagedApi(mapped)) return undefined;
+  if (!routeFor(gateway, mapped)) return undefined;
+  return mapped;
+}
+
+export function classifyProtocolSupport({ gateway, id, docsMap, catalogRecord }) {
+  const doc = docsMap && Object.hasOwn(docsMap, id) ? docsMap[id] : undefined;
+  if (doc !== undefined) {
+    let api;
+    try {
+      api = endpointApi(doc, gateway, id);
+    } catch (err) {
+      const message = err && err.message ? err.message : String(err);
+      if (!message.startsWith('ENDPOINT_UNSUPPORTED:')) {
+        return { status: 'UNRESOLVED', reason: message };
+      }
+      if (usableSupportedHint(gateway, catalogRecord) !== undefined) return { status: 'SUPPORTED' };
+      return { status: 'UNSUPPORTED', reason: 'UNSUPPORTED_PROTOCOL', endpoint: doc };
+    }
+    if (isManagedApi(api)) return { status: 'SUPPORTED', api };
+    if (usableSupportedHint(gateway, catalogRecord) !== undefined) return { status: 'SUPPORTED' };
+    return { status: 'UNRESOLVED', reason: 'UNSUPPORTED_GOOGLE_STYLE' };
+  }
+  if (usableSupportedHint(gateway, catalogRecord) !== undefined) return { status: 'SUPPORTED' };
+  return { status: 'UNRESOLVED', reason: 'PLACEMENT_UNRESOLVED' };
+}
+
+// ---------------------------------------------------------------------------
 // Desired-state planning (contract sections 10-11).
 // ---------------------------------------------------------------------------
 
@@ -596,7 +651,8 @@ export function resolveFreeCounterpartRoute({ gateway, id, rosters, catalog, doc
 // Returns { ok:true, desired, priors, dispositions } or
 // { ok:false, unresolved, desired:null, priors, dispositions: [] }.
 // Every live roster ID finishes with exactly one non-blocking disposition
-// (RESOLVED, PRESERVED_UNRESOLVED, SKIPPED_UNRESOLVED) unless a blocking
+// (RESOLVED, PRESERVED_UNRESOLVED, SKIPPED_UNRESOLVED,
+// SKIPPED_UNSUPPORTED_PROTOCOL) unless a blocking
 // ambiguity/conflict stops planning. compat (local DSH/provider
 // configuration, never catalog metadata) is copied unchanged from the
 // existing record indexed by gateway + model ID, and moves with the model
@@ -618,6 +674,25 @@ export function planDesired({ rosters, catalog, docs, current }) {
           ? catalog[gateway].models[id]
           : undefined;
       if (catalogRecord === undefined) {
+        // Contract v1.4.1 rule U4: exact docs proving an unsupported protocol
+        // establish the skip even without a catalog record (no hint exists to
+        // consult). Anything else keeps existing CATALOG_MISSING handling.
+        const unsupportedVerdict = classifyProtocolSupport({
+          gateway,
+          id,
+          docsMap: docs ? docs[gateway] : undefined,
+          catalogRecord: undefined,
+        });
+        if (unsupportedVerdict.status === 'UNSUPPORTED') {
+          dispositions.push({
+            gateway,
+            id,
+            disposition: 'SKIPPED_UNSUPPORTED_PROTOCOL',
+            reason: 'UNSUPPORTED_PROTOCOL',
+            endpoint: unsupportedVerdict.endpoint,
+          });
+          continue;
+        }
         const prior = priors.get(key);
         const records = prior && prior.records ? prior.records : [];
         if (records.length === 1) {
@@ -629,6 +704,26 @@ export function planDesired({ rosters, catalog, docs, current }) {
         } else {
           blocking.push({ gateway, id, reason: 'CATALOG_AMBIGUOUS: ' + key + ' has multiple existing records' });
         }
+        continue;
+      }
+      // Contract v1.4.1 §6 step 3: protocol support is determined before
+      // strict model-record construction. An explicitly unsupported protocol
+      // skips without building a record, placing, or consulting counterparts
+      // or priors. Anything else follows the existing path unchanged.
+      const protocolVerdict = classifyProtocolSupport({
+        gateway,
+        id,
+        docsMap: docs ? docs[gateway] : undefined,
+        catalogRecord,
+      });
+      if (protocolVerdict.status === 'UNSUPPORTED') {
+        dispositions.push({
+          gateway,
+          id,
+          disposition: 'SKIPPED_UNSUPPORTED_PROTOCOL',
+          reason: 'UNSUPPORTED_PROTOCOL',
+          endpoint: protocolVerdict.endpoint,
+        });
         continue;
       }
       let record;
@@ -998,6 +1093,7 @@ function blockedPlan(settingsPath, blockedReasons, generatedAt) {
     changes: { added: [], removed: [], moved: [], metadataChanged: [] },
     preservedUnresolved: [],
     skippedUnresolved: [],
+    unsupportedSkipped: [],
     fallbackResolved: [],
     settingsPath,
     settingsDigest: null,
@@ -1047,7 +1143,11 @@ export function buildPlan({ settingsPath, sources }) {
     const dispositions = plan.dispositions || [];
     const skipped = { go: [], zen: [] };
     for (const entry of dispositions) {
-      if (entry.disposition === 'SKIPPED_UNRESOLVED' && (entry.gateway === 'go' || entry.gateway === 'zen')) {
+      if (
+        (entry.disposition === 'SKIPPED_UNRESOLVED' ||
+          entry.disposition === 'SKIPPED_UNSUPPORTED_PROTOCOL') &&
+        (entry.gateway === 'go' || entry.gateway === 'zen')
+      ) {
         skipped[entry.gateway].push(entry.id);
       }
     }
@@ -1058,6 +1158,9 @@ export function buildPlan({ settingsPath, sources }) {
     const skippedUnresolved = dispositions
       .filter((entry) => entry.disposition === 'SKIPPED_UNRESOLVED')
       .map(({ gateway, id, reason }) => ({ gateway, id, reason }));
+    const unsupportedSkipped = dispositions
+      .filter((entry) => entry.disposition === 'SKIPPED_UNSUPPORTED_PROTOCOL')
+      .map(({ gateway, id, reason, endpoint }) => ({ gateway, id, reason, endpoint }));
     const fallbackResolved = dispositions
       .filter((entry) => entry.disposition === 'RESOLVED' && entry.provenance === 'FREE_COUNTERPART_FALLBACK')
       .map(({ gateway, id, counterpart, route, provenance }) => ({ gateway, id, counterpart, route, provenance }));
@@ -1080,6 +1183,7 @@ export function buildPlan({ settingsPath, sources }) {
       changes,
       preservedUnresolved,
       skippedUnresolved,
+      unsupportedSkipped,
       fallbackResolved,
       settingsPath,
       settingsDigest,
@@ -1180,6 +1284,7 @@ export function commitPlan(plan) {
       unresolved: [],
       preservedUnresolved: plan.preservedUnresolved,
       skippedUnresolved: plan.skippedUnresolved,
+      unsupportedSkipped: Array.isArray(plan.unsupportedSkipped) ? plan.unsupportedSkipped : [],
       fallbackResolved: plan.fallbackResolved,
     };
   } catch (err) {
@@ -1210,6 +1315,7 @@ export function syncFromSources({ settingsPath, sources }) {
       unresolved: [],
       preservedUnresolved: plan.preservedUnresolved,
       skippedUnresolved: plan.skippedUnresolved,
+      unsupportedSkipped: Array.isArray(plan.unsupportedSkipped) ? plan.unsupportedSkipped : [],
       fallbackResolved: plan.fallbackResolved,
     };
   }
@@ -1269,7 +1375,7 @@ export async function fetchSources(fetchFn = globalThis.fetch) {
   };
 }
 
-export function formatReport({ result, added = [], removed = [], moved = [], metadataChanged = [], unresolved = [], preservedUnresolved = [], skippedUnresolved = [], fallbackResolved = [] }) {
+export function formatReport({ result, added = [], removed = [], moved = [], metadataChanged = [], unresolved = [], preservedUnresolved = [], skippedUnresolved = [], unsupportedSkipped = [], fallbackResolved = [] }) {
   const lines = [];
   const show = (label, items, render) => {
     lines.push(label + ' (' + items.length + '):');
@@ -1301,6 +1407,12 @@ export function formatReport({ result, added = [], removed = [], moved = [], met
   lines.push('skipped unresolved (' + skipped.length + '):');
   if (skipped.length === 0) lines.push('  (none)');
   else for (const item of skipped) lines.push('  - ' + item.gateway + '/' + item.id + ' reason=' + item.reason);
+  const unsupported = [...unsupportedSkipped].sort(byDisposition);
+  lines.push('SKIPPED_UNSUPPORTED_PROTOCOL (' + unsupported.length + '):');
+  if (unsupported.length === 0) lines.push('  (none)');
+  else for (const item of unsupported) {
+    lines.push('  - ' + item.gateway + '/' + item.id + ' endpoint=' + item.endpoint + ' reason=' + item.reason);
+  }
   const fallbacks = [...fallbackResolved].sort(byDisposition);
   lines.push('FREE_COUNTERPART_FALLBACK (' + fallbacks.length + '):');
   if (fallbacks.length === 0) lines.push('  (none)');

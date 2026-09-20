@@ -306,6 +306,7 @@
       <div class="counter"><dt>Metadata</dt><dd id="count-metadata">&mdash;</dd></div>
       <div class="counter warn"><dt>Preserved</dt><dd id="count-preserved">&mdash;</dd></div>
       <div class="counter warn"><dt>Skipped</dt><dd id="count-skipped">&mdash;</dd></div>
+      <div class="counter warn"><dt>Unsupported protocol</dt><dd id="count-unsupported">&mdash;</dd></div>
       <div class="counter"><dt>Fallback</dt><dd id="count-fallback">&mdash;</dd></div>
     </dl>
   </section>
@@ -336,6 +337,10 @@
       <summary>Skipped unresolved</summary>
       <ul class="items" id="list-skipped"><li class="empty">no preview yet</li></ul>
     </details>
+    <details id="details-unsupported">
+      <summary>Skipped unsupported protocol</summary>
+      <ul class="items" id="list-unsupported"><li class="empty">no preview yet</li></ul>
+    </details>
     <details id="details-fallback">
       <summary>Free counterpart fallback</summary>
       <ul class="items" id="list-fallback"><li class="empty">no preview yet</li></ul>
@@ -361,6 +366,7 @@
     <dt>Metadata changed</dt><dd id="confirm-count-metadata">&mdash;</dd>
     <dt>Preserved unresolved</dt><dd id="confirm-count-preserved">&mdash;</dd>
     <dt>Skipped unresolved</dt><dd id="confirm-count-skipped">&mdash;</dd>
+    <dt>Skipped unsupported protocol</dt><dd id="confirm-count-unsupported">&mdash;</dd>
     <dt>Fallback resolved</dt><dd id="confirm-count-fallback">&mdash;</dd>
   </dl>
   <p id="confirm-note" class="confirm-note">A timestamped backup will be created before replacement.</p>
@@ -620,6 +626,20 @@
       warn: true,
     },
     {
+      key: 'unsupported',
+      summaryLabel: 'Skipped unsupported protocol',
+      countId: 'count-unsupported',
+      listId: 'list-unsupported',
+      detailsId: 'details-unsupported',
+      pick: (p) => p.unsupportedSkipped,
+      row: (item) => itemText([
+        itemText([fieldOf(item, ['gateway']), idOf(item)]).replace('  \u00b7  ', '/'),
+        fieldOf(item, ['endpoint']) !== undefined ? 'endpoint=' + fieldOf(item, ['endpoint']) : '',
+        fieldOf(item, ['reason']) !== undefined ? 'reason=' + fieldOf(item, ['reason']) : '',
+      ]),
+      warn: true,
+    },
+    {
       key: 'fallback',
       summaryLabel: 'Free counterpart fallback',
       countId: 'count-fallback',
@@ -804,6 +824,7 @@
       setConfirmCount('confirm-count-metadata', lastPreview.changes && lastPreview.changes.metadataChanged);
       setConfirmCount('confirm-count-preserved', lastPreview.preservedUnresolved);
       setConfirmCount('confirm-count-skipped', lastPreview.skippedUnresolved);
+      setConfirmCount('confirm-count-unsupported', lastPreview.unsupportedSkipped);
       setConfirmCount('confirm-count-fallback', lastPreview.fallbackResolved);
       const production = lastPreview.target && lastPreview.target.production === true;
       confirmNoteEl.textContent = production

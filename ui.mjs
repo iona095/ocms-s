@@ -255,6 +255,7 @@ export async function startServer(options = {}) {
     const changes = translateChanges(plan.changes);
     const preserved = sortByGatewayId(Array.isArray(plan.preservedUnresolved) ? plan.preservedUnresolved.map((e) => ({ ...e })) : []);
     const skipped = sortByGatewayId(Array.isArray(plan.skippedUnresolved) ? plan.skippedUnresolved.map((e) => ({ ...e })) : []);
+    const unsupported = sortByGatewayId(Array.isArray(plan.unsupportedSkipped) ? plan.unsupportedSkipped.map((e) => ({ ...e })) : []);
     const fallback = sortByGatewayId(Array.isArray(plan.fallbackResolved) ? plan.fallbackResolved.map((e) => ({ ...e })) : []);
     let sources;
     if (retained.sourcesSummary) {
@@ -270,6 +271,7 @@ export async function startServer(options = {}) {
       changes,
       preservedUnresolved: preserved,
       skippedUnresolved: skipped,
+      unsupportedSkipped: unsupported,
       fallbackResolved: fallback,
       previewId: retained.previewId,
       generatedAt: retained.generatedAt,
@@ -302,6 +304,7 @@ export async function startServer(options = {}) {
             changes: { added: [], removed: [], moved: [], metadataChanged: [] },
             preservedUnresolved: [],
             skippedUnresolved: [],
+            unsupportedSkipped: [],
             fallbackResolved: [],
             settingsPath: resolvedTarget,
             settingsDigest: null,

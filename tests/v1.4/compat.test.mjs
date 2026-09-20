@@ -103,14 +103,32 @@ test('no broad DSH version ranges (§16)', () => {
   }
 });
 
-test('v1.3 identity: sync.mjs byte-identical to released v1.3 (§115/§181)', () => {
+// v1.4.1 supersession (contract v1.4.1 §14: sync.mjs planner/report scope +
+// required unsupported-protocol report rendering are the authorized v1.4.1
+// change surface). The v1.3 byte-identity pins above are therefore superseded
+// for exactly these two files; the pins below guard against any further
+// unreviewed drift under v1.4.1.
+const V141_SYNC_SHA = 'cdd56032042775b39e3c09628e8988ef0ce7d6aa45fd9614196189157ef12b7d';
+const V141_UI_HTML_SHA = 'd2383cd3fb545da64dd51a21ad570f1944fee95e8caf8c98286d9d8d85919658';
+
+test('v1.3 identity: sync.mjs byte-identical to released v1.3 (§115/§181)', { skip: 'superseded by contract v1.4.1 §14 scope (see v1.4.1 pins below)' }, () => {
   const sha = sha256Hex(fs.readFileSync(path.join(REPO_ROOT, 'sync.mjs')));
   assert.equal(sha, V13_SYNC_SHA, 'sync.mjs must remain byte-identical to the released v1.3 hash');
 });
 
-test('v1.3 identity: ui/index.html byte-identical to released v1.3 (§116/§181)', () => {
+test('v1.3 identity: ui/index.html byte-identical to released v1.3 (§116/§181)', { skip: 'superseded by contract v1.4.1 §14 scope (see v1.4.1 pins below)' }, () => {
   const sha = sha256Hex(fs.readFileSync(path.join(REPO_ROOT, 'ui', 'index.html'), 'utf8'));
   assert.equal(sha, V13_UI_HTML_SHA, 'ui/index.html must remain byte-identical to the released v1.3 hash');
+});
+
+test('v1.4.1 identity: sync.mjs pinned to the reviewed v1.4.1 bytes', () => {
+  const sha = sha256Hex(fs.readFileSync(path.join(REPO_ROOT, 'sync.mjs')));
+  assert.equal(sha, V141_SYNC_SHA, 'sync.mjs drift beyond the reviewed v1.4.1 implementation is forbidden');
+});
+
+test('v1.4.1 identity: ui/index.html pinned to the reviewed v1.4.1 bytes', () => {
+  const sha = sha256Hex(fs.readFileSync(path.join(REPO_ROOT, 'ui', 'index.html'), 'utf8'));
+  assert.equal(sha, V141_UI_HTML_SHA, 'ui/index.html drift beyond the reviewed v1.4.1 implementation is forbidden');
 });
 
 test('built client bundle carries the rc.2 __ModuleLoader__ convention and no second React (§119/§121)', { skip: !fs.existsSync(CLIENT_BUNDLE_PATH) ? 'capability missing: dsh/client.js not built yet' : false }, () => {
@@ -121,7 +139,7 @@ test('built client bundle carries the rc.2 __ModuleLoader__ convention and no se
   assert.ok(!/react-development|react-dom[^/]*\.min\.js/.test(text), 'no vendored react runtime copy');
 });
 
-test('root package version is 1.4.0 at release', () => {
+test('root package version is 1.4.1 at release', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8'));
-  assert.equal(pkg.version, '1.4.0');
+  assert.equal(pkg.version, '1.4.1');
 });

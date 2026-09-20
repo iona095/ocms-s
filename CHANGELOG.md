@@ -4,6 +4,28 @@ All notable project-level changes are summarized here.
 
 This file is intentionally concise. The authoritative behavioral specification remains the current contract.
 
+## v1.4.1
+
+Generic unsupported-protocol containment: a live model whose exact authority establishes a protocol outside the managed set (`chat/completions`, `messages`, `responses`) is explicitly skipped instead of blocking the whole synchronization.
+
+### Added
+
+- New `SKIPPED_UNSUPPORTED_PROTOCOL` disposition (reason `UNSUPPORTED_PROTOCOL` plus the exact endpoint), intentionally absent from all six managed arrays and recognized by membership validation.
+- Protocol classification (`classifyProtocolSupport`) before model-record construction: exact docs remain first authority, the exact nested model-local `provider.npm` hint keeps its v1.4 fallback role, and no family/name/sibling/gateway inference, probing, or model-ID special-casing was added.
+- Unsupported `-free` containment: an unsupported free model never crosses into supported routing through `FREE_COUNTERPART_FALLBACK`.
+- Preview/UI visibility: CLI report section plus pass-through Web UX group (`unsupportedSkipped`); an unsupported live model already present in a managed array is removed and reported under `removed`.
+- 14 v1.4.1 tests (`tests/v1.4.1/`) written test-first (controlled RED, then GREEN with no post-implementation test edits). Full release suite is now 227 tests (225 pass, 2 authorized Contract v1.4.1 §14 skips of the superseded v1.3 byte-identity pins, themselves replaced by v1.4.1 SHA pins).
+
+### Unchanged (explicit)
+
+- Strict metadata validation for supported protocols (`limit.output`, modalities, reasoning) and blocking on malformed authority, ambiguity, and membership mismatch.
+- No new managed route; no inference probing; no DSH lifecycle behavior change; no transport ownership behavior change; no production settings behavior change.
+
+### Verification
+
+- Live scratch Preview acceptance against current public OpenCode sources: `zen/jev-1.13` and `zen/jev-1.13-free` → `SKIPPED_UNSUPPORTED_PROTOCOL` (endpoint `/zen/v1/systemone`), plan `READY`, all six managed routes populated normally.
+- Immutable: contract v1.4.1 SHA-256 `f48e236f40ee5c15202f18c3e812d3f41742804304d0de0d070342c0adeeb05b` (392 lines).
+
 ## v1.4.0
 
 Optional DSH integration: OCMS-S as one DSH conversation view (tab label `Models`, slot `conversation.view`, id `models`, order `30`). DSH-owned scope is exclusively lifecycle (status/Start/Stop), exact child-process ownership, and iframe hosting. All sync authority stays in the released engine and Web UX.
