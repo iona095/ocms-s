@@ -139,7 +139,7 @@ test('built client bundle carries the rc.2 __ModuleLoader__ convention and no se
   assert.ok(!/react-development|react-dom[^/]*\.min\.js/.test(text), 'no vendored react runtime copy');
 });
 
-test('root package version is 1.4.1 at release', () => {
+test('root package version is 1.4.2 at release', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8'));
-  assert.equal(pkg.version, '1.4.1');
+  assert.equal(pkg.version, '1.4.2');
 });

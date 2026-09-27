@@ -4,6 +4,38 @@ All notable project-level changes are summarized here.
 
 This file is intentionally concise. The authoritative behavioral specification remains the current contract.
 
+## v1.4.2
+
+**Exact child-lifetime ownership and safe HMR generation handoff.** Correctness/reliability release: no new public API, materially stronger lifecycle semantics and HMR ownership guarantees.
+
+### Fixed
+
+- **Ownership is released only by the exact child's own `exit` event.** Previously a kill request, a `kill()` return value, a child `error` event, a readiness deadline, or a disposal shortcut could all clear ownership and report `OFFLINE` while a possibly-live child was still running — which allowed a second child to spawn behind it, or a child to outlive its Host. Every ownership-clearing path is now gated on that one event, including `error` during `STARTING` and `ONLINE`, the readiness deadline, and all four Start/disposal-fence branches.
+- **Disposal completes only on the exact child exit.** `dispose()` used to signal, clear ownership and emit `OFFLINE` without an exit and swallow a failed stop. It now waits for an in-flight transition to settle, reports `STOPPING`, and stays pending until the child actually exits; ownership is never released on a guess.
+- **One termination sequence per child.** Stop, disposal and a Start that lost its Host now join a single termination authority (`SIGTERM`, then `SIGKILL` after the graceful window) instead of each signalling independently, so no duplicate signals or kill storms.
+- **No false `OFFLINE` in the status surface.** A child `error` is a fault, not a termination: the state becomes `ERROR` with ownership retained, and only the exact exit reconciles to `OFFLINE`.
+- **HMR generation handoff.** Cordis HMR imports the replacement generation, drops the retiring plugin and starts unloading the old fiber *without awaiting its disposer*, so two generations were live at once and the replacement published its service immediately. A process-global, per-root coordinator (`globalThis[Symbol.for('ocms-s/generation-coordinator')]`) now serializes them: `apply()` awaits a per-apply lease before constructing or publishing anything, the newest queued generation wins a free lease, superseded generations publish nothing at all, releases are identity-checked so a repeated or stale disposer cannot free a lease another apply holds, and a post-lease setup failure releases the lease instead of stranding it.
+
+### Unchanged (explicit)
+
+- No new managed route, no sync/planner change, no settings behavior change, no new public API, no dependency change. `sync.mjs` and `ui/index.html` are byte-identical to the reviewed v1.4.1 files.
+- DSH scope stays lifecycle-only: status/Start/Stop, exact child ownership, iframe hosting. No auto-Start from any session, tab, reconnect, reload or HMR path.
+- `EXTERNAL` remains an informational refusal only: never kill, claim, scan or embed the occupying listener.
+- Browser still supplies only `start(embedOrigin)`; `nodeBin`/`uiPath`/`settingsPath` stay Host-owned.
+
+### Intentional boundaries (read before upgrading)
+
+1. **One cold DSH/profile restart is required after upgrading from a pre-coordinator generation.** A generation already running when v1.4.2 is installed does not participate in the coordinator, so a hot swap over it is not serialized (the replacement reaches publication while the predecessor is still serving, and Cordis refuses the duplicate service registration). Restart DSH once; the handoff guarantee applies to every later reload.
+2. **If an owned child never emits `exit`, disposal intentionally remains pending** and, with it, activation of the replacement generation, until DSH's outer forced-exit boundary. This is the deliberate trade: a blocked plugin unload is preferred over two children serving one Host root.
+
+### Verification
+
+- Controlled RED before each production edit: 7 of 9 lifecycle/disposal cases failed on the intended defect, and all 6 coordinator cases fail against the pre-fix `dsh/host.mjs`.
+- Full release suite: **243 tests / 241 pass / 0 fail / 2 authorized skips**, re-run from a clean checkout of the implementation commit (CRLF working-tree form).
+- Real-runtime smoke test (real Cordis 4.0.2 runtime, real `ocmsLifecycleService` Remote calls, real `ui.mjs` child, installed HMR ordering `registry.delete()` not awaited + replacement fiber, child liveness read from the OS process table and `netstat`): normal Start → Stop, HMR while the child is running, replacement unpublished for the whole window in which the child was alive, first publication only after ownership release, replacement functional on a new child, and both boundaries demonstrated. 33/33 checks.
+- Three independent adversarial audits (coordinator, lifecycle, evidence) returned PASS; the one false-green test and the one Cordis-internal assertion they flagged were fixed.
+- Implementation commit `8167039d2120f859c79194e8273d08379a3ffa23`.
+
 ## v1.4.1
 
 Generic unsupported-protocol containment: a live model whose exact authority establishes a protocol outside the managed set (`chat/completions`, `messages`, `responses`) is explicitly skipped instead of blocking the whole synchronization.
