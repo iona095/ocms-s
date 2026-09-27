@@ -109,10 +109,18 @@ test('readiness: not ready immediately, eventual ready', { skip }, async () => {
 
 test('readiness: deadline timeout → ERROR with ocms/readiness-timeout, child stopped', { skip }, async () => {
   let probes = 0;
-  const { controller, deps, record } = await make({
+  let childRef;
+  const states = [];
+  const { controller, record } = await make({
     probeHttp: async () => { probes += 1; return { ok: false, status: 0, json: null }; },
     deadlineMs: 5,
     intervalMs: 1,
+    onState(status) { states.push(status.state); },
+    spawnFn(cmd, args, opts) {
+      childRef = childDouble();
+      record.spawned.push(childRef.spawnedArgs = { cmd, args, opts });
+      return childRef;
+    },
   });
   await assert.rejects(controller.start({ embedOrigin: 'http://127.0.0.1:3080' }), (err) => {
     assertOcmsFailure(err, 'ocms/readiness-timeout');
@@ -120,8 +128,25 @@ test('readiness: deadline timeout → ERROR with ocms/readiness-timeout, child s
   });
   assert.equal(record.spawned.length, 1);
   assert.ok(probes >= 1, 'probe loop ran at least once');
+  // A termination request is not a termination: ownership is retained until the
+  // exact child exit, so the controller reports ERROR and refuses a new Start.
   const status = await controller.status();
-  assert.equal(status.state, 'OFFLINE', 'controller back to OFFLINE after startup failure');
+  assert.equal(status.state, 'ERROR', 'deadline failure retains ERROR, not OFFLINE');
+  const startingIndex = states.indexOf('STARTING');
+  assert.ok(startingIndex >= 0, 'STARTING was observed');
+  assert.equal(states.slice(startingIndex).includes('OFFLINE'), false, 'no OFFLINE from STARTING while the child is alive');
+  assert.equal(childRef.killed.length, 1, 'one termination signal, not a signal storm');
+  await assert.rejects(controller.start({ embedOrigin: 'http://127.0.0.1:3080' }), (err) => {
+    assertOcmsFailure(err, 'ocms/start-failed');
+    assert.equal(err.message, 'The previous OCMS-S child has not exited.');
+    return true;
+  });
+  assert.equal(record.spawned.length, 1, 'no second spawn behind a possibly-live child');
+  // The exact exit releases ownership and reconciles the controller.
+  childRef.fireExit(137, 'SIGKILL');
+  const reconciled = await controller.status();
+  assert.equal(reconciled.state, 'OFFLINE', 'exact exit reconciles the retained ERROR');
+  assert.equal(reconciled.url, undefined);
 });
 
 test('readiness: child exits before ready → ERROR, no stale handle', { skip }, async () => {
@@ -270,7 +295,66 @@ test('stop: ONLINE → STOPPING → OFFLINE on owned child only', { skip }, asyn
   assert.equal(status.state, 'OFFLINE');
 });
 
-test('stop: bounded wait then force fallback targeting the exact child only', { skip }, async () => {
+test('stop: SIGTERM timeout then SIGKILL actual exit resolves OFFLINE', { skip }, async () => {
+  let childRef;
+  const { controller, record } = await make({
+    probeHttp: readinessSequence([READY]),
+    spawnFn(cmd, args, opts) {
+      childRef = childDouble();
+      record.spawned.push(childRef.spawnedArgs = { cmd, args, opts });
+      const originalKill = childRef.kill.bind(childRef);
+      childRef.kill = (signal) => {
+        const result = originalKill(signal);
+        if (signal === 'SIGKILL') setTimeout(() => childRef.fireExit(137, 'SIGKILL'), 0);
+        return result;
+      };
+      return childRef;
+    },
+  });
+  await controller.start({ embedOrigin: 'http://127.0.0.1:3080' });
+  const status = await controller.stop();
+  assert.equal(status.state, 'OFFLINE');
+  assert.equal(status.url, undefined);
+  assert.deepEqual(childRef.killed, ['SIGTERM', 'SIGKILL']);
+  assert.equal(childRef.exited, true);
+  assert.equal(record.spawned.length, 1);
+  await assert.rejects(controller.stop(), (err) => {
+    assertOcmsFailure(err, 'ocms/not-owned');
+    return true;
+  });
+});
+
+test('stop: unconfirmed forced exit rejects and retains ERROR ownership', { skip }, async () => {
+  let childRef;
+  const states = [];
+  const { controller, deps, record } = await make({
+    probeHttp: readinessSequence([READY]),
+    onState(status) { states.push(status.state); },
+    spawnFn(cmd, args, opts) {
+      childRef = childDouble();
+      record.spawned.push(childRef.spawnedArgs = { cmd, args, opts });
+      return childRef;
+    },
+  });
+  await controller.start({ embedOrigin: 'http://127.0.0.1:3080' });
+  const stateIndex = states.length;
+  await assert.rejects(controller.stop(), (err) => {
+    assertOcmsFailure(err, 'ocms/stop-failed');
+    assert.equal(err.ocmsFailure, true);
+    return true;
+  });
+  const status = await controller.status();
+  assert.equal(status.state, 'ERROR');
+  assert.equal(status.port, deps.port);
+  assert.equal(typeof status.message, 'string');
+  assert.equal(status.message.length > 0, true);
+  assert.doesNotMatch(status.message, /\n\s+at |\s+at .+:\d+/);
+  assert.equal(states.slice(stateIndex).includes('OFFLINE'), false);
+  assert.deepEqual(childRef.killed, ['SIGTERM', 'SIGKILL']);
+  assert.equal(record.spawned.length, 1);
+});
+
+test('start: failed Stop with retained child refuses before another spawn', { skip }, async () => {
   let childRef;
   const { controller, record } = await make({
     probeHttp: readinessSequence([READY]),
@@ -281,10 +365,89 @@ test('stop: bounded wait then force fallback targeting the exact child only', { 
     },
   });
   await controller.start({ embedOrigin: 'http://127.0.0.1:3080' });
-  // Child never fires exit → force path runs; only this child is ever killed.
-  const status = await controller.stop();
-  assert.equal(status.state, 'OFFLINE');
-  assert.ok(childRef.killed.length >= 1, 'graceful then force signal sequence');
+  const originalKill = childRef.kill.bind(childRef);
+  childRef.kill = (signal) => {
+    originalKill(signal);
+    throw new Error('EPERM');
+  };
+  await assert.rejects(controller.stop(), (err) => {
+    assertOcmsFailure(err, 'ocms/stop-failed');
+    return true;
+  });
+  await assert.rejects(controller.start({ embedOrigin: 'http://127.0.0.1:3080' }), (err) => {
+    assertOcmsFailure(err, 'ocms/start-failed');
+    assert.equal(err.message, 'The previous OCMS-S child has not exited.');
+    return true;
+  });
+  assert.equal(record.spawned.length, 1);
+  assert.equal(childRef.killed.length, 1);
+});
+
+test('delayed exact-child exit reconciles ERROR, restarts once, and stale exit is inert', { skip }, async () => {
+  const children = [];
+  const { controller, record } = await make({
+    probeHttp: readinessSequence([READY, READY]),
+    spawnFn(cmd, args, opts) {
+      const child = childDouble();
+      record.spawned.push(child.spawnedArgs = { cmd, args, opts });
+      children.push(child);
+      return child;
+    },
+  });
+  await controller.start({ embedOrigin: 'http://127.0.0.1:3080' });
+  children[0].kill = () => { throw new Error('EPERM'); };
+  await assert.rejects(controller.stop(), (err) => {
+    assertOcmsFailure(err, 'ocms/stop-failed');
+    return true;
+  });
+  assert.equal((await controller.status()).state, 'ERROR');
+  children[0].fireExit(137, 'SIGKILL');
+  const reconciled = await controller.status();
+  assert.equal(reconciled.state, 'OFFLINE');
+  assert.equal(reconciled.url, undefined);
+  await assert.rejects(controller.stop(), (err) => {
+    assertOcmsFailure(err, 'ocms/not-owned');
+    return true;
+  });
+  const restarted = await controller.start({ embedOrigin: 'http://127.0.0.1:3080' });
+  assert.equal(restarted.state, 'ONLINE');
+  assert.equal(record.spawned.length, 2);
+  children[0].fire('exit', 0, null);
+  await new Promise((r) => setTimeout(r, 5));
+  assert.equal((await controller.status()).state, 'ONLINE');
+  const stopping = controller.stop();
+  assert.deepEqual(children[1].killed, ['SIGTERM']);
+  children[1].fireExit(0, null);
+  assert.equal((await stopping).state, 'OFFLINE');
+});
+
+test('stop: child error without actual exit is not termination', { skip }, async () => {
+  let childRef;
+  const { controller, record } = await make({
+    probeHttp: readinessSequence([READY]),
+    spawnFn(cmd, args, opts) {
+      childRef = childDouble();
+      record.spawned.push(childRef.spawnedArgs = { cmd, args, opts });
+      const originalKill = childRef.kill.bind(childRef);
+      childRef.kill = (signal) => {
+        const result = originalKill(signal);
+        if (signal === 'SIGTERM') childRef.fire('error', new Error('kill transport error'));
+        return result;
+      };
+      return childRef;
+    },
+  });
+  await controller.start({ embedOrigin: 'http://127.0.0.1:3080' });
+  await assert.rejects(controller.stop(), (err) => {
+    assertOcmsFailure(err, 'ocms/stop-failed');
+    assert.equal(err.ocmsFailure, true);
+    return true;
+  });
+  assert.deepEqual(childRef.killed, ['SIGTERM', 'SIGKILL']);
+  assert.equal((await controller.status()).state, 'ERROR');
+  childRef.fireExit(137, 'SIGKILL');
+  assert.equal((await controller.status()).state, 'OFFLINE');
+  assert.equal(record.spawned.length, 1);
 });
 
 test('stop: already-exited child and Stop while OFFLINE/EXTERNAL refused safely', { skip }, async () => {
@@ -352,7 +515,7 @@ test('concurrency: Start + Start → exactly one child; second sees idempotent O
   assert.equal(record.spawned.length, 1, 'exactly one child under concurrent Start');
 });
 
-test('concurrency: Stop + Stop → second refused ocms/busy or not-owned, never a kill of a non-child', { skip }, async () => {
+test('concurrency: Stop + Stop with unconfirmed exit yields busy and stop-failed only', { skip }, async () => {
   const { controller, record } = await make({
     probeHttp: readinessSequence([READY]),
   });
@@ -361,10 +524,9 @@ test('concurrency: Stop + Stop → second refused ocms/busy or not-owned, never 
   const b = controller.stop().catch((e) => e);
   const [ra, rb] = await Promise.all([a, b]);
   const outcomes = [ra, rb].map((r) => (r && r.code ? r.code : r.state));
-  assert.ok(
-    outcomes.includes('OFFLINE') || outcomes.includes('ocms/not-owned') || outcomes.includes('ocms/busy'),
-    'stop outcomes are safe terminal states: ' + JSON.stringify(outcomes),
-  );
+  assert.deepEqual(new Set(outcomes), new Set(['ocms/busy', 'ocms/stop-failed']));
+  assert.equal(outcomes.includes('OFFLINE'), false);
+  assert.equal(record.spawned.length, 1);
 });
 
 test('concurrency: Start while STARTING is refused or idempotent — never a second spawn', { skip }, async () => {
@@ -384,22 +546,34 @@ test('concurrency: Start while STARTING is refused or idempotent — never a sec
 
 // ---- §99 disposal ------------------------------------------------------------------
 
-test('disposal: dispose() stops the owned child and clears ownership', { skip }, async () => {
+test('disposal: actual exit clears ownership and subsequent Stop is not-owned', { skip }, async () => {
   let childRef;
   const { controller, record } = await make({
     probeHttp: readinessSequence([READY]),
     spawnFn(cmd, args, opts) {
       childRef = childDouble();
       record.spawned.push(childRef.spawnedArgs = { cmd, args, opts });
+      const originalKill = childRef.kill.bind(childRef);
+      childRef.kill = (signal) => {
+        const result = originalKill(signal);
+        setTimeout(() => childRef.fireExit(0, null), 0);
+        return result;
+      };
       return childRef;
     },
   });
   await controller.start({ embedOrigin: 'http://127.0.0.1:3080' });
-  const dispose = await (controller.dispose ? controller.dispose() : Promise.resolve());
-  if (dispose !== undefined && typeof dispose === 'function') await dispose();
-  assert.ok(childRef.killed.length >= 1, 'owned child terminated at disposal');
+  await controller.dispose();
+  assert.deepEqual(childRef.killed, ['SIGTERM']);
+  assert.equal(childRef.exited, true);
   const status = await controller.status();
   assert.equal(status.state, 'OFFLINE');
+  assert.equal(status.url, undefined);
+  await assert.rejects(controller.stop(), (err) => {
+    assertOcmsFailure(err, 'ocms/not-owned');
+    return true;
+  });
+  assert.equal(record.spawned.length, 1);
 });
 
 // ---- §92/§38: no browser-derived inputs ---------------------------------------------

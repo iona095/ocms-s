@@ -64,6 +64,10 @@ export function createLifecycleController(deps) {
   let disposed = false; // permanent Host/plugin disposal fence (contract section 19)
   let generation = 0; // epoch bumped on every dispose; invalidates in-flight Start
   let exitInfo = null; // first exit/error payload of the current owned child
+  let exitedChild = null; // the one handle whose own 'exit' was observed
+  let termination = null; // the one termination authority for the owned child
+  const exitWaiters = new Set(); // waiters bound to one exact child exit
+  const transitionWaiters = new Set(); // waiters for "no transition in flight"
   let onStateListener = null; // per-start observer (options.onState)
 
   const emit = (next) => {
@@ -89,10 +93,80 @@ export function createLifecycleController(deps) {
     return payload;
   }
 
+  // §12: releasing ownership is an exact-child exit fact, never a signal, a
+  // kill() return value, a port probe, or elapsed time. The exit marker is
+  // deliberately kept here so waiters and pollers can still observe that this
+  // handle exited after ownership moved on to a reconciliation.
   function clearOwnership() {
     ownedChild = null;
     ownedUrl = null;
     ownedEmbedOrigin = null;
+  }
+
+  function settleExitWaiters(child) {
+    for (const waiter of [...exitWaiters]) {
+      if (waiter.child !== child) continue;
+      exitWaiters.delete(waiter);
+      waiter.resolve(true);
+    }
+  }
+
+  // §19/§45: disposal and stop completion wait for the exact child exit. This
+  // promise is settled only by that child's own 'exit' event.
+  function waitForExactExit(child) {
+    if (exitedChild === child) return Promise.resolve(true);
+    return new Promise((resolve) => { exitWaiters.add({ child, resolve }); });
+  }
+
+  // §44: exactly one termination sequence per owned child. The first requester
+  // runs it; later requesters (Stop, dispose, a Start that lost its Host) join
+  // the same task instead of sending another signal. A fault while requesting
+  // the graceful signal means the handle itself is unusable, so the sequence
+  // stops there and the caller keeps ownership.
+  function requestTermination(child) {
+    if (termination !== null && termination.child === child) return termination.promise;
+    const task = { child, promise: null };
+    task.promise = (async () => {
+      try {
+        child.kill('SIGTERM');
+      } catch (err) {
+        safeLog.error('graceful termination request failed: ' + (err && err.message ? err.message : 'unknown cause'));
+        return false;
+      }
+      if (await waitForExit(child, STOP_GRACEFUL_MS)) return true;
+      try { child.kill('SIGKILL'); } catch { /* already gone */ }
+      return waitForExit(child, STOP_FORCE_MS);
+    })();
+    termination = task;
+    return task.promise;
+  }
+
+  function settleTransitionWaiters() {
+    for (const resolve of [...transitionWaiters]) {
+      transitionWaiters.delete(resolve);
+      resolve();
+    }
+  }
+
+  // A disposal that lands while a Start is still in flight waits for that
+  // transition to settle, so a child adopted in the same tick is inherited
+  // here instead of escaping the disposal window.
+  function whenTransitionSettled() {
+    if (transition === null) return Promise.resolve();
+    return new Promise((resolve) => { transitionWaiters.add(resolve); });
+  }
+
+  // A child 'error' is a fault, not a termination: it fails a Start promptly but
+  // leaves ownership with the handle until the exact exit arrives.
+  function childFaulted() {
+    return exitInfo !== null && exitInfo.kind === 'error';
+  }
+
+  // A startup failure whose child may still be alive keeps ownership and
+  // reports ERROR (§16/§35); only the exact exit moves on to OFFLINE.
+  function retainStartupFailure(message) {
+    lastMessage = message;
+    emit('ERROR');
   }
 
   // §40: actively drained stdio — pipes are consumed (never filled) and the
@@ -107,43 +181,50 @@ export function createLifecycleController(deps) {
   function attachChildHandlers(child) {
     drainChildStdio(child);
     child.on('exit', (code, signal) => {
+      if (ownedChild !== child) return;
+      // §12: this event is the one proof that the owned child is gone.
+      exitedChild = child;
       if (exitInfo === null) exitInfo = { kind: 'exit', code, signal };
       if (state === 'STARTING') {
-        abortStartup('OCMS-S exited during startup (exit code ' + String(code) + ').');
+        clearOwnership();
+        lastMessage = 'OCMS-S exited during startup (exit code ' + String(code) + ').';
         log.error(lastMessage);
+        emit('OFFLINE');
       } else if (state === 'ONLINE') {
         // §43: never retain stale ONLINE ownership after an unexpected exit.
         clearOwnership();
         lastMessage = 'OCMS-S server exited unexpectedly.';
         log.warn(lastMessage);
         emit('OFFLINE');
+      } else if (state === 'ERROR') {
+        clearOwnership();
+        exitInfo = null;
+        emit('OFFLINE');
       }
-      // STOPPING: the stop flow consumes this exit; state is already moving.
+      // STOPPING: the stop or dispose flow consumes this exit; state is already
+      // moving.
+      settleExitWaiters(child);
     });
     child.on('error', (err) => {
+      if (ownedChild !== child) return;
+      // §12/§44: an error is a fault, not a termination. Ownership stays with
+      // the exact handle until its exit arrives, and the state reports ERROR.
       if (exitInfo === null) exitInfo = { kind: 'error', err };
       if (state === 'STARTING') {
-        clearOwnership();
         lastMessage = 'OCMS-S failed to start.';
         log.error(lastMessage);
-        emit('OFFLINE');
+        emit('ERROR');
       } else if (state === 'ONLINE') {
-        clearOwnership();
         lastMessage = 'OCMS-S server failed.';
         log.warn(lastMessage);
-        emit('OFFLINE');
+        emit('ERROR');
       }
+      // STOPPING/ERROR: the pending stop or dispose flow owns the outcome.
     });
   }
 
   async function status() {
     return statusPayload();
-  }
-
-  function abortStartup(message) {
-    clearOwnership();
-    lastMessage = message;
-    emit('OFFLINE');
   }
 
   // Disposal fence: a Start captured myGeneration at entry. Any dispose()
@@ -179,6 +260,11 @@ export function createLifecycleController(deps) {
     }
     if (state === 'STARTING' || state === 'STOPPING') {
       return Promise.reject(ocmsFailure('ocms/busy', 'A lifecycle transition is already in progress.'));
+    }
+    // §12/§19: any retained handle blocks a new spawn, whatever the reported
+    // state. Only that handle's own exit releases ownership.
+    if (ownedChild !== null) {
+      return Promise.reject(ocmsFailure('ocms/start-failed', 'The previous OCMS-S child has not exited.'));
     }
 
     transition = 'start';
@@ -248,22 +334,28 @@ export function createLifecycleController(deps) {
         emit('OFFLINE');
         throw ocmsFailure('ocms/start-failed', lastMessage);
       }
-      // Disposal fence (§19): a dispose() racing the sync spawn window must
-      // not leave an orphan. Ownership has not been assigned yet, so terminate
-      // the just-spawned child here; the pending Start never reaches ONLINE.
-      if (startInvalidated(myGeneration)) {
-        try { child.kill('SIGKILL'); } catch { /* already gone */ }
-        lastMessage = 'The DSH Host instance was disposed during startup.';
-        emit('OFFLINE');
-        throw ocmsFailure('ocms/start-failed', lastMessage);
-      }
+      // §12: a handle that exists is owned. Adoption happens before the
+      // disposal fence so a same-tick dispose() and this Start share one
+      // termination authority instead of racing two independent kills.
       ownedChild = child;
       ownedUrl = 'http://127.0.0.1:' + port + '/';
       ownedEmbedOrigin = normalizedOrigin;
       exitInfo = null;
+      exitedChild = null;
+      termination = null;
 
       // (8) exit/error handlers attached immediately (§38).
       attachChildHandlers(child);
+
+      // Disposal fence (§19): a dispose() racing the sync spawn window must
+      // not leave an orphan. The child is owned, so the shared termination
+      // authority drives it out and the pending disposal waits for its exit;
+      // this Start never reaches ONLINE.
+      if (startInvalidated(myGeneration)) {
+        requestTermination(child);
+        lastMessage = 'The DSH Host instance was disposed during startup.';
+        throw ocmsFailure('ocms/start-failed', lastMessage);
+      }
 
       // (9) bounded readiness during STARTING only (§16). The deadline is
       // measured against the real clock; the inter-probe pause comes from the
@@ -272,18 +364,20 @@ export function createLifecycleController(deps) {
       const startedAt = Date.now();
       for (;;) {
         // Disposal fence (§19): a dispose() during any readiness await
-        // invalidates this Start. Pending work may finish but MUST NOT
-        // transition ONLINE. Terminate the exact child this Start spawned.
+        // invalidates this Start. The owned child joins the one termination
+        // authority; ownership and the exact exit are reconciled by the exit
+        // handler and by the pending disposal, never by this Start.
         if (startInvalidated(myGeneration)) {
-          try { child.kill('SIGKILL'); } catch { /* already gone */ }
-          if (ownedChild === child) clearOwnership();
+          requestTermination(child);
           lastMessage = 'The DSH Host instance was disposed during startup.';
-          emit('OFFLINE');
           throw ocmsFailure('ocms/start-failed', lastMessage);
         }
-        if (exitInfo !== null) {
-          abortStartup('OCMS-S exited during startup.');
-          throw ocmsFailure('ocms/start-failed', lastMessage);
+        if (exitedChild === child) {
+          throw ocmsFailure('ocms/start-failed', lastMessage ?? 'OCMS-S exited during startup.');
+        }
+        if (childFaulted()) {
+          requestTermination(child);
+          throw ocmsFailure('ocms/start-failed', lastMessage ?? 'OCMS-S failed to start.');
         }
         let probe;
         try {
@@ -293,20 +387,24 @@ export function createLifecycleController(deps) {
         }
         // Disposal fence (§19): a stale READY after disposal is ignored.
         if (startInvalidated(myGeneration)) {
-          try { child.kill('SIGKILL'); } catch { /* already gone */ }
-          if (ownedChild === child) clearOwnership();
+          requestTermination(child);
           lastMessage = 'The DSH Host instance was disposed during startup.';
-          emit('OFFLINE');
           throw ocmsFailure('ocms/start-failed', lastMessage);
         }
         if (readinessSatisfied(probe)) break;
-        if (exitInfo !== null) {
-          abortStartup('OCMS-S exited during startup.');
-          throw ocmsFailure('ocms/start-failed', lastMessage);
+        if (exitedChild === child) {
+          throw ocmsFailure('ocms/start-failed', lastMessage ?? 'OCMS-S exited during startup.');
+        }
+        if (childFaulted()) {
+          requestTermination(child);
+          throw ocmsFailure('ocms/start-failed', lastMessage ?? 'OCMS-S failed to start.');
         }
         if (Date.now() - startedAt >= deadlineMs) {
-          try { ownedChild.kill('SIGKILL'); } catch { /* already gone */ }
-          abortStartup('OCMS-S did not become ready before the startup deadline.');
+          // §16/§35: the deadline fails the Start, it does not terminate the
+          // child. Ownership is retained until the exact exit arrives and a
+          // later Start stays refused until then.
+          requestTermination(child);
+          retainStartupFailure('OCMS-S did not become ready before the startup deadline.');
           throw ocmsFailure('ocms/readiness-timeout', lastMessage);
         }
         // A real event-loop yield between probes: a purely microtask-based
@@ -316,10 +414,8 @@ export function createLifecycleController(deps) {
       // Disposal fence (§19): final gate immediately before ONLINE. No
       // disposed STARTING operation ever transitions back to ONLINE.
       if (startInvalidated(myGeneration)) {
-        try { child.kill('SIGKILL'); } catch { /* already gone */ }
-        if (ownedChild === child) clearOwnership();
+        requestTermination(child);
         lastMessage = 'The DSH Host instance was disposed during startup.';
-        emit('OFFLINE');
         throw ocmsFailure('ocms/start-failed', lastMessage);
       }
       // (10) ONLINE only after readiness.
@@ -329,6 +425,7 @@ export function createLifecycleController(deps) {
     } finally {
       transition = null;
       onStateListener = null;
+      settleTransitionWaiters();
     }
   }
 
@@ -346,39 +443,39 @@ export function createLifecycleController(deps) {
     }
 
     transition = 'stop';
+    const child = ownedChild;
     try {
-      const child = ownedChild;
-      emit('STOPPING');
-      child.kill('SIGTERM');
-      if (!(await waitForExit(STOP_GRACEFUL_MS))) {
-        // Force fallback targets the exact owned child handle only (§44).
-        try { child.kill('SIGKILL'); } catch { /* already gone */ }
-        await waitForExit(STOP_FORCE_MS);
+      if (state !== 'STOPPING') emit('STOPPING');
+      // §44: Stop joins the one termination authority for this exact child, so
+      // a dispose() or a Start abort that already asked cannot double-signal.
+      const exited = await requestTermination(child);
+      if (!exited) {
+        // A failed stop leaves ownership with the child that refused to exit;
+        // the state falls back to ERROR (contract section 35).
+        safeLog.error('stop failed: the owned child did not report an exit after force termination');
+        lastMessage = 'OCMS-S could not be stopped cleanly (the child did not report an exit).';
+        emit('ERROR');
+        throw ocmsFailure('ocms/stop-failed', lastMessage);
       }
-      clearOwnership();
-      exitInfo = null;
-      lastMessage = null;
-      emit('OFFLINE');
+      if (ownedChild === child) {
+        clearOwnership();
+        exitInfo = null;
+        lastMessage = null;
+        emit('OFFLINE');
+      }
       return statusPayload();
-    } catch (err) {
-      // A failed stop leaves ownership with the child that refused to exit;
-      // the state falls back to ERROR (contract section 35).
-      const detail = err && typeof err.message === 'string' ? err.message.split('\n')[0] : 'unknown cause';
-      safeLog.error('stop failed: ' + detail);
-      lastMessage = 'OCMS-S could not be stopped cleanly (' + detail + ').';
-      emit('ERROR');
-      throw ocmsFailure('ocms/stop-failed', lastMessage);
     } finally {
       transition = null;
+      settleTransitionWaiters();
     }
   }
 
-  async function waitForExit(ms) {
+  async function waitForExit(child, ms) {
     const started = Date.now();
-    while (exitInfo === null && Date.now() - started < ms) {
+    while (exitedChild !== child && Date.now() - started < ms) {
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
-    return exitInfo !== null;
+    return exitedChild === child;
   }
 
   async function dispose() {
@@ -388,24 +485,31 @@ export function createLifecycleController(deps) {
     // instance is gone, so later Starts are refused and no child may outlive it.
     disposed = true;
     generation += 1;
-    if (ownedChild !== null && transition === null) {
-      try { await stop(); } catch { /* disposal never throws past its own stop attempt */ }
-      return;
-    }
-    if (ownedChild !== null) {
-      // Disposal racing a transition: stop the exact owned child handle.
-      // The pending Start observes the bumped generation and aborts; a later
-      // READY is ignored and ONLINE is never emitted.
-      try { ownedChild.kill('SIGKILL'); } catch { /* already gone */ }
+    // A Start that has not spawned yet can still adopt a child in this tick;
+    // waiting for the in-flight transition to settle makes that handle part of
+    // this disposal instead of an orphan.
+    if (ownedChild === null) await whenTransitionSettled();
+    // Nothing owned (idle, EXTERNAL, or a Start refused before spawn): the
+    // generation bump above is the whole fence.
+    if (ownedChild === null) return;
+    const child = ownedChild;
+    // A child that is going away is reported as STOPPING, never as OFFLINE
+    // while it may still be alive.
+    if (state !== 'STOPPING') emit('STOPPING');
+    // §19/§45: disposal completes only on the exact child exit. The termination
+    // authority is shared with Stop and with a Start abort, so no second signal
+    // is sent and ownership is never released on a guess. An unconfirmable
+    // child keeps this disposer pending for as long as it stays alive.
+    requestTermination(child);
+    await waitForExactExit(child);
+    // The exit handler reconciles STARTING/ONLINE/ERROR. When this disposal
+    // moved the state to STOPPING there is no stop flow to reconcile it.
+    if (ownedChild === child && transition !== 'stop') {
       clearOwnership();
       exitInfo = null;
       lastMessage = null;
       emit('OFFLINE');
     }
-    // No owned child (Start blocked before spawn, EXTERNAL, or idle): the
-    // generation bump above is the fence. The pending Start aborts after its
-    // probe resolves; there is nothing to terminate here and transition
-    // ownership stays with the in-flight Start until its finally clears it.
   }
 
   return { status, start, stop, dispose };

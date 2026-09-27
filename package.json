@@ -5,7 +5,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test tests/sync.test.mjs tests/v1.3/engine-contract.test.mjs tests/v1.3/preview-contract.test.mjs tests/v1.3/apply-contract.test.mjs tests/v1.3/http-security.test.mjs tests/v1.3/concurrency.test.mjs tests/v1.3/ui-contract.test.mjs tests/v1.4/embed-origin.test.mjs tests/v1.4/client-view.test.mjs tests/v1.4/lifecycle.test.mjs tests/v1.4/compat.test.mjs tests/v1.4/disposal-race.test.mjs tests/v1.4.1/unsupported-protocol.test.mjs"
+    "test": "node --test tests/sync.test.mjs tests/v1.3/engine-contract.test.mjs tests/v1.3/preview-contract.test.mjs tests/v1.3/apply-contract.test.mjs tests/v1.3/http-security.test.mjs tests/v1.3/concurrency.test.mjs tests/v1.3/ui-contract.test.mjs tests/v1.4/embed-origin.test.mjs tests/v1.4/client-view.test.mjs tests/v1.4/lifecycle.test.mjs tests/v1.4/ownership.test.mjs tests/v1.4/compat.test.mjs tests/v1.4/disposal-race.test.mjs tests/v1.4/hmr-generation.test.mjs tests/v1.4.1/unsupported-protocol.test.mjs"
   },
   "dependencies": {
     "yaml": "^2.7.0",

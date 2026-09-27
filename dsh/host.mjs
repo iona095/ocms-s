@@ -130,7 +130,79 @@ Object.defineProperty(OcmsLifecycleService.prototype, REMOTE_METHOD_DESCRIPTOR, 
   }),
 });
 
-let processGlobalController = null;
+// ---------------------------------------------------------------------------
+// Process-global, per-root generation handoff (contract v1.4 sections 19, 29,
+// 45). A Cordis HMR replacement imports the new module generation, drops the
+// retiring plugin from the registry and starts unloading the old fiber WITHOUT
+// awaiting its disposer, so two evaluations of this file are live in one
+// process at the same time. Only a process-global arbiter can order them: the
+// retiring generation must finish its exact-exit child cleanup before the
+// replacement publishes a service, or one Host root would have two children.
+// ---------------------------------------------------------------------------
+
+const COORDINATOR_KEY = Symbol.for('ocms-s/generation-coordinator');
+
+function coordinator() {
+  const found = globalThis[COORDINATOR_KEY];
+  if (found !== undefined) return found;
+  const created = { roots: new WeakMap() };
+  Object.defineProperty(globalThis, COORDINATOR_KEY, {
+    value: created,
+    enumerable: false,
+    writable: false,
+    configurable: false,
+  });
+  return created;
+}
+
+function rootLease(root) {
+  const roots = coordinator().roots;
+  const existing = roots.get(root);
+  if (existing !== undefined) return existing;
+  const lease = { holder: null, waiting: [] };
+  roots.set(root, lease);
+  return lease;
+}
+
+// Resolves the lease this apply owns, or null when a newer generation
+// superseded it while it was queued — a stale generation must never resurrect
+// itself behind its replacement. The lease token is per apply call, so a second
+// apply of the same module generation is serialized instead of running a second
+// controller beside the first.
+function acquireLease(root) {
+  const state = rootLease(root);
+  const lease = { root, token: {} };
+  if (state.holder === null) {
+    state.holder = lease.token;
+    return Promise.resolve(lease);
+  }
+  return new Promise((resolve) => {
+    const superseded = state.waiting.splice(0, state.waiting.length);
+    state.waiting.push({ lease, resolve });
+    for (const waiter of superseded) waiter.resolve(null);
+  });
+}
+
+// Releasing is identity-checked against the lease token: a disposer that runs
+// twice, or that runs after another apply already took the lease, can never
+// free a lease it does not hold. The newest queued generation wins the free
+// lease; everything queued before it is retired.
+function releaseLease(lease) {
+  const state = rootLease(lease.root);
+  if (state.holder !== lease.token) return;
+  state.holder = null;
+  const next = state.waiting.pop() ?? null;
+  const superseded = state.waiting.splice(0, state.waiting.length);
+  for (const waiter of superseded) waiter.resolve(null);
+  if (next === null) return;
+  state.holder = next.lease.token;
+  next.resolve(next.lease);
+}
+
+// The controller published by THIS module generation (null when idle). Module
+// scope is the generation scope: a retiring generation can never report a
+// controller that a replacement has already published.
+let activeController = null;
 
 export async function apply(ctx, options = {}) {
   const config = {
@@ -143,32 +215,51 @@ export async function apply(ctx, options = {}) {
     throw new Error('ocms/incompatible-dsh: no Node runtime executable is resolvable in this host');
   }
 
-  // §29: exactly one process-global lifecycle controller per Host plugin
-  // instance — not per session, tab, workspace, or browser connection.
-  const controller = createLifecycleController({
-    uiPath: UI_PATH,
-    port: config.port,
-    settingsPath: config.settingsPath,
-    nodeExecutable: () => resolveNodeExecutable(config.nodeBin),
-    probePort: () => probePortTcp(config.port),
-    probeHttp: (url) => probeHttpState(url),
-    spawnFn: (cmd, args, opts) => spawn(cmd, args, opts),
-    log: safeLog(),
-  });
-  processGlobalController = controller;
+  // §19/§45: the lease is the publication barrier. A replacement generation
+  // passes this await only after the retiring generation's exact-exit child
+  // cleanup completed, so the service and its controller appear atomically.
+  const lease = await acquireLease(ctx.root);
+  // §38: a generation that a newer one superseded publishes nothing at all.
+  if (lease === null) return function dispose() {};
+  let controller = null;
+  try {
+    // Cordis' own fence: a fiber that was disposed while the lease was pending
+    // is retired instead of published.
+    ctx.fiber.assertActive();
+    // §29: exactly one process-global lifecycle controller per Host plugin
+    // instance — not per session, tab, workspace, or browser connection.
+    controller = createLifecycleController({
+      uiPath: UI_PATH,
+      port: config.port,
+      settingsPath: config.settingsPath,
+      nodeExecutable: () => resolveNodeExecutable(config.nodeBin),
+      probePort: () => probePortTcp(config.port),
+      probeHttp: (url) => probeHttpState(url),
+      spawnFn: (cmd, args, opts) => spawn(cmd, args, opts),
+      log: safeLog(),
+    });
+    new OcmsLifecycleService(ctx, controller);
+    activeController = controller;
+  } catch (err) {
+    // A setup failure must not strand the per-root lease: the next generation
+    // would wait forever for a holder that never published anything.
+    if (controller !== null && activeController === controller) activeController = null;
+    releaseLease(lease);
+    throw err;
+  }
 
-  new OcmsLifecycleService(ctx, controller);
-
-  // §45: the owned child must not outlive this Host plugin instance.
-  return function dispose() {
-    processGlobalController = null;
-    return controller.dispose();
+  // §45: the owned child must not outlive this Host plugin instance, and the
+  // lease is released only after that cleanup completed on the exact exit.
+  return async function dispose() {
+    await controller.dispose();
+    if (activeController === controller) activeController = null;
+    releaseLease(lease);
   };
 }
 
-// Test seam: the controller for the current host instance (null when idle).
+// Test seam: the controller for this module generation (null when idle).
 export function currentController() {
-  return processGlobalController;
+  return activeController;
 }
 
 export function uiScriptPath() {
