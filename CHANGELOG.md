@@ -11,6 +11,8 @@ Post-v1.4.2 tooling. No released behavior changes.
 ### Added
 
 - `tests/acceptance/smoke.mjs` and `npm run test:smoke`: an acceptance check that runs the committed plugin through a real Cordis runtime with a real `ui.mjs` child, the real `ocmsLifecycleService` Remote methods, the installed HMR ordering (`registry.delete()` not awaited, then the replacement fiber), and OS-level child-liveness/listener observation. It is portable (Windows and POSIX probes, repo-derived paths and ports, no machine-specific assumptions), uses only a scratch settings file, cleans up every child on all exit paths, and has a watchdog. It also reproduces the documented cold-start upgrade boundary against a materialized pre-coordinator generation. Intentionally excluded from `npm test`: it needs the DSH peer packages, spawns real processes, and takes seconds rather than milliseconds.
+- `--strict` (or `OCMS_SMOKE_STRICT=1`): for unattended runners, a missing prerequisite fails the acceptance run instead of reporting a green skip. Local and manual runs keep the explicit-skip behaviour.
+- CI job `acceptance smoke (real child, real HMR)`: Windows / Node 22, bounded by `timeout-minutes`, full git history so the boundary phase can materialize the `v1.4.1` ref, running the smoke test with `--strict`. The ordinary Node 20.x/22.x test matrix is unchanged.
 
 ## v1.4.2
 

@@ -28,6 +28,10 @@
 //     --prefix-ref <ref>   pre-coordinator generation to
 //                          materialize from git          (default v1.4.1)
 //     --no-boundary        skip the cold-start boundary phase
+//     --strict             fail instead of skipping when a required section
+//                          cannot run (also: OCMS_SMOKE_STRICT=1). Intended for
+//                          unattended runners, so a missing prerequisite can
+//                          never be reported as a green acceptance.
 //     --timeout <seconds>  watchdog for the whole run    (default 240)
 //
 // exit codes: 0 = all checks passed or the run was skipped for an environmental
@@ -47,12 +51,23 @@ const IS_WINDOWS = process.platform === 'win32';
 // arguments (no dependencies; everything is a built-in)
 // ---------------------------------------------------------------------------
 function parseArgs(argv) {
-  const options = { host: path.join(REPO_ROOT, 'dsh', 'host.mjs'), prefixRef: 'v1.4.1', boundary: true, timeoutSeconds: 240 };
+  const options = {
+    host: path.join(REPO_ROOT, 'dsh', 'host.mjs'),
+    prefixRef: 'v1.4.1',
+    boundary: true,
+    // Strict mode is for unattended runners: there, an environmental skip of a
+    // required section must fail the run instead of reporting a green
+    // acceptance. Local and manual runs keep the explicit-skip behaviour, which
+    // is useful when a checkout or environment genuinely cannot host it.
+    strict: process.env.OCMS_SMOKE_STRICT === '1',
+    timeoutSeconds: 240,
+  };
   for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i];
     if (flag === '--host') options.host = path.resolve(argv[++i]);
     else if (flag === '--prefix-ref') options.prefixRef = argv[++i];
     else if (flag === '--no-boundary') options.boundary = false;
+    else if (flag === '--strict') options.strict = true;
     else if (flag === '--timeout') options.timeoutSeconds = Number(argv[++i]);
     else throw new Error('unknown option: ' + flag);
   }
@@ -234,18 +249,27 @@ function materializePrefixGeneration(ref) {
 // ---------------------------------------------------------------------------
 // environment gates
 // ---------------------------------------------------------------------------
+// A gate that cannot be satisfied is a SKIP for a human run and a FAIL in strict
+// mode, so an unattended runner can never turn a missing prerequisite into a
+// green acceptance result.
+function gate(kind, reason) {
+  if (options.strict) {
+    console.log('SMOKE RESULT: FAIL (strict: ' + kind + ' :: ' + reason + ')');
+    process.exit(1);
+  }
+  console.log('SMOKE RESULT: SKIPPED (' + kind + ': ' + reason + ')');
+  process.exit(0);
+}
+
 startedAt = Date.now();
 let CordisContext = null;
 try {
   ({ Context: CordisContext } = await import('@deepseek-ai/cordis'));
 } catch (err) {
-  console.log('SMOKE RESULT: SKIPPED (capability missing: @deepseek-ai/cordis must be installed to run the acceptance smoke test)');
-  console.log('  ' + (err && err.message));
-  process.exit(0);
+  gate('capability missing: @deepseek-ai/cordis must be installed to run the acceptance smoke test', err && err.message);
 }
 if (!fs.existsSync(path.join(REPO_ROOT, 'ui.mjs'))) {
-  console.log('SMOKE RESULT: SKIPPED (capability missing: ui.mjs is not present in this checkout)');
-  process.exit(0);
+  gate('capability missing: ui.mjs is not present in this checkout', REPO_ROOT);
 }
 if (!fs.existsSync(options.host)) {
   console.log('SMOKE RESULT: FAIL (host plugin not found: ' + options.host + ')');
@@ -426,12 +450,21 @@ try {
   // PHASE 3 — the documented cold-start upgrade boundary, reproduced
   // =====================================================================
   if (!options.boundary) {
-    step('phase 3 skipped', { reason: '--no-boundary' });
+    // Requested off, or strict mode forbids reporting a green acceptance that
+    // silently omitted a required section.
+    const reason = options.strict ? 'strict mode requires the cold-start boundary phase' : '--no-boundary';
+    step('phase 3 skipped', { reason });
+    if (options.strict) check('phase 3 (cold-start boundary) was required by strict mode', false, { reason });
   } else {
     const prefixHost = materializePrefixGeneration(options.prefixRef);
     if (prefixHost === null) {
-      step('phase 3 skipped', { reason: 'git ref not materializable: ' + options.prefixRef });
+      const reason = 'git ref not materializable: ' + options.prefixRef;
+      step('phase 3 skipped', { reason });
       skip('cold-start boundary', 'pre-coordinator generation unavailable (needs a git checkout with ' + options.prefixRef + ')');
+      if (options.strict) check('phase 3 (cold-start boundary) was required by strict mode', false, {
+        reason,
+        hint: 'the runner must have git history and the ' + options.prefixRef + ' ref available (checkout with fetch-depth: 0)',
+      });
     } else {
       const genPre = await import(new URL('file:///' + prefixHost.replace(/\\/g, '/')).href);
       const port3 = await freePort();
@@ -483,9 +516,9 @@ try {
 
 console.log('');
 if (failures.length === 0) {
-  console.log('SMOKE RESULT: PASS (' + results.length + ' steps)');
+  console.log('SMOKE RESULT: PASS (' + results.length + ' steps)' + (options.strict ? ' [strict]' : ''));
   process.exit(0);
 }
-console.log('SMOKE RESULT: FAIL (' + failures.length + ')');
+console.log('SMOKE RESULT: FAIL (' + failures.length + ')' + (options.strict ? ' [strict]' : ''));
 for (const failure of failures) console.log('  - ' + failure);
 process.exit(1);

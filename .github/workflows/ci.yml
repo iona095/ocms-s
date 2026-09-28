@@ -44,3 +44,37 @@ jobs:
         run: npm test
         env:
           npm_config_script_shell: bash
+
+  acceptance-smoke:
+    # Real-runtime acceptance: the committed plugin through a real Cordis
+    # runtime, a real ui.mjs child, the installed HMR ordering, and OS-level
+    # child-liveness observation. Windows / Node 22 only, because it spawns real
+    # processes and reads the Windows process table. The ordinary test matrix
+    # above is unchanged and stays the regression gate.
+    name: acceptance smoke (real child, real HMR)
+    runs-on: windows-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # The cold-start boundary phase materializes a pre-coordinator
+          # generation from the v1.4.1 ref, so history and tags must be present.
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run acceptance smoke (strict)
+        # --strict: a missing prerequisite fails this step instead of reporting
+        # a green acceptance, so a skipped section can never pass CI.
+        run: npm run test:smoke -- --strict
+        env:
+          npm_config_script_shell: bash
