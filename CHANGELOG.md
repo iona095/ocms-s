@@ -4,6 +4,14 @@ All notable project-level changes are summarized here.
 
 This file is intentionally concise. The authoritative behavioral specification remains the current contract.
 
+## Unreleased
+
+Post-v1.4.2 tooling. No released behavior changes.
+
+### Added
+
+- `tests/acceptance/smoke.mjs` and `npm run test:smoke`: an acceptance check that runs the committed plugin through a real Cordis runtime with a real `ui.mjs` child, the real `ocmsLifecycleService` Remote methods, the installed HMR ordering (`registry.delete()` not awaited, then the replacement fiber), and OS-level child-liveness/listener observation. It is portable (Windows and POSIX probes, repo-derived paths and ports, no machine-specific assumptions), uses only a scratch settings file, cleans up every child on all exit paths, and has a watchdog. It also reproduces the documented cold-start upgrade boundary against a materialized pre-coordinator generation. Intentionally excluded from `npm test`: it needs the DSH peer packages, spawns real processes, and takes seconds rather than milliseconds.
+
 ## v1.4.2
 
 **Exact child-lifetime ownership and safe HMR generation handoff.** Correctness/reliability release: no new public API, materially stronger lifecycle semantics and HMR ownership guarantees.

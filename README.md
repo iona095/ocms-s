@@ -278,6 +278,20 @@ You can also run the suites separately:
 node --test tests/sync.test.mjs
 ```
 
+### Acceptance smoke test (real children, real HMR)
+
+`npm test` is fully deterministic: it drives the lifecycle and the DSH HMR generation coordinator through injected doubles. `npm run test:smoke` covers what only a real process can show:
+
+```powershell
+npm run test:smoke
+```
+
+It loads `dsh/host.mjs` through a real Cordis runtime, drives the real `ocmsLifecycleService` Remote methods, spawns a real `ui.mjs` child on an ephemeral port, replays the installed HMR ordering (`registry.delete()` whose disposer is **not** awaited, then the replacement fiber), and reads child liveness and listener cleanup from the operating system rather than from the code under test. It asserts, among other things, that a replacement generation publishes and spawns nothing while the retiring generation's child is alive, that OS process death and exit-driven reconciliation are distinct events (in the first sample where the process is gone, the retiring generation still reports `STOPPING` and still holds ownership), and that the documented cold-start upgrade boundary really is unserialized.
+
+It uses only a scratch settings file, never the production target, performs no Preview/Apply, kills every child it started on all exit paths, and has a watchdog so a hang can never wedge a machine. It is intentionally **not** part of `npm test`: it needs the DSH peer packages, spawns real processes, and takes seconds rather than milliseconds. Exit code 0 means every check passed (or the run was skipped for an environmental reason, which it says explicitly); 1 means at least one check failed. Options: `--host <path>`, `--prefix-ref <git ref>` (pre-coordinator generation to compare against, default `v1.4.1`), `--no-boundary`, `--timeout <seconds>`.
+
+The individual synthetic suites still run on their own:
+
 ```powershell
 $tests = Get-ChildItem .\tests\v1.3\*.test.mjs | Sort-Object Name | ForEach-Object FullName
 node --test $tests
@@ -746,6 +760,8 @@ ocms-s/
 │   └── index.html
 └── tests/
     ├── sync.test.mjs
+    ├── acceptance/
+    │   └── smoke.mjs     # npm run test:smoke (real child + real HMR ordering)
     ├── v1.3/
     │   ├── helpers.mjs
     │   ├── engine-contract.test.mjs
