@@ -15,6 +15,13 @@ export const VIEW_META = Object.freeze({
   order: 30,
 });
 
+// The Models tab renders its own release version so an operator can confirm
+// which build is actually loaded. This is a literal, not an import: dsh/client.mjs
+// must stay import-free (dsh/build-client.mjs enforces it), so package.json
+// remains the release single source of truth and
+// tests/v1.4/client-view.test.mjs pins the two together as a drift guard.
+export const PLUGIN_VERSION = '1.4.3';
+
 const STATES = Object.freeze(['OFFLINE', 'STARTING', 'ONLINE', 'STOPPING', 'EXTERNAL', 'ERROR']);
 
 function normalizeStatus(value) {
@@ -51,6 +58,8 @@ export function makeModelsView(h, api) {
     children.push(h('div', { style: { display: 'flex', alignItems: 'baseline', gap: '10px', padding: '8px 14px 0' } },
       h('div', { style: { fontSize: '16px', fontWeight: 600 } }, 'OCMS-S'),
       h('div', { style: { fontSize: '12px', opacity: 0.7 } }, 'OpenCode Model Sync'),
+      h('div', { style: { fontSize: '11px', opacity: 0.6, marginLeft: 'auto', fontVariantNumeric: 'tabular-nums' } },
+        'v' + PLUGIN_VERSION),
     ));
 
     if (state === 'EXTERNAL') {

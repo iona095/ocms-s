@@ -3,7 +3,10 @@
 // element factory, so no browser or React installation is needed. The mount
 // test proves ZERO start Remote calls (§50).
 import { test } from 'node:test';
+import fs from 'node:fs';
+import path from 'node:path';
 import {
+  REPO_ROOT,
   assert,
   loadClientSourceModule,
   probeClientSourceCapability,
@@ -148,4 +151,51 @@ test('Models tab registration: conversation.view, id models, order 30, label Mod
   assert.equal(m.VIEW_META.id, 'models');
   assert.equal(m.VIEW_META.label, 'Models');
   assert.equal(m.VIEW_META.order, 30);
+});
+
+// v1.4.3: the Models tab states its own build version, so an operator can
+// confirm which release is actually loaded instead of inferring it from
+// behavior. The drift guard is the real contract here: PLUGIN_VERSION is a
+// literal (dsh/client.mjs must stay import-free for the bundle build), so
+// package.json stays the release single source of truth and a release bump
+// that forgets the UI turns this suite RED.
+const versionBadges = (tree) => findInTree(tree, (n) => n.type === 'div' && n.props?.style?.marginLeft === 'auto');
+const badgeText = (node) => node.children.filter((c) => typeof c === 'string').join('');
+
+test('anchor: dsh/client.mjs exports PLUGIN_VERSION', { skip: !hasClient && 'capability missing: makeModelsView' }, async () => {
+  const m = await loadClientSourceModule();
+  assert.equal(typeof m.PLUGIN_VERSION, 'string', 'capability missing: dsh/client.mjs must export PLUGIN_VERSION');
+  assert.match(m.PLUGIN_VERSION, /^\d+\.\d+\.\d+$/, 'PLUGIN_VERSION is an exact semver literal, got ' + JSON.stringify(m.PLUGIN_VERSION));
+});
+
+test('PLUGIN_VERSION equals the package.json release version (drift guard)', { skip: !hasClient && 'capability missing: makeModelsView' }, async () => {
+  const m = await loadClientSourceModule();
+  const pkg = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8'));
+  assert.equal(m.PLUGIN_VERSION, pkg.version,
+    'PLUGIN_VERSION (' + String(m.PLUGIN_VERSION) + ') must equal package.json version (' + String(pkg.version) + ')');
+});
+
+test('header renders one right-aligned v-prefixed version badge', { skip: !hasClient && 'capability missing: makeModelsView' }, async () => {
+  const m = await loadClientSourceModule();
+  const { tree } = await rendered(OFFLINE);
+  const badges = versionBadges(tree);
+  assert.equal(badges.length, 1, 'exactly one right-aligned badge in the header, got ' + badges.length);
+  assert.equal(badgeText(badges[0]), 'v' + m.PLUGIN_VERSION, 'badge shows v + PLUGIN_VERSION');
+});
+
+test('the version badge renders in every lifecycle state, not just OFFLINE', { skip: !hasClient && 'capability missing: makeModelsView' }, async () => {
+  const m = await loadClientSourceModule();
+  for (const status of [OFFLINE, STARTING, ONLINE, STOPPING, EXTERNAL, ERROR]) {
+    const { tree } = await rendered(status);
+    const badges = versionBadges(tree);
+    assert.equal(badges.length, 1, 'exactly one version badge in state ' + status.state);
+    assert.equal(badgeText(badges[0]), 'v' + m.PLUGIN_VERSION, 'badge shows the version in state ' + status.state);
+  }
+});
+
+test('the version badge adds no settings path or planner surface (§31/§104)', { skip: !hasClient && 'capability missing: makeModelsView' }, async () => {
+  const { tree } = await rendered(OFFLINE);
+  const text = badgeText(versionBadges(tree)[0]);
+  assert.doesNotMatch(text, /settings\.yaml/i, 'version badge must not carry a settings path');
+  assert.doesNotMatch(text, /refresh preview|apply now/i, 'version badge must not carry planner surfaces');
 });

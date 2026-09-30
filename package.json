@@ -1,6 +1,6 @@
 {
   "name": "ocms-s",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "description": "OpenCode Model Sync simple script (contract v1.4.1). Manual Go/Zen model sync for DSH settings.yaml, plus optional DSH Models-tab lifecycle bundle.",
   "private": true,
   "type": "module",

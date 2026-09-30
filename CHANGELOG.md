@@ -4,11 +4,32 @@ All notable project-level changes are summarized here.
 
 This file is intentionally concise. The authoritative behavioral specification remains the current contract.
 
-## Unreleased
+## v1.4.3
 
-Post-v1.4.2 tooling. No released behavior changes.
+**The Models tab reports its own release version.** Cosmetic release: no lifecycle,
+sync, settings, or Remote contract change.
 
 ### Added
+
+- The Models tab header renders a right-aligned `v<version>` badge in every
+  lifecycle state, so the loaded release is confirmable from the UI instead of
+  inferred from behavior.
+- `dsh/client.mjs` exports `PLUGIN_VERSION` as an exact semver literal.
+  `dsh/client.mjs` must stay import-free for the bundle build, so this is a
+  literal rather than an import; a new test in `tests/v1.4/client-view.test.mjs`
+  pins it to the `package.json` release version, so a future release bump that
+  forgets the badge turns the suite RED rather than shipping a stale number.
+
+### Unchanged (explicit)
+
+- No lifecycle, ownership, HMR-coordinator, sync/planner, settings, or Remote
+  contract change. `dsh/host.mjs`, `dsh/lifecycle.mjs`, `sync.mjs`, `ui.mjs` and
+  `ui/index.html` are byte-unchanged.
+- The badge is a build-time constant, not Remote state: the Host status payload
+  and its strict codec are unchanged, and the browser still supplies only
+  `start(embedOrigin)`.
+
+### Shipped from the post-v1.4.2 queue
 
 - `tests/acceptance/smoke.mjs` and `npm run test:smoke`: an acceptance check that runs the committed plugin through a real Cordis runtime with a real `ui.mjs` child, the real `ocmsLifecycleService` Remote methods, the installed HMR ordering (`registry.delete()` not awaited, then the replacement fiber), and OS-level child-liveness/listener observation. It is portable (Windows and POSIX probes, repo-derived paths and ports, no machine-specific assumptions), uses only a scratch settings file, cleans up every child on all exit paths, and has a watchdog. It also reproduces the documented cold-start upgrade boundary against a materialized pre-coordinator generation. Intentionally excluded from `npm test`: it needs the DSH peer packages, spawns real processes, and takes seconds rather than milliseconds.
 - `--strict` (or `OCMS_SMOKE_STRICT=1`): for unattended runners, a missing prerequisite fails the acceptance run instead of reporting a green skip. Local and manual runs keep the explicit-skip behaviour.
