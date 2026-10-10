@@ -88,7 +88,7 @@ export function probeBundleBuildCapability() {
   return fs.existsSync(BUILD_SCRIPT_PATH);
 }
 
-// Anchor: built client bundle exists in rc.2 __ModuleLoader__ form.
+// Anchor: built client bundle exists in __ModuleLoader__ form.
 export function probeClientBundleCapability() {
   if (!fs.existsSync(CLIENT_BUNDLE_PATH)) return false;
   const head = fs.readFileSync(CLIENT_BUNDLE_PATH, 'utf8').slice(0, 200);

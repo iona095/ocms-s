@@ -1,15 +1,16 @@
-// v1.4 generation-handoff regression tests (contract v1.4 sections 19, 29, 38,
-// 45). Two Host plugin module generations can be live in one DSH process at the
-// same time: Cordis HMR imports the replacement, drops the retiring plugin from
-// the registry, and starts unloading the old fiber WITHOUT awaiting its
-// disposer. The retiring generation's owned child must be gone before the
-// replacement publishes, so one Host root can never have two children.
+// v1.4.4 HMR sequencing tests (DSH 0.2.1-alpha.2 authority).
 //
-// Each `?generation=` import below is a distinct ESM module instance of
-// dsh/host.mjs sharing one process-global coordinator, which is what the
-// installed HMR plugin produces. The fiber-based cases drive the real
-// ctx.plugin()/fiber.dispose() path HMR uses; the last case uses a minimal
-// context seam to exercise the lease protocol itself.
+// The installed 0.2.1-alpha.2 HMR orders replacement as:
+//   registry.delete(previous plugin)
+//   -> old fibers dispose
+//   -> await old fibers
+//   -> reload replacement
+// so the OCMS process-global generation coordinator is obsolete and removed.
+// These tests prove the required OCMS-layer property, not implementation text:
+// generations are never gated by OCMS itself; the async disposer (exact child
+// exit) is what keeps an old Fiber unsettled; the framework owns the reload
+// order. Cordis frees the service key synchronously on registry.delete and
+// rejects duplicate keys, which is why the framework deletes before reloading.
 import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
@@ -31,6 +32,8 @@ const skip = hostLoadError
   ? 'capability missing: dsh/host.mjs must load in this runtime (' + (hostLoadError && hostLoadError.message) + ')'
   : false;
 
+const COORDINATOR_KEY = Symbol.for('ocms-s/generation-coordinator');
+
 let generationCounter = 0;
 
 function generationModule() {
@@ -42,6 +45,23 @@ async function drain(ticks = 4) {
   for (let i = 0; i < ticks; i += 1) await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+function withTimeout(promise, ms, message) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
+  ]);
+}
+
+// registry.delete owns the old teardown asynchronously: join retirement by
+// polling the generation controller, never by re-disposing a detached fiber.
+async function joinRetired(gen, ms, message) {
+  const start = Date.now();
+  while (gen.currentController() !== null) {
+    if (Date.now() - start > ms) throw new Error(message);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 function portFree(port) {
   return new Promise((resolve) => {
     const socket = net.connect({ host: '127.0.0.1', port, timeout: 500 });
@@ -51,9 +71,9 @@ function portFree(port) {
   });
 }
 
-// A context seam with the shape apply() depends on: one root identity for the
-// per-root lease, an assertActive fence, and a service registry that records
-// instead of enforcing Cordis' one-provider rule.
+// Minimal context seam with the shape apply() depends on: a root identity and
+// a service registry that records instead of enforcing Cordis' one-provider
+// rule, so same-process generations can be observed without a framework.
 function seamContext(root) {
   const provided = [];
   return {
@@ -64,167 +84,119 @@ function seamContext(root) {
   };
 }
 
-// The first generation of a process takes the per-root lease immediately; a
-// replacement generation waits for the retiring generation's exact-exit
-// disposal. This is the HMR sequence: registry.delete -> fiber.dispose() without
-// awaiting, then the replacement's apply.
-test('a replacement generation publishes only after the retiring generation disposes', { skip }, async () => {
-  const root = new Context();
+// No OCMS-owned cross-generation gate may exist: applying (and disposing)
+// generations must never create a process-global coordinator.
+test('host creates no process-global generation coordinator', { skip }, async () => {
+  assert.equal(globalThis[COORDINATOR_KEY], undefined, 'precondition: no coordinator leaks in from another suite');
   const genA = await generationModule();
   const genB = await generationModule();
-
-  const fiberA = root.plugin(genA.apply, {});
-  await fiberA;
-  const controllerA = genA.currentController();
-  assert.ok(controllerA !== null, 'the first generation publishes without waiting');
-
-  const fiberB = root.plugin(genB.apply, {});
-  await drain();
-  assert.equal(genB.currentController(), null, 'no controller is published before the lease is free');
-
-  const retiring = fiberA.dispose();
-  await retiring;
-  await fiberB;
-  assert.ok(genB.currentController() !== null, 'the replacement publishes after the release');
-  assert.notEqual(genB.currentController(), controllerA, 'each generation owns a distinct controller');
-  assert.equal(genA.currentController(), null, 'the retired generation reports no controller');
-
-  await fiberB.dispose();
-  assert.equal(genB.currentController(), null, 'the disposed generation reports no controller');
-});
-
-// A/B/C: the middle generation is superseded while queued. Publishing it after
-// the release would put a stale controller behind the newest one.
-test('a superseded queued generation never publishes (no stale publication)', { skip }, async () => {
-  const root = new Context();
-  const genA = await generationModule();
-  const genB = await generationModule();
-  const genC = await generationModule();
-
-  const fiberA = root.plugin(genA.apply, {});
-  await fiberA;
-  const fiberB = root.plugin(genB.apply, {});
-  const fiberC = root.plugin(genC.apply, {});
-  await drain();
-  assert.equal(genB.currentController(), null, 'B is queued, not published');
-  assert.equal(genC.currentController(), null, 'C is queued, not published');
-
-  await fiberA.dispose();
-  await fiberC;
-  assert.ok(genC.currentController() !== null, 'the newest generation takes the free lease');
-  assert.equal(genB.currentController(), null, 'the superseded generation publishes nothing');
-
-  await fiberB;
-  assert.equal(genB.currentController(), null, 'the superseded generation stays unpublished after the handoff');
-  assert.ok(genC.currentController() !== null, 'the newest generation stays published');
-
-  await fiberB.dispose();
-  await fiberC.dispose();
-  assert.equal(genC.currentController(), null);
-});
-
-// A setup failure after the lease is taken must not strand it: the next
-// generation would otherwise wait forever for a holder that never published.
-test('a setup failure releases the lease instead of deadlocking the next generation', { skip, timeout: 30_000 }, async () => {
-  const root = new Context();
-  const genA = await generationModule();
-  const genB = await generationModule();
-
-  // Publication fails after the lease was already taken.
-  const broken = seamContext(root);
-  broken.reflect.provide = () => { throw new Error('ocms/hmr-test: publication refused'); };
-  await assert.rejects(genA.apply(broken, {}), /publication refused/);
-  assert.equal(genA.currentController(), null, 'a failed setup publishes no controller');
-
-  const fiberB = root.plugin(genB.apply, {});
-  await fiberB;
-  assert.ok(genB.currentController() !== null, 'the lease was free again, so the next generation loads');
-  await fiberB.dispose();
-});
-
-// Per-root isolation: a held lease on one root must not gate another root, and
-// the held root must still hand over only on its own release.
-test('per-root isolation: a held lease on one root does not gate another root', { skip }, async () => {
-  const rootA = new Context();
-  const rootB = new Context();
-  const genA = await generationModule();
-  const genB = await generationModule();
-  const genC = await generationModule();
-
-  const fiberA = rootA.plugin(genA.apply, {});
-  await fiberA;
-  assert.ok(genA.currentController() !== null, 'root A generation published');
-
-  const fiberB = rootA.plugin(genB.apply, {});
-  let settledB = false;
-  fiberB.then(() => { settledB = true; });
-  const fiberC = rootB.plugin(genC.apply, {});
-  await fiberC;
-  assert.ok(genC.currentController() !== null, 'root B published without waiting for root A');
-  await drain();
-  assert.equal(settledB, false, 'root A is still held by generation A');
-  assert.equal(genB.currentController(), null, 'the queued root A generation publishes nothing');
-
-  await fiberA.dispose();
-  await fiberB;
-  assert.ok(genB.currentController() !== null, 'root A hands over only after its holder disposes');
-  assert.ok(genC.currentController() !== null, 'root B was never gated by root A');
-
-  await fiberB.dispose();
-  await fiberC.dispose();
-});
-
-// Lease protocol at the seam: a repeated disposal cannot free a lease the next
-// generation already holds, and a duplicate apply of one module generation is
-// serialized instead of publishing a second controller beside the first.
-test('lease protocol: repeated disposal and duplicate applies never overlap', { skip }, async () => {
-  const root = new Context();
-  const genA = await generationModule();
-  const genB = await generationModule();
-
-  const ctxA = seamContext(root);
-  const disposeA = await genA.apply(ctxA, {});
-  const controllerA = genA.currentController();
-  assert.ok(controllerA !== null, 'the first apply published');
-  assert.equal(ctxA.provided.length, 1, 'exactly one service registration');
-
-  // A duplicate apply of the SAME module generation must queue, not publish.
-  const duplicate = genA.apply(seamContext(root), {});
-  await drain();
-  assert.equal(genA.currentController(), controllerA, 'the duplicate apply publishes nothing while the lease is held');
-  assert.equal(ctxA.provided.length, 1, 'still exactly one service registration');
-
-  // A different generation waits too.
-  let publishedB = false;
-  const applyB = genB.apply(seamContext(root), {}).then((dispose) => { publishedB = true; return dispose; });
-  await drain();
-  assert.equal(publishedB, false, 'a different generation is queued as well');
-
+  const disposeA = await genA.apply(seamContext(new Context()), {});
+  assert.ok(genA.currentController() !== null, 'generation A published');
+  const disposeB = await genB.apply(seamContext(new Context()), {});
+  assert.ok(genB.currentController() !== null, 'generation B published without waiting');
+  assert.equal(globalThis[COORDINATOR_KEY], undefined, 'no process-global lease coordinator may be created');
   await disposeA();
-  const disposeB = await applyB;
-  assert.ok(genB.currentController() !== null, 'B holds the lease after the release');
-  assert.equal(genA.currentController(), null, 'the retired generation reports no controller');
-
-  // Stale re-invocations of the retired disposer must not free B's lease.
-  await disposeA();
-  await disposeA();
-  await drain();
-  assert.ok(genB.currentController() !== null, 'B keeps the lease after stale disposals');
-  assert.equal(publishedB, true);
-
-  const disposeDuplicate = await duplicate;
-  await disposeDuplicate;
-  assert.equal(genA.currentController(), null, 'the duplicate apply never published a controller');
-  assert.ok(genB.currentController() !== null, 'B is unaffected by the duplicate apply');
-
   await disposeB();
-  assert.equal(genB.currentController(), null);
+  assert.equal(globalThis[COORDINATOR_KEY], undefined, 'disposal leaves no coordinator behind');
+  assert.equal(genA.currentController(), null, 'A retired');
+  assert.equal(genB.currentController(), null, 'B retired');
 });
 
-// End-to-end with a real child: while the retiring generation's ui.mjs child is
-// alive, the replacement stays unpublished, and only the exact child exit
-// completes disposal and hands the lease over.
-test('a live child keeps the replacement unpublished until its exact exit', {
+// After the framework deletes the previous plugin, the replacement apply must
+// publish immediately even while the old teardown is still unsettled. Any OCMS
+// wait here is the removed lease blocking the framework's own ordering.
+test('replacement publishes immediately after registry delete while old teardown is unsettled', { skip, timeout: 60_000 }, async () => {
+  const root = new Context();
+  const genA = await generationModule();
+  const genB = await generationModule();
+
+  const fiberA = root.plugin(genA.apply, {});
+  await withTimeout(fiberA, 10_000, 'ocms/hmr-test: generation A did not publish');
+  const controllerA = genA.currentController();
+  assert.ok(controllerA !== null, 'generation A published');
+
+  // Hold the old teardown pending: the framework deletion frees the service
+  // key synchronously, but retirement must stay open until this gate releases.
+  let releaseOld = null;
+  const gate = new Promise((resolve) => { releaseOld = resolve; });
+  const originalDispose = controllerA.dispose.bind(controllerA);
+  controllerA.dispose = () => gate.then(() => originalDispose());
+
+  let fiberB = null;
+  try {
+    root.registry.delete(genA.apply);
+    fiberB = root.plugin(genB.apply, {});
+    await withTimeout(fiberB, 10_000, 'ocms/hmr-test: replacement did not publish while the old teardown was unsettled (OCMS is still gating generations)');
+    assert.ok(genB.currentController() !== null, 'replacement published without waiting for old retirement');
+    assert.ok(genB.currentController() !== controllerA, 'replacement owns exactly one fresh controller');
+    assert.equal((await genB.currentController().status()).state, 'OFFLINE', 'replacement starts idle with no child');
+
+    releaseOld();
+    await joinRetired(genA, 10_000, 'ocms/hmr-test: old generation did not retire after disposal released');
+  } finally {
+    releaseOld?.();
+    await joinRetired(genA, 10_000, 'cleanup: old generation did not retire').catch(() => {});
+    if (fiberB !== null) await fiberB.dispose().catch(() => {});
+  }
+  assert.equal(genB.currentController(), null, 'replacement retired cleanly');
+});
+
+// Framework order delete -> await retirement -> reload yields exactly one
+// replacement controller and retires the previous generation.
+test('framework delete-await-reload order yields exactly-once replacement', { skip, timeout: 60_000 }, async () => {
+  const root = new Context();
+  const genA = await generationModule();
+  const genB = await generationModule();
+
+  const fiberA = root.plugin(genA.apply, {});
+  await withTimeout(fiberA, 10_000, 'ocms/hmr-test: generation A did not publish');
+  assert.ok(genA.currentController() !== null, 'generation A published');
+
+  root.registry.delete(genA.apply);
+  await joinRetired(genA, 10_000, 'ocms/hmr-test: old generation did not retire');
+  assert.equal(genA.currentController(), null, 'old generation retired');
+
+  const fiberB = root.plugin(genB.apply, {});
+  await withTimeout(fiberB, 10_000, 'ocms/hmr-test: replacement did not publish');
+  try {
+    assert.ok(genB.currentController() !== null, 'replacement published exactly once');
+    assert.equal(root.get('ocmsLifecycleService').typertRemote.namespace, 'ocms', 'single live service on the new namespace');
+  } finally {
+    await fiberB.dispose();
+  }
+  assert.equal(genB.currentController(), null, 'replacement retired cleanly');
+});
+
+// Cordis frees the service key synchronously on registry.delete and rejects
+// duplicate keys on one root, which is why the framework must delete the
+// previous plugin before reloading the replacement.
+test('service key freed on delete, duplicates rejected', { skip }, async () => {
+  const root = new Context();
+  class Dup extends Service {
+    constructor(ctx) { super(ctx, 'ocms-hmr-test-dup'); }
+  }
+  const first = (ctx) => { new Dup(ctx); };
+  const fiber = root.plugin(first, {});
+  await fiber;
+  root.registry.delete(first);
+  const second = (ctx) => { new Dup(ctx); };
+  const fiber2 = root.plugin(second, {});
+  await fiber2;
+  await assert.rejects(
+    (async () => { await root.plugin((ctx) => { new Dup(ctx); }, {}); })(),
+    /has been registered/,
+    'second provider on one root must be rejected',
+  );
+  await fiber2.dispose();
+  // The first fiber was already retired by registry.delete (which owns its
+  // teardown); a detached handle has no disposer left to call.
+});
+
+// End-to-end with a real child: the old teardown stays open (and the child
+// stays alive) until the exact child exit; only then does retirement complete
+// and the replacement proceed. No second child can become active: the
+// replacement starts idle and spawns nothing on its own.
+test('live child keeps old teardown open until its exact exit, then replacement proceeds', {
   skip: skip || (!fs.existsSync(path.join(REPO_ROOT, 'ui.mjs')) ? 'capability missing: ui.mjs' : false),
   timeout: 120_000,
 }, async (t) => {
@@ -238,54 +210,53 @@ test('a live child keeps the replacement unpublished until its exact exit', {
   const genB = await generationModule();
 
   let controllerA = null;
-  let disposeA = null;
-  let disposeB = null;
+  let fiberB = null;
+  let releaseOld = null;
   try {
     const fiberA = root.plugin(genA.apply, { port });
-    await fiberA;
+    await withTimeout(fiberA, 10_000, 'ocms/hmr-test: generation A did not publish');
     controllerA = genA.currentController();
     assert.ok(controllerA !== null, 'generation A published');
     const started = await controllerA.start({ embedOrigin: 'http://127.0.0.1:3080' });
     assert.equal(started.state, 'ONLINE', 'the real ui.mjs child became ready');
 
-    const fiberB = root.plugin(genB.apply, { port });
-    disposeB = fiberB.dispose;
-    let settledB = false;
-    const stateAtPublication = [];
-    const observedB = fiberB.then(async () => {
-      settledB = true;
-      // Sampled at publication: the retiring generation's controller can only
-      // report OFFLINE once its exact child exit released ownership.
-      stateAtPublication.push((await controllerA.status()).state);
-    });
-    await drain();
-    assert.equal(settledB, false, 'the replacement has not finished loading while the child is alive');
-    assert.equal(genB.currentController(), null, 'no controller published by the replacement');
+    // Hold retirement before the real termination so the pending window is
+    // observable: teardown open, child alive, replacement not requested.
+    const gate = new Promise((resolve) => { releaseOld = resolve; });
+    const originalDispose = controllerA.dispose.bind(controllerA);
+    controllerA.dispose = () => gate.then(() => originalDispose());
 
-    await fiberA.dispose();
-    assert.deepEqual(stateAtPublication, ['OFFLINE'], 'the replacement published only after the exact child exit');
-    assert.equal(genA.currentController(), null, 'the retired generation reports no controller');
-    assert.equal((await controllerA.status()).url, undefined, 'no stale ONLINE claim survives the handoff');
+    root.registry.delete(genA.apply);
+    const retired = (async () => { await joinRetired(genA, 60_000, 'late'); })();
+    let done = false;
+    void retired.then(() => { done = true; }, () => { done = true; });
+    await drain(8);
+    assert.equal(done, false, 'old teardown remains open while disposal is held');
+    assert.equal((await controllerA.status()).state, 'ONLINE', 'owned child still alive while disposal is held');
+    assert.equal(await portFree(port), false, 'child still owns its port while disposal is held');
+
+    releaseOld();
+    releaseOld = null;
+    await withTimeout(retired, 30_000, 'ocms/hmr-test: old teardown did not complete after the exact child exit');
+    assert.equal(genA.currentController(), null, 'retired generation reports no controller');
+    assert.equal(await portFree(port), true, 'exact exit freed the port');
     controllerA = null;
 
-    await observedB;
-    assert.equal(settledB, true, 'the replacement finished loading');
-    assert.ok(genB.currentController() !== null, 'the replacement publishes after the exact exit');
+    fiberB = root.plugin(genB.apply, { port });
+    await withTimeout(fiberB, 10_000, 'ocms/hmr-test: replacement did not publish after old retirement');
+    assert.ok(genB.currentController() !== null, 'replacement published after old retirement');
     const replacement = await genB.currentController().status();
-    assert.equal(replacement.state, 'OFFLINE', 'the replacement starts idle, never inheriting a stale ONLINE claim');
-    disposeA = null;
+    assert.equal(replacement.state, 'OFFLINE', 'replacement starts idle and spawned no second child');
   } finally {
+    releaseOld?.();
     // Never leave a real child behind, whatever the assertions did.
     if (controllerA !== null) {
       try { await controllerA.stop(); } catch { /* already gone or unconfirmable */ }
-    }
-    if (disposeA !== null) {
-      try { await disposeA(); } catch { /* pending until the exact exit */ }
     }
     const live = genB.currentController();
     if (live !== null && live !== undefined) {
       try { await live.stop(); } catch { /* nothing owned */ }
     }
-    if (disposeB !== null) await disposeB();
+    if (fiberB !== null) await fiberB.dispose();
   }
 });

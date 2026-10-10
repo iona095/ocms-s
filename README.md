@@ -4,7 +4,7 @@ A small, manual Node.js utility that synchronizes **OpenCode Go** and **OpenCode
 
 OCMS-S is deliberately narrow. It is **not** a daemon, scheduler, account checker, quota monitor, or model-probing system. v1.4 adds one optional DSH integration: a `Models` conversation-view tab that owns OCMS server lifecycle (status/Start/Stop) and iframe hosting only. All synchronization authority stays in the released engine and Web UX.
 
-Current project version: **v1.4.2**
+Current project version: **v1.4.4**
 
 Current authoritative specification:
 
@@ -225,8 +225,8 @@ Build and install into your normal `web` profile:
 ```powershell
 node dsh/build-client.mjs
 npm pack
-# records ocms-s-1.4.2.tgz; tarballs are never committed (*.tgz)
-dsh plugin --profile web add .\ocms-s-1.4.2.tgz
+# records ocms-s-1.4.4.tgz; tarballs are never committed (*.tgz)
+dsh plugin --profile web add .\ocms-s-1.4.4.tgz
 ```
 
 Then restart the DSH `web` profile and hard-refresh the browser. Expected:
@@ -240,26 +240,43 @@ SERVER OFFLINE
 
 Installing the bundle never starts OCMS-S. Only an explicit **Start Server** spawns the single owned child (`STARTING` → `ONLINE` after bounded readiness against `GET /api/state`); the iframe `src` comes only from trusted Host output. `Stop Server` returns to `OFFLINE`. Client-view unmount, session close, and tab switch never stop the child; Host/plugin disposal always stops the exact owned child (disposal invalidates any in-flight Start generation, so no child spawns after disposal and no disposed `STARTING` operation returns to `ONLINE`).
 
-Since v1.4.2, ownership of that child is held until the child's own `exit` event. A termination request, a `kill()` return value, a child `error` event, or elapsed time never release ownership and never produce `OFFLINE`: a child that cannot be confirmed dead stays owned in `ERROR`, and a later `Start` is refused (`ocms/start-failed`) instead of spawning a second child. While a generation is retiring, the status surface reports `STOPPING`, and a replacement generation loaded by DSH HMR publishes nothing and spawns nothing until the retiring generation's child has actually exited.
+Since v1.4.2, ownership of that child is held until the child's own `exit` event. A termination request, a `kill()` return value, a child `error` event, or elapsed time never release ownership and never produce `OFFLINE`: a child that cannot be confirmed dead stays owned in `ERROR`, and a later `Start` is refused (`ocms/start-failed`) instead of spawning a second child. Since v1.4.4 the obsolete old-runtime HMR lease is removed because DSH 0.2.1-alpha.2 awaits old Fiber disposal (including the exact-exit child cleanup, reported as `STOPPING` while retiring) before replacement; lifecycle Stop/disposal safety semantics remain intact.
 
 The embedded UI targets the standard production settings file unless the Host row carries a scratch `settingsPath` (development only). `Refresh Preview` only reads the five public sources; only an explicit confirmed Apply writes, and only to the displayed target. Do not Preview/Apply production settings unless you intend to modify them.
 
 DSH compatibility (do not shorten):
 
 ```text
-Top-level CLI:
-@deepseek-ai/dsh 0.1.5-rc.1
+Supported DSH target:
+OCMS-S v1.4.4 supports DSH 0.2.1-alpha.2 exactly.
+No support is claimed for 0.1.5-rc.x, 0.2.1-alpha.1, future 0.2.1 alphas, or >=0.2.1-alpha.2.
 
 Plugin-facing tested runtime:
 exact resolved DSH package graph recorded by the gate,
-with relevant internal packages at 0.1.5-rc.2.
+with relevant internal packages at 0.2.1-alpha.2 / 4.0.5-alpha.1 / 3.18.5-alpha.1.
 ```
 
-Bundle constraints: `dsh.bundle.patch` + `dsh.client { platform: "web", inject: [] }`, main `dsh/host.mjs`, pinned peers `@deepseek-ai/dsh-typert-protocol 0.1.5-rc.2`, `@deepseek-ai/cordis 4.0.2`, `@deepseek-ai/schemastery 3.18.2`. Legacy file-based plugin formats, prepare-tooling flows, and repository-based loader mechanisms are unsupported.
+Bundle constraints: `dsh.bundle.patch` + `dsh.client { platform: "web", inject: [] }`, main `dsh/host.mjs`, pinned peers `@deepseek-ai/dsh-typert-protocol 0.2.1-alpha.2`, `@deepseek-ai/cordis 4.0.5-alpha.1`, `@deepseek-ai/schemastery 3.18.5-alpha.1`, plus release metadata `engines.dsh 0.2.1-alpha.2` (exact peers remain the admission authority; no wildcard, caret, tilde, or range; no runtime fallback). Legacy file-based plugin formats, prepare-tooling flows, and repository-based loader mechanisms are unsupported.
 
-### Upgrading to v1.4.2 (two intentional boundaries)
+### OCMS-S v1.4.4 (DSH 0.2.1-alpha.2 compatibility release)
 
-1. **Restart DSH once.** A generation that was already running when v1.4.2 was installed does not participate in the generation handoff, so a hot reload across that one transition is not serialized: the replacement reaches publication while the predecessor is still serving and Cordis refuses the duplicate service registration. Restart the DSH profile after installing, and every later reload is serialized by the coordinator. Nothing else about the installation changes.
+v1.4.4 is a release-preparation update on the accepted DSH 0.2.1-alpha.2 compatibility implementation. It adds no new model-sync functionality and changes no sync/planner/Go/Zen transport semantics:
+
+```text
+- DSH 0.2.1-alpha.2 is the supported target (exact; see compatibility block above).
+- Peer graph repinned to the new runtime (exact pins above; engines.dsh metadata only).
+- Obsolete old-runtime HMR lease removed because current DSH awaits old Fiber disposal before replacement.
+- Strict browser Typert codecs now use create() schema factories.
+- Lifecycle Stop/disposal safety semantics remain intact (exact-exit ownership).
+- Live isolated Web smoke passed on the packed artifact (Models tab, OFFLINE/ONLINE/iframe/Stop).
+- No sync/planner/Go/Zen transport semantics changed.
+```
+
+Developer ergonomics (`npm run build`, `npm run register -- --profile <explicit>`, `npm run watch -- --profile <explicit>`, possibly safe `dev:web`) remain post-release follow-up and are not part of v1.4.4.
+
+### Upgrading to v1.4.2 (historical: two v1.4.2-era boundaries)
+
+1. **Restart DSH once.** A generation that was already running when v1.4.2 was installed does not participate in the generation handoff, so a hot reload across that one transition is not serialized: the replacement reaches publication while the predecessor is still serving and Cordis refuses the duplicate service registration. Restart the DSH profile after installing v1.4.2; under v1.4.2 every later reload was serialized by the OCMS-S coordinator (v1.4.4 removes that coordinator — see above). Nothing else about the installation changes.
 2. **An unconfirmable child blocks reload on purpose.** If an owned child never emits `exit`, plugin disposal stays pending, and so does activation of the replacement generation, until DSH's outer forced-exit boundary. This is the intended trade-off: a stalled plugin unload is preferable to two OCMS-S children serving one Host root.
 
 ---
@@ -270,7 +287,7 @@ Bundle constraints: `dsh.bundle.patch` + `dsh.client { platform: "web", inject: 
 npm test
 ```
 
-`npm test` runs the complete release suite with explicit cross-platform test paths (no wildcard expansion, so Windows/Node 20 behaves identically): 243 tests total — 70 legacy/v1.2 regression tests, 84 v1.3 engine/server/UI contract tests, 67 v1.4 DSH-integration tests (embed-origin, client view, lifecycle, ownership retention, compat, disposal-race, HMR generation handoff), and 14 v1.4.1 unsupported-protocol tests plus 2 v1.4.1 identity pins (241 pass, 0 fail, 2 authorized §14 skips).
+`npm test` runs the complete release suite with explicit cross-platform test paths (no wildcard expansion, so Windows/Node 20 behaves identically): 261 tests total — 70 legacy/v1.2 regression tests, 84 v1.3 engine/server/UI contract tests, 93 v1.4 DSH-integration tests (embed-origin, client view, lifecycle, ownership retention, compat, disposal-race, host/client compatibility, HMR sequencing), and 14 v1.4.1 unsupported-protocol tests (259 pass, 0 fail, 2 authorized §14 skips: the v1.3 byte-identity pins superseded by contract v1.4.1 §14).
 
 You can also run the suites separately:
 
@@ -278,19 +295,34 @@ You can also run the suites separately:
 node --test tests/sync.test.mjs
 ```
 
-### Acceptance smoke test (real children, real HMR)
+### Acceptance smoke test (real children, retirement ordering)
 
-`npm test` is fully deterministic: it drives the lifecycle and the DSH HMR generation coordinator through injected doubles. `npm run test:smoke` covers what only a real process can show:
+`npm test` is fully deterministic: it drives the lifecycle and the DSH 0.2.1-alpha.2 retirement ordering through injected doubles. `npm run test:smoke` covers what only a real process can show:
 
 ```powershell
 npm run test:smoke
 ```
 
-It loads `dsh/host.mjs` through a real Cordis runtime, drives the real `ocmsLifecycleService` Remote methods, spawns a real `ui.mjs` child on an ephemeral port, replays the installed HMR ordering (`registry.delete()` whose disposer is **not** awaited, then the replacement fiber), and reads child liveness and listener cleanup from the operating system rather than from the code under test. It asserts, among other things, that a replacement generation publishes and spawns nothing while the retiring generation's child is alive, that OS process death and exit-driven reconciliation are distinct events (in the first sample where the process is gone, the retiring generation still reports `STOPPING` and still holds ownership), and that the documented cold-start upgrade boundary really is unserialized.
+It loads `dsh/host.mjs` through a real Cordis runtime, drives the real `ocmsLifecycleService` Remote methods, spawns a real `ui.mjs` child on an ephemeral port, and reads child liveness and listener cleanup from the operating system rather than from the code under test. It runs two phases:
 
-It uses only a scratch settings file, never the production target, performs no Preview/Apply, kills every child it started on all exit paths, and has a watchdog so a hang can never wedge a machine. It is intentionally **not** part of `npm test`: it needs the DSH peer packages, spawns real processes, and takes seconds rather than milliseconds. Exit code 0 means every check passed (or the run was skipped for an environmental reason, which it says explicitly); 1 means at least one check failed. Options: `--host <path>`, `--prefix-ref <git ref>` (pre-coordinator generation to compare against, default `v1.4.1`), `--no-boundary`, `--strict`, `--timeout <seconds>`.
+```text
+PHASE 1  real Host / real child lifecycle
+         OFFLINE -> Start -> ONLINE -> GET /api/state -> Stop -> OFFLINE
+         -> child gone, listener released, second Stop refused (ocms/not-owned)
 
-`--strict` (equivalently `OCMS_SMOKE_STRICT=1`) is meant for unattended runners: a missing prerequisite then **fails** the run instead of reporting a green acceptance, so a skipped section can never pass CI. That is how the `acceptance smoke (real child, real HMR)` CI job runs it, on Windows / Node 22, with a bounded job timeout and full git history (the boundary phase needs the `v1.4.1` ref). The ordinary Node 20/22 test matrix is unchanged and remains the regression gate.
+PHASE 2  real-child retirement-before-replacement (DSH 0.2.1-alpha.2 ordering)
+         registry.delete(predecessor): the predecessor keeps owning its child
+         until the actual exit, no OFFLINE is reported while that child is
+         alive, the port is released, the old Fiber settles -> only then is the
+         replacement generation created -> the replacement begins OFFLINE with
+         no inherited child -> replacement Start/Stop proven on a new child
+```
+
+The smoke does not invoke `@deepseek-ai/dsh-hmr` itself and makes no claim about that package's internals: it validates OCMS-S real-child retirement-before-replacement behavior through a real Cordis runtime. The framework-facing ordering is separately covered by the accepted compatibility test layer (`tests/v1.4/hmr-generation.test.mjs`).
+
+It uses only a scratch settings file, never the production target, performs no Preview/Apply, kills every child it started on all exit paths, and has a watchdog so a hang can never wedge a machine. It is intentionally **not** part of `npm test`: it needs the DSH peer packages, spawns real processes, and takes seconds rather than milliseconds. Exit code 0 means every check passed (or the run was skipped for an environmental reason, which it says explicitly); 1 means at least one check failed. Options: `--host <path>`, `--strict`, `--timeout <seconds>`.
+
+`--strict` (equivalently `OCMS_SMOKE_STRICT=1`) is meant for unattended runners: a missing prerequisite then **fails** the run instead of reporting a green acceptance, so a skipped section can never pass CI. That is how the `acceptance smoke (real child, retirement ordering)` CI job runs it, on Windows / Node 22, with a bounded job timeout and an ordinary shallow checkout (no Git history or tag is required). The ordinary Node 20/22 test matrix is unchanged and remains the regression gate.
 
 The individual synthetic suites still run on their own:
 
@@ -716,12 +748,12 @@ OCMS-S v1.4 adds the DSH Models-tab lifecycle bundle on the unchanged v1.3 engin
 - synthetic live-source validation;
 - controlled production synchronization and idempotence verification (v1.2 line);
 - 84 v1.3 engine/server/UI contract tests plus manual scratch-browser hardening of the local Web UX.
-- 57 v1.4 DSH-integration tests, including the disposal-vs-Start race fence (no post-disposal spawn, no stale `ONLINE`, exact-child termination, permanent Start refusal after disposal), verified after an independent HOLD→PASS audit cycle.
+- 57 v1.4 DSH-integration tests as of the v1.4 release, including the disposal-vs-Start race fence (no post-disposal spawn, no stale `ONLINE`, exact-child termination, permanent Start refusal after disposal), verified after an independent HOLD→PASS audit cycle.
 - Normal `web`-profile installation acceptance: `Models` tab appears, initial `OFFLINE`, explicit Start → `ONLINE` embedded UI, Stop → `OFFLINE`.
 
 OCMS-S v1.4.1 adds generic unsupported-protocol containment on the v1.4 engine: protocol classification (`classifyProtocolSupport`) before model-record construction, the `SKIPPED_UNSUPPORTED_PROTOCOL` disposition (visible in Preview/CLI report and the Web UX), unchanged strict validation for supported protocols, and unsupported `-free` containment. Verified test-first: 14 v1.4.1 tests; full suite 227 tests (225 pass, 2 authorized §14 skips); live scratch Preview accepts Jev 1.13 / Jev 1.13 Free as explicitly skipped with plan `READY`.
 
-OCMS-S v1.4.2 makes child lifetime exact and the HMR handoff safe: ownership is released only by the owned child's own `exit` event, disposal completes only on that exit, Stop/disposal/Start-abort share one termination sequence, and a process-global per-root coordinator serializes DSH HMR generations so a replacement publishes and spawns nothing until its predecessor's child has actually exited. Verified test-first (controlled RED before each production edit) with 10 new tests, three independent adversarial audits, a clean-checkout suite run of 243 tests (241 pass, 0 fail, 2 authorized §14 skips), and a real-runtime smoke test with a real `ui.mjs` child, real Remote calls, the installed HMR ordering, and OS-level child-liveness observation. Two boundaries are intentional and documented above: one cold DSH restart after upgrading, and a deliberately blocking disposal for an unconfirmable child.
+OCMS-S v1.4.2 (historical) made child lifetime exact and the HMR handoff safe: ownership is released only by the owned child's own `exit` event, disposal completes only on that exit, and Stop/disposal/Start-abort share one termination sequence. v1.4.2 also added a process-global per-root coordinator that serialized DSH HMR generations; **v1.4.4 removes that coordinator**, because DSH 0.2.1-alpha.2 awaits old Fiber disposal before replacement (see above), and the acceptance smoke now proves the retirement-before-replacement ordering instead. v1.4.2 was verified test-first (controlled RED before each production edit) with 10 new tests, three independent adversarial audits, a clean-checkout suite run of 243 tests (241 pass, 0 fail, 2 authorized §14 skips) as measured at that release, and a real-runtime smoke test with a real `ui.mjs` child, real Remote calls, and OS-level child-liveness observation. Two v1.4.2-era boundaries are intentional and documented above: one cold DSH restart after upgrading, and a deliberately blocking disposal for an unconfirmable child.
 
 Future changes should remain narrow and contract-driven.
 
@@ -763,7 +795,7 @@ ocms-s/
 └── tests/
     ├── sync.test.mjs
     ├── acceptance/
-    │   └── smoke.mjs     # npm run test:smoke (real child + real HMR ordering)
+    │   └── smoke.mjs     # npm run test:smoke (real child + retirement ordering)
     ├── v1.3/
     │   ├── helpers.mjs
     │   ├── engine-contract.test.mjs
@@ -780,7 +812,8 @@ ocms-s/
     │   ├── ownership.test.mjs
     │   ├── compat.test.mjs
     │   ├── disposal-race.test.mjs
-    │   └── hmr-generation.test.mjs
+    │   ├── hmr-generation.test.mjs
+    │   └── host-client-compat.test.mjs
     └── v1.4.1/
         ├── helpers.mjs
         └── unsupported-protocol.test.mjs

@@ -1,33 +1,40 @@
-// OCMS-S acceptance smoke test: the real runtime, real children, real HMR
-// ordering. The synthetic suite (tests/v1.4/) proves the lifecycle and the
-// generation coordinator deterministically with injected doubles; this script
-// proves the same invariants against things only a real process can show:
+// OCMS-S acceptance smoke test: the real runtime, real children, real
+// retirement ordering.
+//
+// This script is the real-runtime companion to the synthetic suite
+// (tests/v1.4/), which proves the lifecycle and the HMR sequencing
+// deterministically with injected doubles. Here the same invariants are driven
+// against things only a real process can show:
 //
 //   * the committed dsh/host.mjs loaded through a real Cordis runtime and driven
 //     through the real ocmsLifecycleService Remote methods (status/start/stop);
 //   * a real ui.mjs child process on a real ephemeral port;
-//   * the installed @deepseek-ai/cordis-plugin-hmr ordering, i.e. replacement
-//     import -> synchronous registry.delete() whose fiber.dispose() is NOT
-//     awaited -> replacement Fiber creation;
+//   * real-child acceptance of the retirement-before-replacement ordering
+//     required by DSH 0.2.1-alpha.2: registry.delete(previous plugin) frees the
+//     service key and starts old-fiber disposal, the framework awaits that
+//     settlement, and only then is the replacement loaded/activated. OCMS owns
+//     no process-global generation coordinator and never serializes HMR itself;
 //   * child liveness and listener cleanup read from the operating system, not
 //     from anything the code under test reports;
-//   * that a replacement generation publishes nothing and spawns nothing while
-//     the retiring generation's child is alive, and that the OS process death
-//     and the exit-driven reconciliation are genuinely distinct events;
-//   * the documented cold-start upgrade boundary, reproduced with a real
-//     pre-coordinator generation and a real child.
+//   * that a retiring generation keeps owning its real child until the actual
+//     exit, that no OFFLINE is ever reported while that child is alive, and that
+//     the replacement is created only after the old fiber settled.
 //
-// Everything it creates (a scratch settings file, a scratch pre-coordinator
-// module tree, real children) is removed or killed on every exit path, so it is
-// safe to run on a developer machine. It never touches the production settings
-// file, never calls Preview/Apply, and never writes to the repository.
+// Scope: this smoke drives the OCMS layer through a real Cordis Context. It does
+// not invoke @deepseek-ai/dsh-hmr itself, so it makes no claim about that
+// package's internal implementation, and @deepseek-ai/dsh-hmr is not installed
+// here. The OCMS-layer sequencing contract is also covered deterministically by
+// the accepted tests/v1.4/hmr-generation.test.mjs compatibility tests, which
+// replay the same order against the real Cordis registry.
+//
+// Everything it creates (a scratch settings file, real children) is removed or
+// killed on every exit path, so it is safe to run on a developer machine. It
+// never touches the production settings file, never calls Preview/Apply, and
+// never writes to the repository.
 //
 // usage:
 //   node tests/acceptance/smoke.mjs [options]
 //     --host <path>        Host plugin to test          (default dsh/host.mjs)
-//     --prefix-ref <ref>   pre-coordinator generation to
-//                          materialize from git          (default v1.4.1)
-//     --no-boundary        skip the cold-start boundary phase
 //     --strict             fail instead of skipping when a required section
 //                          cannot run (also: OCMS_SMOKE_STRICT=1). Intended for
 //                          unattended runners, so a missing prerequisite can
@@ -53,8 +60,6 @@ const IS_WINDOWS = process.platform === 'win32';
 function parseArgs(argv) {
   const options = {
     host: path.join(REPO_ROOT, 'dsh', 'host.mjs'),
-    prefixRef: 'v1.4.1',
-    boundary: true,
     // Strict mode is for unattended runners: there, an environmental skip of a
     // required section must fail the run instead of reporting a green
     // acceptance. Local and manual runs keep the explicit-skip behaviour, which
@@ -65,8 +70,6 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i];
     if (flag === '--host') options.host = path.resolve(argv[++i]);
-    else if (flag === '--prefix-ref') options.prefixRef = argv[++i];
-    else if (flag === '--no-boundary') options.boundary = false;
     else if (flag === '--strict') options.strict = true;
     else if (flag === '--timeout') options.timeoutSeconds = Number(argv[++i]);
     else throw new Error('unknown option: ' + flag);
@@ -95,9 +98,6 @@ function check(label, ok, detail) {
     failures.push(label + (detail ? ' :: ' + JSON.stringify(detail) : ''));
     console.log('   FAIL  ' + label + (detail ? ' :: ' + JSON.stringify(detail) : ''));
   }
-}
-function skip(label, reason) {
-  console.log('   SKIP  ' + label + ' :: ' + reason);
 }
 
 // Every port this run may have bound, so cleanup can never miss a child.
@@ -198,6 +198,29 @@ async function waitFor(predicate, timeoutMs, stepMs = 25) {
   }
 }
 
+async function drain(ticks = 8) {
+  for (let i = 0; i < ticks; i += 1) await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function withTimeout(promise, ms, message) {
+  let timer = null;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); }),
+  ]).finally(() => { if (timer) clearTimeout(timer); });
+}
+
+// Cordis' registry.delete() disposes the old fibers but does not await them, so
+// retirement is joined by observing the generation's own controller, never by
+// re-disposing a detached fiber.
+async function joinRetired(gen, ms, message) {
+  const began = Date.now();
+  while (gen.currentController() !== null) {
+    if (Date.now() - began > ms) throw new Error(message);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 async function freePort() {
   return new Promise((resolve) => {
     const server = net.createServer();
@@ -215,35 +238,6 @@ function scratchSettings() {
   const file = path.join(dir, 'settings.yaml');
   fs.writeFileSync(file, 'llm:\n  unrelated: true\nllm-pi-ai:\n  providers: {}\n', 'utf8');
   return { dir, file };
-}
-
-// Materialize a pre-coordinator generation from a git ref so the cold-start
-// boundary can be reproduced without keeping stale copies in the repository.
-function materializePrefixGeneration(ref) {
-  const repoModules = path.join(REPO_ROOT, 'node_modules');
-  if (!fs.existsSync(repoModules)) return null;
-  let hostSource;
-  try {
-    hostSource = run('git', ['-C', REPO_ROOT, 'show', ref + ':dsh/host.mjs']);
-  } catch {
-    return null;
-  }
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ocms-smoke-prefix-'));
-  fs.mkdirSync(path.join(dir, 'dsh'), { recursive: true });
-  fs.mkdirSync(path.join(dir, 'ui'), { recursive: true });
-  fs.writeFileSync(path.join(dir, 'dsh', 'host.mjs'), hostSource, 'utf8');
-  // The pre-coordinator wrapper only lacked the coordinator; the lifecycle
-  // controller and the served module are the current, released ones.
-  for (const file of ['dsh/lifecycle.mjs', 'ui.mjs', 'package.json', 'sync.mjs', 'ui/index.html']) {
-    fs.copyFileSync(path.join(REPO_ROOT, file), path.join(dir, file));
-  }
-  // The relocated copy must resolve the same pinned peers as the repository.
-  try {
-    fs.symlinkSync(repoModules, path.join(dir, 'node_modules'), IS_WINDOWS ? 'junction' : 'dir');
-  } catch {
-    return null;
-  }
-  return path.join(dir, 'dsh', 'host.mjs');
 }
 
 // ---------------------------------------------------------------------------
@@ -279,6 +273,7 @@ if (!fs.existsSync(options.host)) {
 const scratch = scratchSettings();
 const hostUrl = new URL('file:///' + options.host.replace(/\\/g, '/')).href;
 const genA = await import(hostUrl);
+let releaseOld = null;
 
 try {
   // =====================================================================
@@ -302,6 +297,7 @@ try {
   const pidsOnline = await waitFor(() => (childPids(port1).length === 1 ? childPids(port1) : null), 15_000);
   step('phase 1: OS process table', { pids: pidsOnline });
   check('exactly one real ui.mjs child is alive', Array.isArray(pidsOnline) && pidsOnline.length === 1, { pids: pidsOnline });
+  check('the real child owns its port', listenerPids(port1).length === 1, { listeners: listenerPids(port1) });
 
   let apiOk = false;
   let apiDetail = null;
@@ -323,186 +319,146 @@ try {
   const goneAfterStop = await waitFor(() => (childPids(port1).length === 0 ? true : null), 15_000);
   step('phase 1: OS process table after Stop', { pids: childPids(port1) });
   check('the real child process is actually gone after Stop', goneAfterStop === true);
+  const releasedListener = await waitFor(() => (listenerPids(port1).length === 0 ? true : null), 15_000);
+  check('the listener is released after Stop', releasedListener === true, { listeners: listenerPids(port1) });
   const stopAgain = await serviceA1.stop().then(() => null, (err) => err);
   check('a second Stop is refused with ocms/not-owned', Boolean(stopAgain) && stopAgain.code === 'ocms/not-owned', { code: stopAgain && stopAgain.code });
   await fiberA1.dispose();
   check('an idle generation disposes with no child', genA.currentController() === null);
+  check('disposal leaves no real child behind', childPids(port1).length === 0, { pids: childPids(port1) });
 
   // =====================================================================
-  // PHASE 2 — HMR while the child is running, in the installed ordering
+  // PHASE 2 — real-child retirement-before-replacement ordering
+  // (DSH 0.2.1-alpha.2: registry.delete -> await old fiber settlement ->
+  //  replacement loaded/activated; OCMS owns no generation coordinator)
   // =====================================================================
   const port2 = await freePort();
   const root2 = new CordisContext();
-  const fiberOld = root2.plugin(genA.apply, { port: port2, settingsPath: scratch.file });
-  await fiberOld;
+  const genA2 = await import(hostUrl + '?genA=' + Date.now());
+  const fiberOld = root2.plugin(genA2.apply, { port: port2, settingsPath: scratch.file });
+  await withTimeout(fiberOld, 20_000, 'ocms/smoke: generation A did not publish');
   const serviceOld = root2.ocmsLifecycleService;
+  const controllerOld = genA2.currentController();
+  check('generation A published one service and one controller', Boolean(serviceOld) && controllerOld !== null);
+
   const started2 = await serviceOld.start('http://127.0.0.1:3080');
-  const pidsBeforeHmr = await waitFor(() => (childPids(port2).length === 1 ? childPids(port2) : null), 15_000);
-  const predecessorPid = Array.isArray(pidsBeforeHmr) ? pidsBeforeHmr[0] : null;
-  step('phase 2: predecessor ONLINE before HMR', { state: started2.state, pids: pidsBeforeHmr });
-  check('predecessor is ONLINE with exactly one child', started2.state === 'ONLINE' && predecessorPid !== null);
-  const controllerOld = genA.currentController();
+  const pidsBeforeRetirement = await waitFor(() => (childPids(port2).length === 1 ? childPids(port2) : null), 15_000);
+  const predecessorPid = Array.isArray(pidsBeforeRetirement) ? pidsBeforeRetirement[0] : null;
+  const listenersBefore = listenerPids(port2);
+  step('phase 2: generation A ONLINE before retirement', { state: started2.state, pids: pidsBeforeRetirement, listeners: listenersBefore });
+  check('generation A is ONLINE with exactly one real child', started2.state === 'ONLINE' && predecessorPid !== null, { pids: pidsBeforeRetirement });
+  check('the real child owns the port before retirement', listenersBefore.length === 1, { listeners: listenersBefore });
 
-  // The installed @deepseek-ai/cordis-plugin-hmr sequence, verbatim in shape:
-  // import the replacement, synchronously drop the retiring plugin (whose
-  // disposer is therefore not awaited), then create the replacement fiber.
-  const generationB = await import(hostUrl + '?hmr=' + Date.now());
-  const retiring = root2.registry.delete(genA.apply); // NOT awaited
-  const fiberNew = root2.plugin(generationB.apply, { port: port2, settingsPath: scratch.file }); // NOT awaited
-  let publishedAt = null;
-  const retiringStateAtPublication = [];
-  const observedNew = fiberNew.then(async () => {
-    publishedAt = Date.now();
-    retiringStateAtPublication.push((await controllerOld.status()).state);
-  });
-  step('phase 2: HMR sequence issued (registry.delete not awaited)', {
-    pids: childPids(port2),
-    replacementController: generationB.currentController() === null ? null : 'PUBLISHED',
-  });
-  check('the replacement generation published nothing synchronously', generationB.currentController() === null);
-  check('the retiring generation still owns its controller', genA.currentController() === controllerOld);
-  check('no second child was spawned by the replacement', childPids(port2).length === 1, { pids: childPids(port2) });
+  // Hold the old teardown open so the retirement window is observed rather than
+  // raced: retirement must stay open, and the real child alive, until release.
+  const gateOpen = new Promise((resolve) => { releaseOld = resolve; });
+  const originalDispose = controllerOld.dispose.bind(controllerOld);
+  controllerOld.dispose = () => gateOpen.then(() => originalDispose());
 
-  // Dense sampling of the handoff window. Everything in this loop is
-  // microsecond-cheap on purpose: the OS is asked directly (signal 0) whether
-  // the predecessor child is still alive. The blocking process-table scan runs
-  // only before and after the window so it can never starve the sampler.
+  // D. Request retirement through registry deletion. Cordis frees the service
+  // key synchronously and starts old-fiber disposal; it does not await it.
+  const runtime = root2.registry.delete(genA2.apply);
+  check('registry.delete removed the generation A runtime record', Boolean(runtime));
+  let settled = false;
+  const retirement = joinRetired(genA2, 30_000, 'ocms/smoke: generation A did not retire after the exact child exit');
+  void retirement.then(() => { settled = true; }, () => { settled = true; });
+
+  await drain(8);
+  let heldState = null;
+  try { heldState = (await controllerOld.status()).state; } catch { heldState = null; }
+  step('phase 2: retirement requested with teardown held open', { state: heldState, pids: childPids(port2), settled });
+  check('retirement stays open while the owned child is alive', settled === false);
+  check('the retiring generation still owns its controller', genA2.currentController() === controllerOld);
+  check('NEVER a false OFFLINE while the real child is alive', heldState === 'ONLINE', { state: heldState });
+  check('the real child is still alive and listening during retirement', processAlive(predecessorPid) === true && listenerPids(port2).length === 1);
+  check('no second child exists during retirement', childPids(port2).length === 1, { pids: childPids(port2) });
+
+  // E/F. Release the hold and sample the real retirement window: ownership is
+  // kept until the actual exit and no OFFLINE is reported while the OS still
+  // shows the child alive. The blocking process-table scan runs outside the
+  // sampling loop so it can never starve the sampler.
   const samples = [];
+  let samplingDone = false;
   const sampling = (async () => {
     for (;;) {
-      samples.push({
-        childAlive: processAlive(predecessorPid),
-        replacementPublished: generationB.currentController() !== null,
-        retiringState: (await controllerOld.status()).state,
-        retiringHasController: genA.currentController() !== null,
-      });
-      if (publishedAt !== null && Date.now() - publishedAt > 200) break;
+      let state = null;
+      try { state = (await controllerOld.status()).state; } catch { state = null; }
+      samples.push({ childAlive: processAlive(predecessorPid), state, hasController: genA2.currentController() !== null });
+      if (samplingDone) break;
       await new Promise((resolve) => setTimeout(resolve, 2));
     }
   })();
-
+  // Collect a guaranteed, non-vacuous slice of the held window first: while the
+  // gate is closed the child is alive by construction, so this cannot race.
+  const heldSamples = await waitFor(() => (samples.length >= 4 ? samples.length : null), 10_000);
+  check('the held retirement window was sampled with the real child alive', heldSamples !== null && samples.every((s) => s.childAlive === true), {
+    samples: samples.length,
+    childAlive: samples.filter((s) => s.childAlive).length,
+  });
+  releaseOld();
+  releaseOld = null;
   const childGone = await waitFor(() => (processAlive(predecessorPid) === false ? true : null), 30_000);
-  step('phase 2: predecessor child exit observed (OS signal 0)', { childGone, retiringState: (await controllerOld.status()).state });
-  check('the predecessor child actually exited (OS process check)', childGone === true);
-  await observedNew;
-  await retiring;
+  samplingDone = true;
   await sampling;
+  await withTimeout(retirement, 30_000, 'ocms/smoke: generation A retirement did not settle');
 
-  const whileChildAlive = samples.filter((s) => s.childAlive === true);
-  const stoppingSamples = samples.filter((s) => s.retiringState === 'STOPPING');
-  const firstPublication = samples.find((s) => s.replacementPublished === true);
-  const firstOsDeath = samples.find((s) => s.childAlive === false);
-  const stateSequence = samples.map((s) => s.retiringState).filter((value, index, all) => value !== all[index - 1]);
-  step('phase 2: handoff sampling summary', {
+  const aliveSamples = samples.filter((s) => s.childAlive === true);
+  step('phase 2: retirement window sampling summary', {
     samples: samples.length,
-    samplesWithChildAlive: whileChildAlive.length,
-    stateSequence,
-    firstOsDeathObserved: firstOsDeath,
-    firstReplacementPublication: firstPublication,
+    samplesWithChildAlive: aliveSamples.length,
+    stateSequence: samples.map((s) => s.state).filter((value, index, all) => value !== all[index - 1]),
   });
-  check('the retiring window was actually observed (non-vacuous sampling)', whileChildAlive.length > 0 && firstPublication !== undefined && samples.length > 5, {
-    withChildAlive: whileChildAlive.length,
+  check('the retirement window was actually observed (non-vacuous sampling)', samples.length >= 4 && aliveSamples.length >= 4, {
     samples: samples.length,
+    withChildAlive: aliveSamples.length,
   });
-  check('the retiring generation walked ONLINE -> STOPPING -> OFFLINE', stateSequence[0] === 'ONLINE' && stateSequence[stateSequence.length - 1] === 'OFFLINE' && stateSequence.length >= 2, { stateSequence });
-  check('NEVER the replacement published while the real child was alive', whileChildAlive.every((s) => s.replacementPublished === false), {
-    offenders: whileChildAlive.filter((s) => s.replacementPublished).length,
+  check('NEVER OFFLINE reported while the real child was alive', aliveSamples.every((s) => s.state !== 'OFFLINE'), {
+    offenders: aliveSamples.filter((s) => s.state === 'OFFLINE').length,
   });
-  check('NEVER OFFLINE reported while the real child was alive', whileChildAlive.every((s) => s.retiringState !== 'OFFLINE'), {
-    offenders: whileChildAlive.filter((s) => s.retiringState === 'OFFLINE').length,
+  check('ownership was held for every sample taken while the real child was alive', aliveSamples.every((s) => s.hasController === true), {
+    offenders: aliveSamples.filter((s) => s.hasController !== true).length,
   });
-  // The OS process disappears before its 'exit' event is delivered, so in that
-  // window ownership is legitimately still held and the replacement is still
-  // unpublished. That lag is the guarantee, not a defect.
-  check('in the exit-not-yet-observed window ownership was still held and the replacement unpublished', stoppingSamples.every((s) => s.retiringHasController === true && s.replacementPublished === false), {
-    stoppingSamples: stoppingSamples.length,
-    offenders: stoppingSamples.filter((s) => s.retiringHasController !== true || s.replacementPublished !== false).length,
-  });
-  check('the first replacement publication happened only once ownership was released', firstPublication !== undefined && firstPublication.retiringState === 'OFFLINE' && firstPublication.retiringHasController === false, { firstPublication });
-  check('the retiring generation kept its controller until its child exited', samples.filter((s) => s.retiringState !== 'OFFLINE').every((s) => s.retiringHasController === true));
+  check('the predecessor child actually exited (OS process check)', childGone === true);
+  check('the old fiber settled and the old controller is retired', genA2.currentController() === null);
+  const pidsAfterRetirement = childPids(port2);
+  const listenersAfterRetirement = listenerPids(port2);
+  step('phase 2: external confirmation after retirement', { pids: pidsAfterRetirement, listeners: listenersAfterRetirement });
+  check('the predecessor process is gone from the OS process table', pidsAfterRetirement.length === 0, { pids: pidsAfterRetirement });
+  check('the port became free once the exact child exit settled retirement', listenersAfterRetirement.length === 0, { listeners: listenersAfterRetirement });
 
-  const pidsAfterHandoff = childPids(port2);
-  const listenersAfterHandoff = listenerPids(port2);
-  step('phase 2: external confirmation after the handoff', { pids: pidsAfterHandoff, listeners: listenersAfterHandoff });
-  check('the predecessor process is gone from the OS process table', pidsAfterHandoff.length === 0, { pids: pidsAfterHandoff });
-  check('nothing is listening on the port after the handoff', listenersAfterHandoff.length === 0, { listeners: listenersAfterHandoff });
-  check('a second child was impossible: the replacement stayed unpublished for the whole window', whileChildAlive.every((s) => s.replacementPublished === false));
+  // G. ONLY after the old fiber settled: import and create generation B.
+  const genB2 = await import(hostUrl + '?genB=' + Date.now());
+  const fiberNew = root2.plugin(genB2.apply, { port: port2, settingsPath: scratch.file });
+  await withTimeout(fiberNew, 20_000, 'ocms/smoke: generation B did not publish after old settlement');
+  const serviceNew = root2.ocmsLifecycleService;
+  const replacementState = await serviceNew.status();
+  step('phase 2: generation B activated after settlement', { state: replacementState.state, serviceReplaced: serviceNew !== serviceOld });
+  check('generation B published exactly one service', Boolean(serviceNew));
+  check('the registered service instance is now generation B', serviceNew !== serviceOld);
+  check('generation B owns a fresh controller', genB2.currentController() !== null && genB2.currentController() !== controllerOld);
+  check('generation B starts OFFLINE', replacementState.state === 'OFFLINE');
+  check('generation B inherited no child', childPids(port2).length === 0, { pids: childPids(port2) });
 
-  const replacementState = await generationB.currentController().status();
-  step('phase 2: replacement activated', { state: replacementState.state, serviceReplaced: root2.ocmsLifecycleService !== serviceOld });
-  check('the replacement published only after the exact child exit', retiringStateAtPublication[0] === 'OFFLINE', { atPublication: retiringStateAtPublication });
-  check('the retiring generation reports no controller', genA.currentController() === null);
-  check('the replacement starts idle, never inheriting a stale ONLINE claim', replacementState.state === 'OFFLINE');
-  check('the registered service instance is now the replacement', root2.ocmsLifecycleService !== serviceOld);
-
-  const restarted = await root2.ocmsLifecycleService.start('http://127.0.0.1:3080');
+  // H. generation B drives exactly one NEW child.
+  const restarted = await serviceNew.start('http://127.0.0.1:3080');
   const pidsAfterRestart = await waitFor(() => (childPids(port2).length === 1 ? childPids(port2) : null), 15_000);
-  step('phase 2: replacement drives its own child', { state: restarted.state, pids: pidsAfterRestart });
-  check('the replacement generation can Start', restarted.state === 'ONLINE');
-  check('the replacement owns exactly one child', Array.isArray(pidsAfterRestart) && pidsAfterRestart.length === 1);
+  step('phase 2: generation B drives its own child', { state: restarted.state, pids: pidsAfterRestart });
+  check('generation B reaches ONLINE', restarted.state === 'ONLINE');
+  check('generation B owns exactly one child (no duplicate)', Array.isArray(pidsAfterRestart) && pidsAfterRestart.length === 1, { pids: pidsAfterRestart });
   check('the replacement child is a different process than the retired one', Array.isArray(pidsAfterRestart) && pidsAfterRestart[0] !== predecessorPid, { before: predecessorPid, after: pidsAfterRestart });
-  const stoppedNew = await root2.ocmsLifecycleService.stop();
-  check('the replacement generation can Stop', stoppedNew.state === 'OFFLINE');
+  check('the replacement child owns the port', listenerPids(port2).length === 1, { listeners: listenerPids(port2) });
+
+  // I. generation B Stop.
+  const stoppedNew = await serviceNew.stop();
+  step('phase 2: generation B Stop returned', stoppedNew);
+  check('generation B reaches OFFLINE', stoppedNew.state === 'OFFLINE');
+  check('the replacement child actually exited', (await waitFor(() => (childPids(port2).length === 0 ? true : null), 15_000)) === true, { pids: childPids(port2) });
+  check('the port is free again after generation B Stop', (await waitFor(() => (listenerPids(port2).length === 0 ? true : null), 15_000)) === true, { listeners: listenerPids(port2) });
+
+  // J. dispose generation B: no child survives.
   await fiberNew.dispose();
-  check('no child survives the replacement disposal', (await waitFor(() => (childPids(port2).length === 0 ? true : null), 15_000)) === true);
-
-  // =====================================================================
-  // PHASE 3 — the documented cold-start upgrade boundary, reproduced
-  // =====================================================================
-  if (!options.boundary) {
-    // Requested off, or strict mode forbids reporting a green acceptance that
-    // silently omitted a required section.
-    const reason = options.strict ? 'strict mode requires the cold-start boundary phase' : '--no-boundary';
-    step('phase 3 skipped', { reason });
-    if (options.strict) check('phase 3 (cold-start boundary) was required by strict mode', false, { reason });
-  } else {
-    const prefixHost = materializePrefixGeneration(options.prefixRef);
-    if (prefixHost === null) {
-      const reason = 'git ref not materializable: ' + options.prefixRef;
-      step('phase 3 skipped', { reason });
-      skip('cold-start boundary', 'pre-coordinator generation unavailable (needs a git checkout with ' + options.prefixRef + ')');
-      if (options.strict) check('phase 3 (cold-start boundary) was required by strict mode', false, {
-        reason,
-        hint: 'the runner must have git history and the ' + options.prefixRef + ' ref available (checkout with fetch-depth: 0)',
-      });
-    } else {
-      const genPre = await import(new URL('file:///' + prefixHost.replace(/\\/g, '/')).href);
-      const port3 = await freePort();
-      const root3 = new CordisContext();
-      const fiberPre = root3.plugin(genPre.apply, { port: port3, settingsPath: scratch.file });
-      await fiberPre;
-      const startedPre = await root3.ocmsLifecycleService.start('http://127.0.0.1:3080');
-      const pidsPre = await waitFor(() => (childPids(port3).length === 1 ? childPids(port3) : null), 15_000);
-      step('phase 3: pre-coordinator generation ONLINE (no coordinator)', { state: startedPre.state, pids: pidsPre });
-      check('a pre-coordinator generation still serves normally', startedPre.state === 'ONLINE' && pidsPre.length === 1);
-
-      // Hot-swapping a coordinator generation over it is deliberately NOT
-      // serialized: that is the documented upgrade boundary, demonstrated
-      // rather than asserted.
-      const genPost = await import(hostUrl + '?coldPost=' + Date.now());
-      const fiberPost = root3.plugin(genPost.apply, { port: port3, settingsPath: scratch.file });
-      let swapError = null;
-      await fiberPost.then(() => {}, (err) => { swapError = err; });
-      const pidsAfterSwap = childPids(port3);
-      const listenersAfterSwap = listenerPids(port3);
-      const predecessorState = (await genPre.currentController().status()).state;
-      step('phase 3: hot swap from a pre-coordinator generation', {
-        swapError: swapError ? String(swapError.message).slice(0, 80) : null,
-        pids: pidsAfterSwap,
-        listeners: listenersAfterSwap,
-        predecessorState,
-        predecessorServiceStillRegistered: Boolean(root3.ocmsLifecycleService),
-      });
-      check('BOUNDARY: the replacement reached publication immediately instead of queueing', Boolean(swapError) && /has been registered/.test(String(swapError.message)), { message: swapError && swapError.message });
-      check('BOUNDARY: the pre-coordinator child was still alive and serving during the swap', pidsAfterSwap.length === 1 && listenersAfterSwap.length === 1, { pids: pidsAfterSwap, listeners: listenersAfterSwap });
-      check('BOUNDARY: the pre-coordinator generation was still ONLINE with its service registered', predecessorState === 'ONLINE' && Boolean(root3.ocmsLifecycleService));
-      step('phase 3: boundary consequence', { note: 'one cold DSH/profile restart is required after upgrading from a pre-coordinator generation' });
-
-      try { await genPre.currentController().stop(); } catch { /* already gone */ }
-      await fiberPre.dispose();
-      check('the boundary demo leaves no child behind', (await waitFor(() => (childPids(port3).length === 0 ? true : null), 15_000)) === true, { pids: childPids(port3) });
-    }
-  }
+  check('generation B retired cleanly', genB2.currentController() === null);
+  check('no child survives the generation B disposal', (await waitFor(() => (childPids(port2).length === 0 ? true : null), 15_000)) === true, { pids: childPids(port2) });
 } catch (err) {
   // An unexpected fault (an unavailable OS probe, a refused port, a changed
   // service shape) is a failure of this acceptance run, not a crash.
@@ -510,6 +466,7 @@ try {
   console.log('   FAIL  unexpected error :: ' + (err && err.stack ? err.stack : String(err)));
 } finally {
   clearTimeout(watchdog);
+  if (releaseOld) releaseOld();
   for (const port of usedPorts) killChildren(port);
   try { fs.rmSync(scratch.dir, { recursive: true, force: true }); } catch { /* best effort */ }
 }

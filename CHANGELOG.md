@@ -4,6 +4,34 @@ All notable project-level changes are summarized here.
 
 This file is intentionally concise. The authoritative behavioral specification remains the current contract.
 
+## v1.4.4
+
+**DSH 0.2.1-alpha.2 compatibility release (release preparation; no new model-sync functionality).**
+
+OCMS-S v1.4.4 supports DSH 0.2.1-alpha.2 exactly. No support is claimed for 0.1.5-rc.x, 0.2.1-alpha.1, future 0.2.1 alphas, or >=0.2.1-alpha.2.
+
+### Changed
+
+- Release version 1.4.3 → 1.4.4 (`package.json`, `package-lock.json`, `dsh/client.mjs` `PLUGIN_VERSION`, rebuilt `dsh/client.js` via `dsh/build-client.mjs` only).
+- Peer graph repinned to the new runtime with exact pins (no wildcard, caret, tilde, or range): `@deepseek-ai/dsh-typert-protocol 0.2.1-alpha.2`, `@deepseek-ai/cordis 4.0.5-alpha.1`, `@deepseek-ai/schemastery 3.18.5-alpha.1`.
+- Added release metadata `engines.dsh: "0.2.1-alpha.2"` (metadata only; exact `peerDependencies` remain the admission authority; no runtime fallback, no fail-open unknown-version behavior, no zero-data fallback, no alternate old-runtime branches).
+- Removed the obsolete old-runtime HMR generation coordinator: current DSH awaits old Fiber disposal before replacement (`registry.delete` → fiber await → reload), so the framework owns replacement ordering and the OCMS disposer awaits the exact-exit child cleanup (`STOPPING` while retiring).
+- Strict browser Typert codecs now use `create()` schema factories returning `parse(value)` schemas.
+- Stale `rc.2` client/runtime comments corrected (no executable change beyond the accepted candidate plus explicit version/metadata changes).
+- Release-identity tests updated only: `PLUGIN_VERSION`/package/lock version drift guards now pin 1.4.4 plus an `engines.dsh == "0.2.1-alpha.2"` compatibility-metadata assertion; all accepted codec/HMR/lifecycle tests remain authoritative.
+
+### Unchanged (explicit)
+
+- Lifecycle Stop/disposal safety semantics remain intact (exact-exit ownership; no second child; no post-disposal spawn).
+- No sync/planner/Go/Zen transport semantics changed; no transport-ownership work; no lifecycle redesign; no client architecture change.
+- `dsh/lifecycle.mjs`, `sync.mjs`, `ui.mjs`, `ui/index.html`, model planner, and Go/Zen placement logic are unchanged.
+- Deferred developer ergonomics (`npm run build`, `npm run register -- --profile <explicit>`, `npm run watch -- --profile <explicit>`, possibly safe `dev:web`) remain post-release follow-up; no `npm publish`/`publish.sh`, no automatic DSH process killing, no implicit `web`-profile targeting was added.
+
+### Verification
+
+- Focused suites (compat, host-client-compat, client-view, hmr-generation, lifecycle, ownership, disposal-race, embed-origin, unsupported-protocol): 0 failures, no new skips.
+- Fresh `npm ci` exact resolved graph; full regression 0 failures (only the two authorized historical skips unless retired with explanation); rebuilt client proof (ModuleLoader format, import-free source path, React implicit external, `create()` factories, badge 1.4.4); packed `ocms-s-1.4.4.tgz` with disposable-profile admission and final packed-byte browser smoke (Models, v1.4.4, OFFLINE → Start → ONLINE → iframe → Stop → OFFLINE, child port released; no Preview/Apply).
+
 ## v1.4.3
 
 **The Models tab reports its own release version.** Cosmetic release: no lifecycle,

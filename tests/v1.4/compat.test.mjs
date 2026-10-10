@@ -62,7 +62,7 @@ test('no stale-plugin markers anywhere in tracked-repo text (§110)', () => {
   }
 });
 
-test('bundle manifest is rc.2 form: dsh.bundle.patch + dsh.client (§110)', () => {
+test('bundle manifest is ModuleLoader form: dsh.bundle.patch + dsh.client (§110)', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8'));
   assert.ok(pkg.dsh, 'package.json must declare a dsh block');
   assert.equal(pkg.dsh.bundle?.patch, './cordis.patch.yml');
@@ -78,18 +78,60 @@ test('cordis.patch.yml contributes one ordinary Plugin row for ocms-s (§110)', 
   assert.match(text, /name:\s*['"]?ocms-s/, 'patch row names ocms-s');
 });
 
-test('DSH dependency constraints pinned exactly to 0.1.5-rc.2 (§16/§120)', () => {
+// v1.4.4 DSH 0.2.1-alpha.2 target graph (implementation gate §5/§6).
+// Exact only: no wildcard, caret, tilde, or range. Old 0.1.5-rc.x support is
+// intentionally dropped, so the previous rc.2 pin is retired, not widened.
+const DSH_TARGET_PEERS = Object.freeze({
+  '@deepseek-ai/dsh-typert-protocol': '0.2.1-alpha.2',
+  '@deepseek-ai/cordis': '4.0.5-alpha.1',
+  '@deepseek-ai/schemastery': '3.18.5-alpha.1',
+});
+const RETIRED_PEER_VALUES = Object.freeze(['0.1.5-rc.2', '4.0.2', '3.18.2']);
+
+test('package peers target DSH 0.2.1-alpha.2 exactly (old runtime dropped)', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8'));
-  const blocks = [pkg.devDependencies ?? {}, pkg.peerDependencies ?? {}];
-  const pins = [];
-  for (const block of blocks) for (const [k, v] of Object.entries(block)) if (k.startsWith('@deepseek-ai/')) pins.push([k, v]);
-  assert.ok(pins.length > 0, 'at least one exact DSH pin must exist for the bundle');
-  // Contract §120 scopes the rc.2 pin to DSH packages; cordis/schemastery
-  // carry their own independent versioning lines and must simply be exact.
-  for (const [k, v] of pins) {
-    if (k.startsWith('@deepseek-ai/dsh-')) assert.equal(v, '0.1.5-rc.2', k + ' pinned exactly to rc.2 (got ' + v + ')');
-    else assert.doesNotMatch(String(v), /[\^~*]|>=|<=|x/, k + ' must be pinned exactly (got ' + v + ')');
+  assert.deepEqual(pkg.peerDependencies, { ...DSH_TARGET_PEERS }, 'peerDependencies must equal the exact 0.2.1-alpha.2 triple');
+  for (const [k, v] of Object.entries(pkg.peerDependencies)) {
+    assert.doesNotMatch(String(v), /[\^~*]|>=|<=|x/, 'peer ' + k + ' must be exact (got ' + v + ')');
   }
+  assert.equal(pkg.version, '1.4.4', 'release metadata stays frozen in this gate');
+  assert.equal(pkg.engines?.dsh, '0.2.1-alpha.2', 'engines.dsh declares the exact supported DSH target');
+});
+
+test('lockfile root peers mirror package.json and root version is 1.4.4', () => {
+  const lock = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package-lock.json'), 'utf8'));
+  assert.equal(lock.name, 'ocms-s', 'lock root name');
+  assert.equal(lock.version, '1.4.4', 'lock root version must equal package version 1.4.4');
+  const rootPkg = lock.packages?.[''];
+  assert.ok(rootPkg, 'lockfileVersion 3 root package entry must exist');
+  assert.equal(rootPkg.version, '1.4.4', 'lock root package version must equal package version 1.4.4');
+  assert.deepEqual(rootPkg.peerDependencies, { ...DSH_TARGET_PEERS }, 'lock root peers must mirror package.json peers');
+});
+
+test('lockfile resolves the exact target peer versions', () => {
+  const lock = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package-lock.json'), 'utf8'));
+  const entries = lock.packages ?? {};
+  assert.equal(entries['node_modules/@deepseek-ai/cordis']?.version, '4.0.5-alpha.1', 'resolved cordis');
+  assert.equal(entries['node_modules/@deepseek-ai/dsh-typert-protocol']?.version, '0.2.1-alpha.2', 'resolved typer protocol');
+  assert.equal(entries['node_modules/@deepseek-ai/schemastery']?.version, '3.18.5-alpha.1', 'resolved schemastery');
+});
+
+test('no retired 0.1.5-era peer authority remains in peer declarations', () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8'));
+  const lock = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package-lock.json'), 'utf8'));
+  for (const block of [pkg.peerDependencies ?? {}, lock.packages?.['']?.peerDependencies ?? {}]) {
+    for (const [k, v] of Object.entries(block)) {
+      for (const retired of RETIRED_PEER_VALUES) {
+        assert.notEqual(String(v), retired, 'retired peer value ' + retired + ' must not remain for ' + k);
+      }
+    }
+  }
+});
+
+test('compatibility metadata declares engines.dsh == "0.2.1-alpha.2" (release metadata, not peer admission)', () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8'));
+  assert.equal(pkg.engines?.dsh, '0.2.1-alpha.2', 'engines.dsh must equal the exact supported DSH target');
+  assert.ok(pkg.peerDependencies?.['@deepseek-ai/dsh-typert-protocol'], 'exact peers remain the admission authority');
 });
 
 test('no broad DSH version ranges (§16)', () => {
@@ -131,15 +173,15 @@ test('v1.4.1 identity: ui/index.html pinned to the reviewed v1.4.1 bytes', () =>
   assert.equal(sha, V141_UI_HTML_SHA, 'ui/index.html drift beyond the reviewed v1.4.1 implementation is forbidden');
 });
 
-test('built client bundle carries the rc.2 __ModuleLoader__ convention and no second React (§119/§121)', { skip: !fs.existsSync(CLIENT_BUNDLE_PATH) ? 'capability missing: dsh/client.js not built yet' : false }, () => {
+test('built client bundle carries the __ModuleLoader__ convention and no second React (§119/§121)', { skip: !fs.existsSync(CLIENT_BUNDLE_PATH) ? 'capability missing: dsh/client.js not built yet' : false }, () => {
   const text = fs.readFileSync(CLIENT_BUNDLE_PATH, 'utf8');
-  assert.match(text.slice(0, 400), /window\.__ModuleLoader__\.load/, 'bundle opens with the rc.2 ModuleLoader banner');
+  assert.match(text.slice(0, 400), /window\.__ModuleLoader__\.load/, 'bundle opens with the ModuleLoader banner');
   assert.doesNotMatch(text, /https?:\/\/[^'"]*(?:cdn|unpkg|jsdelivr)/i, 'no CDN runtime references');
   // Shared react is resolved through the loader require, not inlined.
   assert.ok(!/react-development|react-dom[^/]*\.min\.js/.test(text), 'no vendored react runtime copy');
 });
 
-test('root package version is 1.4.3 at release', () => {
+test('root package version is 1.4.4 at release', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8'));
-  assert.equal(pkg.version, '1.4.3');
+  assert.equal(pkg.version, '1.4.4');
 });

@@ -3,7 +3,7 @@
 //   - makeModelsView(h, api): the pure, hook-free Models view — unit-tested in
 //     Node with a plain element factory; renders one state payload and never
 //     issues lifecycle calls on its own.
-//   - createOcmsClient({ createElement, useState, useEffect }): the rc.2
+//   - createOcmsClient({ createElement, useState, useEffect }): the DSH
 //     plugin face — mounts the typed Remote contribution (ctx.remote.$mount)
 //     and registers the Models tab into the conversation.view slot.
 // The DSH chrome never surfaces settings paths, planner controls, or Preview/
@@ -20,7 +20,7 @@ export const VIEW_META = Object.freeze({
 // must stay import-free (dsh/build-client.mjs enforces it), so package.json
 // remains the release single source of truth and
 // tests/v1.4/client-view.test.mjs pins the two together as a drift guard.
-export const PLUGIN_VERSION = '1.4.3';
+export const PLUGIN_VERSION = '1.4.4';
 
 const STATES = Object.freeze(['OFFLINE', 'STARTING', 'ONLINE', 'STOPPING', 'EXTERNAL', 'ERROR']);
 
@@ -126,10 +126,11 @@ export function makeModelsView(h, api) {
   };
 }
 
-// Strict, dependency-free wire codecs: rc.2 $mount requires codec.mode
-// 'strict' with a parse(value) schema. Hand-rolled structural validators keep
-// the browser bundle free of extra module requests.
-// rc.2 mounted Remote methods resolve to the connection outcome wrapper
+// Strict, dependency-free wire codecs: DSH 0.2.1-alpha.2 mount admission
+// requires codec.mode 'strict' with a create() schema factory returning a
+// parse(value) schema. Hand-rolled structural validators keep the browser
+// bundle free of extra module requests.
+// Mounted Remote methods resolve to the connection outcome wrapper
 // { ok: true, value } | { ok: false, error } — the generated clients unwrap
 // it; a hand-built face must do the same.
 function unwrapOutcome(outcome, fallbackMessage) {
@@ -150,39 +151,47 @@ function requireString(value, max) {
   return value;
 }
 
+const originSchema = Object.freeze({
+  parse(value) {
+    const origin = requireString(value, 200);
+    if (!/^https?:\/\/(127\.0\.0\.1|localhost):\d{1,5}$/.test(origin)) {
+      throw new TypeError('embedOrigin must be an exact loopback origin');
+    }
+    return origin;
+  },
+});
+
 const originCodec = Object.freeze({
   mode: 'strict',
   typeSymbol: 'ocms-s#embedOrigin',
-  schema: Object.freeze({
-    parse(value) {
-      const origin = requireString(value, 200);
-      if (!/^https?:\/\/(127\.0\.0\.1|localhost):\d{1,5}$/.test(origin)) {
-        throw new TypeError('embedOrigin must be an exact loopback origin');
-      }
-      return origin;
-    },
-  }),
+  create() {
+    return originSchema;
+  },
+});
+
+const statusSchema = Object.freeze({
+  parse(value) {
+    if (!value || typeof value !== 'object') throw new TypeError('expected a LifecycleStatus object');
+    if (!STATES.includes(value.state)) throw new TypeError('unknown lifecycle state');
+    const out = { state: value.state };
+    if (value.port !== undefined) {
+      if (typeof value.port !== 'number') throw new TypeError('port must be a number');
+      out.port = value.port;
+    }
+    const keys = ['url', 'message', 'embedOrigin'];
+    for (const key of keys) {
+      if (value[key] !== undefined) out[key] = requireString(value[key], 512);
+    }
+    return out;
+  },
 });
 
 const statusCodec = Object.freeze({
   mode: 'strict',
   typeSymbol: 'ocms-s#LifecycleStatus',
-  schema: Object.freeze({
-    parse(value) {
-      if (!value || typeof value !== 'object') throw new TypeError('expected a LifecycleStatus object');
-      if (!STATES.includes(value.state)) throw new TypeError('unknown lifecycle state');
-      const out = { state: value.state };
-      if (value.port !== undefined) {
-        if (typeof value.port !== 'number') throw new TypeError('port must be a number');
-        out.port = value.port;
-      }
-      const keys = ['url', 'message', 'embedOrigin'];
-      for (const key of keys) {
-        if (value[key] !== undefined) out[key] = requireString(value[key], 512);
-      }
-      return out;
-    },
-  }),
+  create() {
+    return statusSchema;
+  },
 });
 
 export const OCMS_REMOTE_CONTRIBUTION = Object.freeze({
@@ -220,8 +229,8 @@ export const OCMS_REMOTE_CONTRIBUTION = Object.freeze({
   ]),
 });
 
-// The rc.2 plugin face. react arrives through the ModuleLoader factory
-// require (baseline implicit external); nothing else is requested.
+// The DSH plugin face. react arrives through the ModuleLoader factory
+// require (implicit external seed word); nothing else is requested.
 export function createOcmsClient({ createElement: h, useState, useEffect }) {
   const PureView = makeModelsView(h, null);
 
@@ -268,7 +277,7 @@ export function createOcmsClient({ createElement: h, useState, useEffect }) {
   const inject = ['slots', 'remote'];
 
   async function apply(ctx) {
-    // Fail loud on an rc.2 ABI we do not recognize (contract section 34).
+    // Fail loud on a DSH client ABI we do not recognize (contract section 34).
     if (!ctx.remote || typeof ctx.remote['$mount'] !== 'function') {
       throw new Error('ocms/incompatible-dsh: the mounted DSH client exposes no typed Remote mount seam');
     }

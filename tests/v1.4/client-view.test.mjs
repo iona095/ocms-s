@@ -23,10 +23,10 @@ test('anchor: dsh/client.mjs exports makeModelsView(h, api)', () => {
 });
 
 test('anchor: client bundle build script exists', () => {
-  assert.equal(hasBundleBuild, true, 'capability missing: dsh/build-client.mjs (rc.2 __ModuleLoader__ bundle producer)');
+  assert.equal(hasBundleBuild, true, 'capability missing: dsh/build-client.mjs (__ModuleLoader__ bundle producer)');
 });
 
-test('anchor: built dsh/client.js exists in rc.2 bundle form', () => {
+test('anchor: built dsh/client.js exists in ModuleLoader bundle form', () => {
   assert.equal(hasClientBundle, true, 'capability missing: built dsh/client.js with window.__ModuleLoader__.load banner');
 });
 
@@ -153,7 +153,7 @@ test('Models tab registration: conversation.view, id models, order 30, label Mod
   assert.equal(m.VIEW_META.order, 30);
 });
 
-// v1.4.3: the Models tab states its own build version, so an operator can
+// v1.4.4: the Models tab states its own build version, so an operator can
 // confirm which release is actually loaded instead of inferring it from
 // behavior. The drift guard is the real contract here: PLUGIN_VERSION is a
 // literal (dsh/client.mjs must stay import-free for the bundle build), so

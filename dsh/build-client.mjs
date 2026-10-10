@@ -1,4 +1,4 @@
-// Produces dsh/client.js in the rc.2 client-bundle convention
+// Produces dsh/client.js in the DSH ModuleLoader client-bundle convention (DSH 0.2.1-alpha.2 target)
 // (window.__ModuleLoader__.load banner; shared react stays external through
 // the factory require — no second React runtime, no bundler dependency).
 // dsh/client.mjs is import-free by design, so the transform is a strict,

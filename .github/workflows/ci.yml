@@ -47,21 +47,23 @@ jobs:
 
   acceptance-smoke:
     # Real-runtime acceptance: the committed plugin through a real Cordis
-    # runtime, a real ui.mjs child, the installed HMR ordering, and OS-level
-    # child-liveness observation. Windows / Node 22 only, because it spawns real
-    # processes and reads the Windows process table. The ordinary test matrix
-    # above is unchanged and stays the regression gate.
-    name: acceptance smoke (real child, real HMR)
+    # runtime, a real ui.mjs child, and OS-level child-liveness observation,
+    # exercising the retirement-before-replacement ordering required by
+    # DSH 0.2.1-alpha.2 (registry.delete -> await old fiber settlement ->
+    # replacement loaded/activated; OCMS owns no generation coordinator).
+    # This job does not invoke @deepseek-ai/dsh-hmr itself (that package is not
+    # installed here), so it makes no claim about its internals; the OCMS-layer
+    # sequencing contract is also covered by tests/v1.4/hmr-generation.test.mjs.
+    # Windows / Node 22 only, because it
+    # spawns real processes and reads the Windows process table. The ordinary
+    # test matrix above is unchanged and stays the regression gate.
+    name: acceptance smoke (real child, retirement ordering)
     runs-on: windows-latest
     timeout-minutes: 10
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          # The cold-start boundary phase materializes a pre-coordinator
-          # generation from the v1.4.1 ref, so history and tags must be present.
-          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
