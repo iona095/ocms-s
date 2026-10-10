@@ -10,3 +10,17 @@ OpenCode*Contract*.md -text
 # the identity tests fail despite zero content change (RC CI 34697528778).
 sync.mjs -text
 ui/index.html -text
+
+# v1.4.5 deterministic package bytes: canonicalize packaged text to LF so a
+# clean checkout, git archive/export, and an existing working tree all pack
+# identical bytes regardless of core.autocrlf. Narrow package-file rules only;
+# contract and v1.3 anchor rules above are preserved unchanged.
+LICENSE text eol=lf
+README.md text eol=lf
+package.json text eol=lf
+cordis.patch.yml text eol=lf
+dsh/client.mjs text eol=lf
+dsh/client.js text eol=lf
+dsh/host.mjs text eol=lf
+dsh/lifecycle.mjs text eol=lf
+ui.mjs text eol=lf

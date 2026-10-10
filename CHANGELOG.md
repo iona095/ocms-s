@@ -4,6 +4,18 @@ All notable project-level changes are summarized here.
 
 This file is intentionally concise. The authoritative behavioral specification remains the current contract.
 
+## v1.4.5
+
+**Package reproducibility repair (no runtime behavior change).**
+
+### Fixed
+
+- Packaged text files are canonicalized to LF in the Git tree, so `npm pack` is byte-identical across the primary worktree, `git archive`/export, and clean checkouts regardless of `core.autocrlf`. v1.4.4 exposed a Windows clean-checkout repacking mismatch that differed solely in line endings; v1.4.5 supersedes it for deterministic package reproduction.
+
+### Unchanged (explicit)
+
+- No runtime, model-sync, transport-ownership, contract, or Apply behavior change. DSH target remains exactly 0.2.1-alpha.2.
+
 ## v1.4.4
 
 **DSH 0.2.1-alpha.2 compatibility release (release preparation; no new model-sync functionality).**

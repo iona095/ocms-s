@@ -4,7 +4,7 @@ A small, manual Node.js utility that synchronizes **OpenCode Go** and **OpenCode
 
 OCMS-S is deliberately narrow. It is **not** a daemon, scheduler, account checker, quota monitor, or model-probing system. v1.4 adds one optional DSH integration: a `Models` conversation-view tab that owns OCMS server lifecycle (status/Start/Stop) and iframe hosting only. All synchronization authority stays in the released engine and Web UX.
 
-Current project version: **v1.4.4**
+Current project version: **v1.4.5**
 
 Current authoritative specification:
 
@@ -225,8 +225,8 @@ Build and install into your normal `web` profile:
 ```powershell
 node dsh/build-client.mjs
 npm pack
-# records ocms-s-1.4.4.tgz; tarballs are never committed (*.tgz)
-dsh plugin --profile web add .\ocms-s-1.4.4.tgz
+# records ocms-s-1.4.5.tgz; tarballs are never committed (*.tgz)
+dsh plugin --profile web add .\ocms-s-1.4.5.tgz
 ```
 
 Then restart the DSH `web` profile and hard-refresh the browser. Expected:
@@ -271,6 +271,10 @@ v1.4.4 is a release-preparation update on the accepted DSH 0.2.1-alpha.2 compati
 - Live isolated Web smoke passed on the packed artifact (Models tab, OFFLINE/ONLINE/iframe/Stop).
 - No sync/planner/Go/Zen transport semantics changed.
 ```
+
+### OCMS-S v1.4.5 (package reproducibility repair)
+
+v1.4.5 changes no runtime, model-sync, transport, contract, or Apply behavior relative to v1.4.4. It canonicalizes packaged text files to LF in the Git tree, so `npm pack` is byte-identical across the primary worktree, `git archive`/export, and clean checkouts regardless of `core.autocrlf`. The DSH target remains exactly 0.2.1-alpha.2. (v1.4.4 exposed a Windows clean-checkout repacking mismatch that differed solely in line endings; v1.4.5 supersedes it for deterministic package reproduction.)
 
 Developer ergonomics (`npm run build`, `npm run register -- --profile <explicit>`, `npm run watch -- --profile <explicit>`, possibly safe `dev:web`) remain post-release follow-up and are not part of v1.4.4.
 
