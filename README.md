@@ -276,7 +276,7 @@ v1.4.4 is a release-preparation update on the accepted DSH 0.2.1-alpha.2 compati
 
 v1.4.5 changes no runtime, model-sync, transport, contract, or Apply behavior relative to v1.4.4. It canonicalizes packaged text files to LF in the Git tree, so `npm pack` is byte-identical across the primary worktree, `git archive`/export, and clean checkouts regardless of `core.autocrlf`. The DSH target remains exactly 0.2.1-alpha.2. (v1.4.4 exposed a Windows clean-checkout repacking mismatch that differed solely in line endings; v1.4.5 supersedes it for deterministic package reproduction.)
 
-Developer ergonomics (`npm run build`, `npm run register -- --profile <explicit>`, `npm run watch -- --profile <explicit>`, possibly safe `dev:web`) remain post-release follow-up and are not part of v1.4.4.
+Developer ergonomics (`npm run build`, `npm run register -- --profile <explicit>`, `npm run watch`, possibly safe `dev:web`) remain post-release follow-up and are not part of v1.4.4.
 
 ### Upgrading to v1.4.2 (historical: two v1.4.2-era boundaries)
 
@@ -353,6 +353,52 @@ node --check tests\sync.test.mjs
 ```
 
 Tests use synthetic/temp settings files and must never modify production settings.
+
+---
+
+## Developer commands (post-v1.4.5 local workflow)
+
+These four npm commands are local post-v1.4.5 developer ergonomics for working
+from a checkout. They are not part of the v1.4.5 release artifact, they never
+perform OCMS-S Preview/Apply, and they never modify production settings.
+
+Build the browser client (canonical deterministic build, no DSH involved):
+
+```powershell
+npm run build
+```
+
+`npm run build` runs only `dsh/build-client.mjs`. Any forwarded argument is
+rejected before execution. It never touches a DSH profile or settings file.
+
+Register this local checkout into one explicitly selected, already existing
+DSH profile (no implicit `web` profile; missing profiles are never created):
+
+```powershell
+npm run register -- --profile <name>
+```
+
+Watch the two build inputs and rebuild on change (150 ms trailing debounce,
+one builder at a time; `Ctrl-C` cleans up only owned resources).
+`npm run watch` takes no profile argument and never interacts with DSH:
+
+```powershell
+npm run watch
+```
+
+Build, register and launch the selected profile in the foreground
+(`dsh --profile <name> --no-open`, build -> register -> launch).
+A port conflict is reported, never repaired by terminating another process;
+only a directly spawned child is ever signaled:
+
+```powershell
+npm run dev:web -- --profile <name>
+```
+
+Safety summary: explicit existing profiles only; no automatic process kill,
+no port recovery, no network fallback. `npm run dev:web` may change the
+selected development profile through DSH's normal plugin-add operation,
+which is not an authorization to modify production settings.
 
 ---
 

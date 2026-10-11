@@ -1509,4 +1509,57 @@ describe("R1 ownership and cancellation repair", () => {
     assert.equal(await stopping, 1, "fatal outcome authoritative");
     assert.equal(await h, 1, "main agrees");
   });
+  function dx5Section() {
+    return readFile(join(ROOT, "README.md"), "utf8").then((text) => {
+      const start = text.indexOf("## Developer commands");
+      assert.notEqual(start, -1, "developer commands section exists");
+      const rest = text.slice(start);
+      const next = rest.slice(20).search(/\n##\s|\n---\n/);
+      const section = (next === -1 ? rest : rest.slice(0, 20 + next)).toLowerCase();
+      return { full: text, section };
+    });
+  }
+  it("documents the four developer commands", async () => {
+    const doc = await dx5Section();
+    for (const cmd of ["npm run build", "npm run register", "npm run watch", "npm run dev:web"]) {
+      assert.ok(doc.section.includes(cmd), "section documents " + cmd);
+    }
+    assert.ok(doc.section.includes("--profile"), "profile flag documented");
+    assert.ok(doc.section.includes("dsh/build-client.mjs"), "canonical builder documented");
+  });
+  it("documents explicit-profile safety", async () => {
+    const doc = await dx5Section();
+    assert.ok(doc.section.includes("explicit"), "explicit profile required");
+    assert.ok(doc.section.includes("existing profile"), "existing profile only");
+    assert.ok(doc.section.includes("no implicit"), "no implicit web default");
+  });
+  it("documents watch isolation", async () => {
+    const doc = await dx5Section();
+    assert.ok(doc.section.includes("takes no profile"), "watch takes no profile");
+    assert.ok(doc.section.includes("never interacts with dsh"), "watch never touches DSH");
+    assert.ok(doc.section.includes("150 ms"), "debounce documented");
+  });
+  it("documents launch sequence and safety limits", async () => {
+    const doc = await dx5Section();
+    assert.ok(doc.section.includes("build -> register"), "stage order documented");
+    assert.ok(doc.section.includes("foreground"), "foreground launch documented");
+    assert.ok(doc.section.includes("--no-open"), "launch flag documented");
+    assert.ok(doc.section.includes("never repaired"), "conflicts reported not repaired");
+    assert.ok(doc.section.includes("no automatic process kill"), "no kill behavior");
+    assert.ok(doc.section.includes("directly spawned child"), "owned-child scope");
+    assert.ok(doc.section.includes("preview/apply"), "no Preview/Apply stated");
+    assert.ok(doc.section.includes("plugin-add"), "profile change mechanism stated");
+    assert.ok(doc.section.includes("post-v1.4.5"), "post-release scope stated");
+    assert.ok(doc.section.includes("not part of the v1.4.5 release"), "not in release artifact");
+  });
+  it("stale watch-with-profile syntax is gone", async () => {
+    const text = await readFile(join(ROOT, "README.md"), "utf8");
+    assert.ok(!text.includes("npm run watch -- --profile"), "stale syntax removed");
+  });
+  it("package manifest whitelist unchanged", async () => {
+    const pkg = JSON.parse(await readFile(join(ROOT, "package.json"), "utf8"));
+    assert.deepEqual(pkg.files, ["sync.mjs", "ui.mjs", "ui/", "dsh/host.mjs", "dsh/lifecycle.mjs", "dsh/client.js", "cordis.patch.yml"], "files whitelist");
+    assert.deepEqual(Object.keys(pkg.dependencies || {}), ["yaml", "node-html-parser"], "no new runtime dependency");
+    assert.equal(pkg.version, "1.4.5", "no version bump");
+  });
 });
