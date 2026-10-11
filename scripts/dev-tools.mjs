@@ -114,9 +114,12 @@ export async function readPackageName(repoRoot) {
   }
 }
 
-function defaultSpawn(file, args) {
+function defaultSpawn(file, args, notify, env) {
   return new Promise((done) => {
-    const child = spawn(file, args, { stdio: "inherit", shell: false });
+    const child = spawn(file, args, { stdio: "inherit", shell: false, env: env || process.env });
+    if (notify) {
+      try { notify(child); } catch { }
+    }
     child.on("error", () => done(127));
     child.on("exit", (code) => done(typeof code === "number" ? code : 1));
   });
@@ -173,6 +176,7 @@ export async function runRegister(options) {
   const resolveLaunch = options.resolveLaunch || resolveDshLaunch;
   const existsCheck = options.profileExists || profileExists;
   const spawnFn = options.spawnFn || defaultSpawn;
+  const onChild = options.onChild || null;
   const getPkgName = options.readPackageName || readPackageName;
   let profile;
   try {
@@ -211,7 +215,9 @@ export async function runRegister(options) {
     printError("ocms-s register: dsh launcher is not a safely invocable installation; refusing without shell fallback");
     return 1;
   }
-  return await spawnFn(launch.file, launch.argsPrefix.concat(["plugin", "--profile", profile, "add", repoRoot]));
+  const notify = onChild ? ((c) => { try { onChild(c); } catch { } }) : undefined;
+  const spawned = await spawnFn(launch.file, launch.argsPrefix.concat(["plugin", "--profile", profile, "add", repoRoot]), notify, env);
+  return typeof spawned === "number" ? spawned : spawned.code;
 }
 
 export function parseWatchArgs(argv) {
@@ -221,9 +227,9 @@ export function parseWatchArgs(argv) {
   return {};
 }
 
-export function startCanonicalBuild(repoRoot) {
+export function startCanonicalBuild(repoRoot, env) {
   const script = join(repoRoot, "dsh", "build-client.mjs");
-  const child = spawn(process.execPath, [script], { cwd: repoRoot, stdio: ["ignore", "pipe", "pipe"], shell: false });
+  const child = spawn(process.execPath, [script], { cwd: repoRoot, stdio: ["ignore", "pipe", "pipe"], shell: false, env: env || process.env });
   const done = new Promise((resolve) => {
     let stdout = "";
     let stderr = "";
@@ -391,6 +397,192 @@ export function runWatch(options) {
   return main;
 }
 
+const USAGE_DEVWEB = "Usage: npm run dev:web -- --profile <name>\n" + "  Build, register, and launch the selected DSH profile.\n" + "  --profile <name>   required; an existing profile (never created here)";
+const DEVWEB_TARGET_PREFIX = "ocms-s dev:web: target profile ";
+const DEVWEB_SIGINT_CODE = 130;
+const DEVWEB_SIGTERM_CODE = 143;
+
+export function parseDevWebArgs(argv) {
+  if (!Array.isArray(argv) || argv.length === 0) {
+    throw new Error(USAGE_DEVWEB);
+  }
+  if (argv[0] !== "--profile") {
+    throw new Error("unknown option " + JSON.stringify(argv[0]) + "\n" + USAGE_DEVWEB);
+  }
+  if (argv.length < 2) {
+    throw new Error("missing value for --profile\n" + USAGE_DEVWEB);
+  }
+  const value = argv[1];
+  if (typeof value !== "string" || value.length === 0 || value.charAt(0) === "-") {
+    throw new Error("invalid value for --profile\n" + USAGE_DEVWEB);
+  }
+  if (argv.length > 2) {
+    throw new Error("duplicate or unexpected argument " + JSON.stringify(argv[2]) + "\n" + USAGE_DEVWEB);
+  }
+  return { profile: value };
+}
+
+export function startForeground(file, args, cwd, env) {
+  const child = spawn(file, args, { stdio: "inherit", shell: false, detached: false, cwd: cwd || undefined, env: env || process.env });
+  const done = new Promise((resolve) => {
+    child.on("error", (err) => resolve({ code: 127, stderr: String(err) }));
+    child.on("exit", (code, signal) => {
+      if (typeof code === "number") { resolve({ code }); }
+      else { resolve({ code: null, signal: signal || "unknown" }); }
+    });
+  });
+  return { child, done };
+}
+
+function defaultRegisterStage(args) {
+  const done = (async () => {
+    const code = await runRegister({
+      argv: ["--profile", args.profile],
+      env: args.env,
+      repoRoot: args.repoRoot,
+      print: args.print,
+      printError: args.printError,
+      onChild: (c) => { try { args.track(c); } catch { } }
+    });
+    return { code };
+  })();
+  return { done };
+}
+
+export function runDevWeb(options) {
+  const opts = options || {};
+  const env = opts.env || process.env;
+  const repoRoot = opts.repoRoot || "";
+  const print = opts.print || ((msg) => console.log(msg));
+  const printError = opts.printError || ((msg) => console.error(msg));
+  const startBuild = opts.startBuild || ((root, _env) => startCanonicalBuild(root, _env || env));
+  const registerStage = opts.registerStage || defaultRegisterStage;
+  const findDsh = opts.findDsh || findDshExecutable;
+  const resolveLaunch = opts.resolveLaunch || resolveDshLaunch;
+  const startLaunch = opts.startLaunch || ((file, args) => startForeground(file, args, repoRoot, env));
+  const state = { shuttingDown: false, cancelled: false, cancelSignal: "", activeChild: null, signaled: [], settled: false, finalCode: 0 };
+  let resolveMain = null;
+  const main = new Promise((resolve) => { resolveMain = resolve; });
+  function cancelCode() {
+    return state.cancelSignal === "SIGTERM" ? DEVWEB_SIGTERM_CODE : DEVWEB_SIGINT_CODE;
+  }
+  function track(child) {
+    if (child) { state.activeChild = child; }
+  }
+  function signalOwned() {
+    const current = state.activeChild;
+    if (current && state.signaled.indexOf(current) === -1) {
+      state.signaled.push(current);
+      try { current.kill(); } catch { }
+    }
+  }
+  function finish(code) {
+    if (state.settled) { return; }
+    state.settled = true;
+    state.finalCode = code;
+    resolveMain(code);
+  }
+  async function shutdown(signalName) {
+    if (state.settled) { return state.finalCode; }
+    if (state.shuttingDown) { await main; return state.finalCode; }
+    state.shuttingDown = true;
+    state.cancelled = true;
+    state.cancelSignal = signalName || "SIGINT";
+    signalOwned();
+    await main;
+    return state.finalCode;
+  }
+  function beginBuild() {
+    try {
+      return startBuild(repoRoot);
+    } catch (err) {
+      return { child: null, done: Promise.resolve({ code: 1, stdout: "", stderr: String((err && err.message) || err) }) };
+    }
+  }
+  async function flow() {
+    let profile;
+    try {
+      profile = parseDevWebArgs(opts.argv === undefined ? [] : opts.argv).profile;
+      validateProfileName(profile);
+    } catch (err) {
+      printError(String((err && err.message) || err));
+      finish(1);
+      return;
+    }
+    print(DEVWEB_TARGET_PREFIX + JSON.stringify(profile));
+    const built = beginBuild();
+    state.activeChild = built.child || null;
+    let buildRes = null;
+    try {
+      buildRes = await built.done;
+    } catch (err) {
+      buildRes = { code: 1, stdout: "", stderr: String((err && err.message) || err) };
+    } finally {
+      state.activeChild = null;
+    }
+    if (state.cancelled) { finish(cancelCode()); return; }
+    if (!buildRes || buildRes.code !== 0) {
+      const out = String(((buildRes && buildRes.stdout) || "") + ((buildRes && buildRes.stderr) || ""));
+      if (out.length > 0) { printError(out); }
+      finish(buildRes && typeof buildRes.code === "number" ? buildRes.code : 1);
+      return;
+    }
+    if (buildRes.stdout && buildRes.stdout.trim().length > 0) {
+      print(buildRes.stdout.trim());
+    }
+    const reg = registerStage({ profile, env, repoRoot, print, printError, track });
+    let regRes = null;
+    try {
+      regRes = await reg.done;
+    } catch (err) {
+      regRes = { code: 1 };
+    } finally {
+      state.activeChild = null;
+    }
+    if (state.cancelled) { finish(cancelCode()); return; }
+    if (!regRes || regRes.code !== 0) {
+      finish(regRes && typeof regRes.code === "number" ? regRes.code : 1);
+      return;
+    }
+    const shim = await findDsh(env);
+    if (!shim) {
+      printError("ocms-s dev:web: dsh executable not found on PATH; install DSH 0.2.1-alpha.2 (no download attempted)");
+      finish(1);
+      return;
+    }
+    const launch = await resolveLaunch(shim);
+    if (!launch || launch.shell !== false || typeof launch.file !== "string" || !Array.isArray(launch.argsPrefix)) {
+      printError("ocms-s dev:web: dsh launcher is not a safely invocable installation; refusing without shell fallback");
+      finish(1);
+      return;
+    }
+    if (state.cancelled) { finish(cancelCode()); return; }
+    const started = startLaunch(launch.file, launch.argsPrefix.concat(["--profile", profile, "--no-open"]));
+    state.activeChild = started.child || null;
+    let webRes = null;
+    try {
+      webRes = await started.done;
+    } catch (err) {
+      webRes = { code: 1 };
+    } finally {
+      state.activeChild = null;
+    }
+    if (state.cancelled) { finish(cancelCode()); return; }
+    if (!webRes || typeof webRes.code !== "number") {
+      printError("ocms-s dev:web: child terminated by " + String((webRes && webRes.signal) || "signal"));
+      finish(1);
+      return;
+    }
+    finish(webRes.code);
+  }
+  main.shutdown = shutdown;
+  flow().catch((err) => {
+    try { printError(String((err && err.message) || err)); } catch { }
+    finish(1);
+  });
+  return main;
+}
+
 const invokedPath = process.argv[1] ? resolve(process.argv[1]) : "";
 const invokedAsMain = invokedPath === fileURLToPath(import.meta.url);
 if (invokedAsMain) {
@@ -410,6 +602,17 @@ if (invokedAsMain) {
     process.removeListener("SIGINT", onWatchSignal);
     process.removeListener("SIGTERM", onWatchSignal);
     process.exitCode = watchCode;
+  } else if (sub === "dev:web") {
+    const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+    const handle = runDevWeb({ argv: cliArgs.slice(1), env: process.env, repoRoot: root });
+    const onDevSigInt = () => { void handle.shutdown("SIGINT"); };
+    const onDevSigTerm = () => { void handle.shutdown("SIGTERM"); };
+    process.on("SIGINT", onDevSigInt);
+    process.on("SIGTERM", onDevSigTerm);
+    const devCode = await handle;
+    process.removeListener("SIGINT", onDevSigInt);
+    process.removeListener("SIGTERM", onDevSigTerm);
+    process.exitCode = devCode;
   } else {
     console.error("ocms-s dev-tools: unknown subcommand " + JSON.stringify(sub || "") + "\n" + USAGE_REGISTER);
     process.exitCode = 1;

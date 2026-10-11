@@ -277,7 +277,7 @@ describe("DX-2 explicit-profile local registration", () => {
       await rm(fake.bin, { recursive: true, force: true });
     }
     const src = await readFile(DEVTOOLS, "utf8");
-    assert.ok(!src.includes("web"), "implementation carries no default");
+    assert.ok(!src.includes(JSON.stringify("web")), "implementation carries no quoted web default");
   });
   it("metacharacter repo root arrives as one literal argument", { timeout: 120000 }, async () => {
     const trap = "OCMS_DX2_SENTINEL";
@@ -349,6 +349,454 @@ describe("DX-2 explicit-profile local registration", () => {
     } finally {
       await rm(lonely, { recursive: true, force: true });
     }
+  });
+});
+
+describe("DX-4 safe explicit-profile dev web launcher", () => {
+  const DEVTOOLS = join(ROOT, "scripts", "dev-tools.mjs");
+  const CANONICAL_DEVWEB = "node scripts/dev-tools.mjs dev:web";
+  const DEV_TARGET = "ocms-s dev:web: target profile ";
+  const REG_TARGET = "ocms-s register: target profile ";
+  async function dwHome() {
+    return await mkdtemp(join(tmpdir(), "ocms-dx4-"));
+  }
+  async function dwAbsent(p) {
+    try { await stat(p); return false; } catch { return true; }
+  }
+  async function dwProfile(home, name) {
+    const dir = join(home, "profiles", name);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "package.json"), JSON.stringify({ name: "dsh-profile-" + name, private: true }) + "\n", "utf8");
+    return dir;
+  }
+  async function dwFakeBin() {
+    const bin = await mkdtemp(join(tmpdir(), "ocms-dx4bin-"));
+    const log = join(bin, "argv.log");
+    const pkgDir = join(bin, "node_modules", "@deepseek-ai", "dsh");
+    await mkdir(join(pkgDir, "lib"), { recursive: true });
+    const src = "const fs = require(" + JSON.stringify("node:fs") + ");\n"
+      + "const out = process.env[" + JSON.stringify("OCMS_FAKE_DSH_LOG") + "];\n"
+      + "const errText = process.env[" + JSON.stringify("OCMS_FAKE_DSH_STDERR") + "] || " + JSON.stringify("") + ";\n"
+      + "const isWeb = process.argv.indexOf(" + JSON.stringify("--no-open") + ") !== -1;\n"
+      + "if (isWeb && errText) { process.stderr.write(errText); }\n"
+      + "const code = isWeb ? Number(process.env[" + JSON.stringify("OCMS_FAKE_DSH_EXIT") + "] || " + JSON.stringify("0") + ") : 0;\n"
+      + "fs.appendFileSync(out, JSON.stringify(process.argv.slice(2)) + " + JSON.stringify("\n") + ");\n"
+      + "process.exit(code);\n";
+    await writeFile(join(pkgDir, "lib", "bin.js"), src, "utf8");
+    const fakePkg = { name: "@deepseek-ai/dsh", version: "0.0.0-test", bin: { dsh: "lib/bin.js" } };
+    await writeFile(join(pkgDir, "package.json"), JSON.stringify(fakePkg, null, 2) + "\n", "utf8");
+    await writeFile(join(bin, "dsh.cmd"), "@echo off\nrem fake npm shim\n", "utf8");
+    await writeFile(join(bin, "dsh"), "#!/bin/sh\n# fake shim\n", "utf8");
+    try { await chmod(join(bin, "dsh"), 0o755); } catch { }
+    return { bin, log };
+  }
+  async function dwFixture() {
+    const root = await mkdtemp(join(tmpdir(), "ocms-dx4root-"));
+    await mkdir(join(root, "dsh"), { recursive: true });
+    const builderSrc = await readFile(join(ROOT, "dsh", "build-client.mjs"), "utf8");
+    await writeFile(join(root, "dsh", "build-client.mjs"), builderSrc, "utf8");
+    await writeFile(join(root, "dsh", "client.mjs"), "export const MARK = 1;\n", "utf8");
+    await writeFile(join(root, "package.json"), JSON.stringify({ name: "ocms-s", private: true, type: "module" }) + "\n", "utf8");
+    return root;
+  }
+  function dwPathEnv(bin) {
+    const sep = process.platform === "win32" ? ";" : ":";
+    return bin + sep + process.env.PATH;
+  }
+  function dwEnv(home, fake, extra) {
+    return Object.assign({}, process.env, { DSH_HOME: home, PATH: dwPathEnv(fake.bin), OCMS_FAKE_DSH_LOG: fake.log }, extra || {});
+  }
+  async function dwLoggedArgv(log) {
+    const lines = (await readFile(log, "utf8")).trim().split("\n");
+    return lines.map((l) => JSON.parse(l));
+  }
+  function dwDeferred() {
+    const rec = { started: 0 };
+    let rel = null;
+    const done = new Promise((r) => { rel = r; });
+    const child = { killed: 0, kill() { this.killed += 1; return true; } };
+    const start = () => { rec.started += 1; return { child, done }; };
+    const release = (res) => { rel(res); };
+    return { rec, start, release, child };
+  }
+  it("package exposes dev:web command", async () => {
+    const pkg = JSON.parse(await readFile(join(ROOT, "package.json"), "utf8"));
+    assert.equal(pkg.scripts && pkg.scripts["dev:web"], CANONICAL_DEVWEB, "scripts.dev:web must be exactly the shared CLI");
+  });
+  it("missing profile fails before any stage", async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    for (const argv of [[], ["--profile"]]) {
+      let builds = 0;
+      let usage = "";
+      const h = mod.runDevWeb({ argv, repoRoot: ROOT, print: () => {}, printError: (m) => { usage += m; }, startBuild: () => { builds += 1; return { child: null, done: Promise.resolve({ code: 0, stdout: "", stderr: "" }) }; } });
+      const code = await h;
+      assert.notEqual(code, 0, "missing profile must fail");
+      assert.ok(usage.includes("Usage"), "usage on missing profile");
+      assert.equal(builds, 0, "no build without profile");
+    }
+  });
+  it("malformed profile fails before any side effect", async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const home = await dwHome();
+    try {
+      for (const name of ["", "-x", ".", "..", "node_modules", "a/b", "desktop", "has space"]) {
+        let builds = 0;
+        const h = mod.runDevWeb({ argv: ["--profile", name], env: Object.assign({}, process.env, { DSH_HOME: home }), repoRoot: ROOT, print: () => {}, printError: () => {}, startBuild: () => { builds += 1; return { child: null, done: Promise.resolve({ code: 0, stdout: "", stderr: "" }) }; } });
+        assert.notEqual(await h, 0, "must reject " + JSON.stringify(name));
+        assert.equal(builds, 0, "no build for malformed profile");
+      }
+      assert.ok(await dwAbsent(join(home, "profiles")), "no profile created");
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+  it("duplicate and unknown flags fail", async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    for (const argv of [["--profile", "a", "--profile", "b"], ["--unknown"], ["--profile=a"], ["--profile", "dev-ocms", "--extra"]]) {
+      let builds = 0;
+      const h = mod.runDevWeb({ argv, repoRoot: ROOT, print: () => {}, printError: () => {}, startBuild: () => { builds += 1; return { child: null, done: Promise.resolve({ code: 0, stdout: "", stderr: "" }) }; } });
+      assert.notEqual(await h, 0, "must reject " + JSON.stringify(argv));
+      assert.equal(builds, 0, "no build on flag error");
+    }
+  });
+  it("--profile web works only when explicitly typed", { timeout: 60000 }, async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const home = await dwHome();
+    const fake = await dwFakeBin();
+    const root = await dwFixture();
+    try {
+      await dwProfile(home, "web");
+      const prints = [];
+      const h = mod.runDevWeb({ argv: ["--profile", "web"], env: dwEnv(home, fake), repoRoot: root, print: (m) => prints.push(m), printError: () => {} });
+      assert.equal(await h, 0, "explicit web succeeds");
+      const calls = await dwLoggedArgv(fake.log);
+      assert.deepEqual(calls[1], ["--profile", "web", "--no-open"], "literal web launch");
+      assert.ok(prints.includes(DEV_TARGET + JSON.stringify("web")), "web target printed");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(home, { recursive: true, force: true });
+      await rm(fake.bin, { recursive: true, force: true });
+    }
+  });
+  it("target printed before first action", async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const events = [];
+    const h = mod.runDevWeb({ argv: ["--profile", "dev-ocms"], repoRoot: "/fake/root", print: (m) => events.push("print:" + m), printError: () => {}, startBuild: () => { events.push("build-start"); return { child: null, done: Promise.resolve({ code: 0, stdout: "", stderr: "" }) }; }, registerStage: () => { events.push("register"); return { done: Promise.resolve({ code: 0 }) }; }, startLaunch: () => { events.push("launch"); return { child: null, done: Promise.resolve({ code: 0 }) }; } });
+    assert.equal(await h, 0, "stubbed run succeeds");
+    assert.ok(events[0] === "print:" + DEV_TARGET + JSON.stringify("dev-ocms"), "target first, saw " + JSON.stringify(events));
+    assert.equal(events[1], "build-start", "build second");
+  });
+  it("exactly one dev:web disclosure", { timeout: 60000 }, async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const home = await dwHome();
+    const fake = await dwFakeBin();
+    const root = await dwFixture();
+    try {
+      await dwProfile(home, "dev-ocms");
+      const prints = [];
+      const h = mod.runDevWeb({ argv: ["--profile", "dev-ocms"], env: dwEnv(home, fake), repoRoot: root, print: (m) => prints.push(m), printError: () => {} });
+      assert.equal(await h, 0, "run succeeds");
+      assert.equal(prints.filter((m) => m.startsWith(DEV_TARGET)).length, 1, "one dev:web line");
+      assert.equal(prints.filter((m) => m.startsWith(REG_TARGET)).length, 1, "one register line");
+      assert.ok(prints.includes(REG_TARGET + JSON.stringify("dev-ocms")), "same profile in register line");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(home, { recursive: true, force: true });
+      await rm(fake.bin, { recursive: true, force: true });
+    }
+  });
+  it("exact ordered stage execution", { timeout: 60000 }, async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const home = await dwHome();
+    const fake = await dwFakeBin();
+    const root = await dwFixture();
+    try {
+      await dwProfile(home, "dev-ocms");
+      let builds = 0;
+      const real = mod.startCanonicalBuild;
+      const prints = [];
+      const h = mod.runDevWeb({ argv: ["--profile", "dev-ocms"], env: dwEnv(home, fake), repoRoot: root, print: (m) => prints.push(m), printError: () => {}, startBuild: (r) => { builds += 1; return real(r); } });
+      assert.equal(await h, 0, "run succeeds");
+      assert.equal(builds, 1, "one build");
+      const calls = await dwLoggedArgv(fake.log);
+      assert.deepEqual(calls, [["plugin", "--profile", "dev-ocms", "add", root], ["--profile", "dev-ocms", "--no-open"]], "register then launch");
+      const devIdx = prints.indexOf(DEV_TARGET + JSON.stringify("dev-ocms"));
+      const regIdx = prints.indexOf(REG_TARGET + JSON.stringify("dev-ocms"));
+      assert.ok(devIdx !== -1 && regIdx !== -1 && devIdx < regIdx, "dev target before register target");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(home, { recursive: true, force: true });
+      await rm(fake.bin, { recursive: true, force: true });
+    }
+  });
+  it("build failure prevents registration and launch", async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    let regs = 0;
+    let launches = 0;
+    const h = mod.runDevWeb({ argv: ["--profile", "dev-ocms"], repoRoot: "/fake/root", print: () => {}, printError: () => {}, startBuild: () => ({ child: null, done: Promise.resolve({ code: 2, stdout: "", stderr: "build broke" }) }), registerStage: () => { regs += 1; return { done: Promise.resolve({ code: 0 }) }; }, startLaunch: () => { launches += 1; return { child: null, done: Promise.resolve({ code: 0 }) }; } });
+    assert.equal(await h, 2, "build code propagates");
+    assert.equal(regs, 0, "no register after build failure");
+    assert.equal(launches, 0, "no launch after build failure");
+  });
+  it("register failure prevents launch", async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    let launches = 0;
+    const h = mod.runDevWeb({ argv: ["--profile", "dev-ocms"], repoRoot: "/fake/root", print: () => {}, printError: () => {}, startBuild: () => ({ child: null, done: Promise.resolve({ code: 0, stdout: "", stderr: "" }) }), registerStage: () => ({ done: Promise.resolve({ code: 4 }) }), startLaunch: () => { launches += 1; return { child: null, done: Promise.resolve({ code: 0 }) }; } });
+    assert.equal(await h, 4, "register code propagates");
+    assert.equal(launches, 0, "no launch after register failure");
+  });
+  it("missing DSH and unresolvable shim fail closed", { timeout: 60000 }, async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const root = await dwFixture();
+    const home = await dwHome();
+    const emptyBin = await mkdtemp(join(tmpdir(), "ocms-dx4empty-"));
+    const lonely = await mkdtemp(join(tmpdir(), "ocms-dx4lone-"));
+    try {
+      await dwProfile(home, "dev-ocms");
+      await writeFile(join(lonely, "dsh.cmd"), "@echo off\n", "utf8");
+      const noDsh = Object.assign({}, process.env, { DSH_HOME: home, PATH: emptyBin, OCMS_FAKE_DSH_LOG: join(emptyBin, "n.log") });
+      const h1 = mod.runDevWeb({ argv: ["--profile", "dev-ocms"], env: noDsh, repoRoot: root, print: () => {}, printError: () => {} });
+      assert.notEqual(await h1, 0, "missing DSH fails");
+      const sep = process.platform === "win32" ? ";" : ":";
+      const loneEnv = Object.assign({}, process.env, { DSH_HOME: home, PATH: lonely + sep + emptyBin, OCMS_FAKE_DSH_LOG: join(emptyBin, "n.log") });
+      const h2 = mod.runDevWeb({ argv: ["--profile", "dev-ocms"], env: loneEnv, repoRoot: root, print: () => {}, printError: () => {} });
+      assert.notEqual(await h2, 0, "unresolvable shim fails");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(home, { recursive: true, force: true });
+      await rm(emptyBin, { recursive: true, force: true });
+      await rm(lonely, { recursive: true, force: true });
+    }
+  });
+  it("missing profile fails without creation", { timeout: 60000 }, async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const root = await dwFixture();
+    const home = await dwHome();
+    const fake = await dwFakeBin();
+    try {
+      let launches = 0;
+      const out = [];
+      const h = mod.runDevWeb({ argv: ["--profile", "nope-missing-9"], env: dwEnv(home, fake), repoRoot: root, print: () => {}, printError: (m) => out.push(m), startLaunch: () => { launches += 1; return { child: null, done: Promise.resolve({ code: 0 }) }; } });
+      assert.notEqual(await h, 0, "missing profile fails");
+      assert.ok(out.join("\n").toLowerCase().includes("does not exist"), "not-found error");
+      assert.ok(await dwAbsent(join(home, "profiles", "nope-missing-9")), "profile not created");
+      assert.equal(launches, 0, "no launch");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(home, { recursive: true, force: true });
+      await rm(fake.bin, { recursive: true, force: true });
+    }
+  });
+  it("launch uses exact profile argv", { timeout: 60000 }, async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const home = await dwHome();
+    const fake = await dwFakeBin();
+    const root = await dwFixture();
+    try {
+      await dwProfile(home, "dev-ocms");
+      const h = mod.runDevWeb({ argv: ["--profile", "dev-ocms"], env: dwEnv(home, fake), repoRoot: root, print: () => {}, printError: () => {} });
+      assert.equal(await h, 0, "run succeeds");
+      const calls = await dwLoggedArgv(fake.log);
+      assert.equal(calls.length, 2, "register plus launch only");
+      assert.deepEqual(calls[1], ["--profile", "dev-ocms", "--no-open"], "frozen launch argv");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(home, { recursive: true, force: true });
+      await rm(fake.bin, { recursive: true, force: true });
+    }
+  });
+  async function dwSettled(ms) {
+    await new Promise((r) => setTimeout(r, ms));
+  }
+  async function dwWaitCount(get, n) {
+    const start = Date.now();
+    while (get() < n && Date.now() - start < 2000) {
+      await dwSettled(10);
+    }
+    return get() >= n;
+  }
+  it("no shell for shim installations", { timeout: 60000 }, async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const fake = await dwFakeBin();
+    try {
+      const shim = join(fake.bin, process.platform === "win32" ? "dsh.cmd" : "dsh");
+      const launch = await mod.resolveDshLaunch(shim);
+      assert.ok(launch, "shim resolves");
+      assert.equal(launch.shell, false, "never shell");
+      assert.ok(!launch.file.toLowerCase().endsWith(".cmd"), "does not execute shim text");
+      assert.equal(launch.argsPrefix.length, 1, "single entry prefix");
+      assert.ok(launch.argsPrefix[0].endsWith("bin.js"), "node entry carries the package bin");
+    } finally {
+      await rm(fake.bin, { recursive: true, force: true });
+    }
+  });
+  it("normal web exit propagates zero", { timeout: 60000 }, async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const home = await dwHome();
+    const fake = await dwFakeBin();
+    const root = await dwFixture();
+    try {
+      await dwProfile(home, "dev-ocms");
+      const h = mod.runDevWeb({ argv: ["--profile", "dev-ocms"], env: dwEnv(home, fake), repoRoot: root, print: () => {}, printError: () => {} });
+      assert.equal(await h, 0, "exit zero propagates");
+      assert.equal((await dwLoggedArgv(fake.log)).length, 2, "both stages ran");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(home, { recursive: true, force: true });
+      await rm(fake.bin, { recursive: true, force: true });
+    }
+  });
+  it("non-zero web exit propagates exactly", { timeout: 60000 }, async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const home = await dwHome();
+    const fake = await dwFakeBin();
+    const root = await dwFixture();
+    try {
+      await dwProfile(home, "dev-ocms");
+      const h = mod.runDevWeb({ argv: ["--profile", "dev-ocms"], env: dwEnv(home, fake, { OCMS_FAKE_DSH_EXIT: "5" }), repoRoot: root, print: () => {}, printError: () => {} });
+      assert.equal(await h, 5, "exit code propagates exactly");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(home, { recursive: true, force: true });
+      await rm(fake.bin, { recursive: true, force: true });
+    }
+  });
+  it("port conflict propagates without termination", { timeout: 60000 }, async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const home = await dwHome();
+    const fake = await dwFakeBin();
+    const root = await dwFixture();
+    const foreign = { killed: 0, kill() { this.killed += 1; return true; } };
+    try {
+      await dwProfile(home, "dev-ocms");
+      const h = mod.runDevWeb({ argv: ["--profile", "dev-ocms"], env: dwEnv(home, fake, { OCMS_FAKE_DSH_EXIT: "2", OCMS_FAKE_DSH_STDERR: "EADDRINUSE listen" }), repoRoot: root, print: () => {}, printError: () => {} });
+      assert.equal(await h, 2, "conflict code propagates");
+      assert.equal((await dwLoggedArgv(fake.log)).length, 2, "no retry, no recovery");
+      assert.equal(foreign.killed, 0, "holder untouched");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(home, { recursive: true, force: true });
+      await rm(fake.bin, { recursive: true, force: true });
+    }
+  });
+  it("shutdown during build stops only its child", { timeout: 60000 }, async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const build = dwDeferred();
+    let regs = 0;
+    const h = mod.runDevWeb({ argv: ["--profile", "dev-ocms"], repoRoot: "/fake/root", print: () => {}, printError: () => {}, startBuild: build.start, registerStage: () => { regs += 1; return { done: Promise.resolve({ code: 0 }) }; }, startLaunch: () => ({ child: null, done: Promise.resolve({ code: 0 }) }) });
+    assert.ok(await dwWaitCount(() => build.rec.started, 1), "build active");
+    const stopping = h.shutdown("SIGINT");
+    await dwSettled(20);
+    assert.equal(build.child.killed, 1, "owned build signaled once");
+    build.release({ code: 0, stdout: "", stderr: "" });
+    assert.equal(await stopping, 130, "signal status");
+    assert.equal(regs, 0, "no register after cancel");
+  });
+  it("shutdown during register stops only its child", { timeout: 60000 }, async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const reg = dwDeferred();
+    let launches = 0;
+    const h = mod.runDevWeb({ argv: ["--profile", "dev-ocms"], repoRoot: "/fake/root", print: () => {}, printError: () => {}, startBuild: () => ({ child: null, done: Promise.resolve({ code: 0, stdout: "", stderr: "" }) }), registerStage: (a) => { const s = reg.start(); a.track(s.child); return { done: s.done }; }, startLaunch: () => { launches += 1; return { child: null, done: Promise.resolve({ code: 0 }) }; } });
+    assert.ok(await dwWaitCount(() => reg.rec.started, 1), "register active");
+    const stopping = h.shutdown("SIGINT");
+    await dwSettled(20);
+    assert.equal(reg.child.killed, 1, "owned register child signaled once");
+    reg.release({ code: 0 });
+    assert.equal(await stopping, 130, "signal status");
+    assert.equal(launches, 0, "no launch after cancel");
+  });
+  it("shutdown during web waits owned settlement", { timeout: 60000 }, async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const web = dwDeferred();
+    const h = mod.runDevWeb({ argv: ["--profile", "dev-ocms"], repoRoot: "/fake/root", print: () => {}, printError: () => {}, startBuild: () => ({ child: null, done: Promise.resolve({ code: 0, stdout: "", stderr: "" }) }), registerStage: () => ({ done: Promise.resolve({ code: 0 }) }), startLaunch: () => web.start() });
+    assert.ok(await dwWaitCount(() => web.rec.started, 1), "web active");
+    const stopping = h.shutdown("SIGINT");
+    await dwSettled(20);
+    assert.equal(web.child.killed, 1, "owned web signaled once");
+    web.release({ code: 0 });
+    assert.equal(await stopping, 130, "signal status");
+  });
+  it("repeated shutdown is idempotent", { timeout: 60000 }, async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const web = dwDeferred();
+    const h = mod.runDevWeb({ argv: ["--profile", "dev-ocms"], repoRoot: "/fake/root", print: () => {}, printError: () => {}, startBuild: () => ({ child: null, done: Promise.resolve({ code: 0, stdout: "", stderr: "" }) }), registerStage: () => ({ done: Promise.resolve({ code: 0 }) }), startLaunch: () => web.start() });
+    assert.ok(await dwWaitCount(() => web.rec.started, 1), "web active");
+    const s1 = h.shutdown("SIGINT");
+    const s2 = h.shutdown("SIGINT");
+    await dwSettled(20);
+    assert.equal(web.child.killed, 1, "single signal");
+    web.release({ code: 0 });
+    assert.equal(await s1, 130, "first settles");
+    assert.equal(await s2, 130, "second settles same");
+  });
+  it("no foreign process is signaled", { timeout: 60000 }, async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const build = dwDeferred();
+    const foreign = { killed: 0, kill() { this.killed += 1; return true; } };
+    const h = mod.runDevWeb({ argv: ["--profile", "dev-ocms"], repoRoot: "/fake/root", print: () => {}, printError: () => {}, startBuild: build.start, registerStage: () => ({ done: Promise.resolve({ code: 0 }) }), startLaunch: () => ({ child: null, done: Promise.resolve({ code: 0 }) }) });
+    assert.ok(await dwWaitCount(() => build.rec.started, 1), "build active");
+    const stopping = h.shutdown("SIGINT");
+    await dwSettled(20);
+    build.release({ code: 0, stdout: "", stderr: "" });
+    assert.equal(await stopping, 130, "settles");
+    assert.equal(build.child.killed, 1, "owned signaled");
+    assert.equal(foreign.killed, 0, "foreign untouched");
+  });
+  it("malformed paths mutate nothing", async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const home = await dwHome();
+    try {
+      for (const argv of [["--profile", "-bad"], ["--profile", "a/b"], ["--weird"]]) {
+        let builds = 0;
+        let regs = 0;
+        let launches = 0;
+        const h = mod.runDevWeb({ argv, env: Object.assign({}, process.env, { DSH_HOME: home }), repoRoot: ROOT, print: () => {}, printError: () => {}, startBuild: () => { builds += 1; return { child: null, done: Promise.resolve({ code: 0, stdout: "", stderr: "" }) }; }, registerStage: () => { regs += 1; return { done: Promise.resolve({ code: 0 }) }; }, startLaunch: () => { launches += 1; return { child: null, done: Promise.resolve({ code: 0 }) }; } });
+        assert.notEqual(await h, 0, "must reject " + JSON.stringify(argv));
+        assert.equal(builds + regs + launches, 0, "no stage runs");
+      }
+      assert.ok(await dwAbsent(join(home, "profiles")), "nothing created");
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+  it("metacharacter paths stay literal", { timeout: 120000 }, async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const trap = "OCMS_DX4_SENTINEL";
+    const nasty = "OCMS & Test (1) %" + trap + "%";
+    const base = await mkdtemp(join(tmpdir(), "ocms-dx4m-"));
+    const metaRoot = join(base, nasty, "ocms-s");
+    const sentinelPath = join(base, "dx4-sentinel-marker");
+    await mkdir(join(metaRoot, "dsh"), { recursive: true });
+    const builderSrc = await readFile(join(ROOT, "dsh", "build-client.mjs"), "utf8");
+    await writeFile(join(metaRoot, "dsh", "build-client.mjs"), builderSrc, "utf8");
+    await writeFile(join(metaRoot, "dsh", "client.mjs"), "export const MARK = 1;\n", "utf8");
+    await writeFile(join(metaRoot, "package.json"), JSON.stringify({ name: "ocms-s", private: true, type: "module" }) + "\n", "utf8");
+    const home = await dwHome();
+    const fake = await dwFakeBin();
+    try {
+      await dwProfile(home, "dev-ocms");
+      const env = dwEnv(home, fake);
+      env[trap] = "EXPANDED";
+      const prints = [];
+      const h = mod.runDevWeb({ argv: ["--profile", "dev-ocms"], env, repoRoot: metaRoot, print: (m) => prints.push(m), printError: () => {} });
+      assert.equal(await h, 0, "metachar run succeeds");
+      const calls = await dwLoggedArgv(fake.log);
+      assert.deepEqual(calls, [["plugin", "--profile", "dev-ocms", "add", metaRoot], ["--profile", "dev-ocms", "--no-open"]], "literal metachar argv");
+      assert.ok(await dwAbsent(sentinelPath), "sentinel absent");
+    } finally {
+      await rm(base, { recursive: true, force: true });
+      await rm(home, { recursive: true, force: true });
+      await rm(fake.bin, { recursive: true, force: true });
+    }
+  });
+  it("import has zero CLI side effects", async () => {
+    const beforeInt = process.listenerCount("SIGINT");
+    const beforeTerm = process.listenerCount("SIGTERM");
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const h = mod.runDevWeb({ argv: ["--profile", "dev-ocms"], repoRoot: "/fake/root", print: () => {}, printError: () => {}, startBuild: () => ({ child: null, done: Promise.resolve({ code: 0, stdout: "", stderr: "" }) }), registerStage: () => ({ done: Promise.resolve({ code: 0 }) }), startLaunch: () => ({ child: null, done: Promise.resolve({ code: 0 }) }) });
+    assert.equal(await h, 0, "stubbed run succeeds");
+    assert.equal(process.listenerCount("SIGINT"), beforeInt, "no SIGINT leak");
+    assert.equal(process.listenerCount("SIGTERM"), beforeTerm, "no SIGTERM leak");
   });
 });
 
