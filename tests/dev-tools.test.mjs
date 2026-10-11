@@ -351,3 +351,353 @@ describe("DX-2 explicit-profile local registration", () => {
     }
   });
 });
+
+  it("package exposes watch command", async () => {
+    const CANONICAL_WATCH = "node scripts/dev-tools.mjs watch";
+    const pkg = JSON.parse(await readFile(join(ROOT, "package.json"), "utf8"));
+    assert.equal(pkg.scripts && pkg.scripts.watch, CANONICAL_WATCH, "scripts.watch must be exactly the shared CLI");
+  });
+
+describe("DX-3 cross-platform watch and rebuild", () => {
+  const DEVTOOLS = join(ROOT, "scripts", "dev-tools.mjs");
+  const REBUILT_LINE = "ocms-s watch: rebuilt dsh/client.js";
+  const FAILED_LINE = "ocms-s watch: build failed (watching continues)";
+  async function makeWatchFixture() {
+    const root = await mkdtemp(join(tmpdir(), "ocms-dx3-"));
+    await mkdir(join(root, "dsh"), { recursive: true });
+    const builderSrc = await readFile(join(ROOT, "dsh", "build-client.mjs"), "utf8");
+    await writeFile(join(root, "dsh", "build-client.mjs"), builderSrc, "utf8");
+    await writeFile(join(root, "dsh", "client.mjs"), "export const MARK = 1;\n", "utf8");
+    return root;
+  }
+  async function waitFor(fn, timeout) {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+      let ok = false;
+      try { ok = await fn(); } catch { ok = false; }
+      if (ok) { return true; }
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    try { return await fn(); } catch { return false; }
+  }
+  async function settled(ms) {
+    await new Promise((r) => setTimeout(r, ms));
+  }
+  function stubWatch() {
+    const rec = { paths: [], listeners: [], closed: 0 };
+    const fn = (p, l) => { rec.paths.push(p); rec.listeners.push(l); return { close() { rec.closed += 1; } }; };
+    return { rec, fn };
+  }
+  function deferredBuilder() {
+    const rec = { count: 0, max: 0, active: 0, releases: [] };
+    const fn = () => {
+      rec.count += 1;
+      rec.active += 1;
+      if (rec.active > rec.max) { rec.max = rec.active; }
+      let rel = null;
+      const done = new Promise((r) => { rel = r; });
+      rec.releases.push((res) => { rec.active -= 1; rel(res); });
+      const child = { killed: 0, kill() { this.killed += 1; return true; } };
+      return { child, done };
+    };
+    return { rec, fn };
+  }
+  function okBuilder() {
+    return () => ({ child: null, done: Promise.resolve({ code: 0, stdout: "", stderr: "" }) });
+  }
+  it("watch rejects forwarded arguments", async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    for (const extra of [["--profile", "dev-ocms"], ["--anything"]]) {
+      let builds = 0;
+      let watches = 0;
+      let usage = "";
+      const h = mod.runWatch({ argv: extra, repoRoot: ROOT, print: () => {}, printError: (m) => { usage += m; }, startBuild: () => { builds += 1; return { child: null, done: Promise.resolve({ code: 0, stdout: "", stderr: "" }) }; }, watchFile: () => { watches += 1; return { close() {} }; } });
+      const code = await h;
+      assert.notEqual(code, 0, "extra argv must fail");
+      assert.ok(usage.includes("Usage"), "usage on extra argv");
+      assert.equal(builds, 0, "zero builds on rejected argv");
+      assert.equal(watches, 0, "zero watchers on rejected argv");
+    }
+  });
+  it("watch CLI rejects profile forwarding", async () => {
+    const r = spawnSync(process.execPath, [DEVTOOLS, "watch", "--profile", "dev-ocms"], { encoding: "utf8", timeout: 60000 });
+    assert.notEqual(r.status, 0, "profile forwarding must fail");
+    assert.ok(String(r.stdout + r.stderr).includes("Usage"), "usage on profile forwarding");
+    assert.ok(!String(r.stdout + r.stderr).includes("unknown subcommand"), "must reach the watch parser");
+  });
+  it("initial build runs exactly once before watchers", async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const events = [];
+    let ready = false;
+    const h = mod.runWatch({ argv: [], repoRoot: "/fake/root", print: () => {}, printError: () => {}, startBuild: () => { events.push("build"); return { child: null, done: Promise.resolve({ code: 0, stdout: "", stderr: "" }) }; }, watchFile: (p) => { events.push("watch:" + p); return { close() {} }; }, onReady: () => { ready = true; } });
+    assert.ok(await waitFor(async () => ready, 2000), "watch becomes ready");
+    assert.deepEqual(events, ["build", "watch:" + join("/fake/root", "dsh", "client.mjs"), "watch:" + join("/fake/root", "dsh", "build-client.mjs")], "one build then two watchers");
+    assert.equal(await h.stop(), 0, "clean stop");
+  });
+  it("initial build failure is fatal", async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    let watches = 0;
+    let failure = "";
+    const h = mod.runWatch({ argv: [], repoRoot: "/fake/root", print: () => {}, printError: (m) => { failure += m; }, startBuild: () => ({ child: null, done: Promise.resolve({ code: 3, stdout: "", stderr: "builder exploded" }) }), watchFile: () => { watches += 1; return { close() {} }; } });
+    assert.equal(await h, 3, "initial failure code surfaces");
+    assert.equal(watches, 0, "no watcher created");
+    assert.ok(failure.includes("builder exploded"), "builder output surfaced");
+  });
+  it("exact watched input set", async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    assert.equal(mod.WATCH_DEBOUNCE_MS, 150, "frozen trailing debounce");
+    const seen = [];
+    let ready = false;
+    const h = mod.runWatch({ argv: [], repoRoot: ROOT, print: () => {}, printError: () => {}, startBuild: () => ({ child: null, done: Promise.resolve({ code: 0, stdout: "", stderr: "" }) }), watchFile: (p) => { seen.push(p); return { close() {} }; }, onReady: () => { ready = true; } });
+    assert.ok(await waitFor(async () => ready, 2000), "ready");
+    assert.deepEqual(seen, [join(ROOT, "dsh", "client.mjs"), join(ROOT, "dsh", "build-client.mjs")], "only the two inputs");
+    assert.ok(!seen.includes(join(ROOT, "dsh", "client.js")), "output never watched");
+    await h.stop();
+  });
+  it("relevant source change triggers rebuild", { timeout: 60000 }, async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const root = await makeWatchFixture();
+    const prints = [];
+    let builds = 0;
+    const real = mod.startCanonicalBuild;
+    const h = mod.runWatch({ argv: [], repoRoot: root, print: (m) => prints.push(m), printError: () => {}, startBuild: (r) => { builds += 1; return real(r); } });
+    try {
+      await settled(400);
+      assert.equal(builds, 1, "initial build ran");
+      await writeFile(join(root, "dsh", "client.mjs"), "export const MARK = 2;\n", "utf8");
+      assert.ok(await waitFor(() => Promise.resolve(prints.includes(REBUILT_LINE)), 2000), "rebuild within bound");
+      assert.equal(builds, 2, "exactly one rebuild");
+    } finally {
+      await h.stop();
+      await settled(50);
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+  it("builder-source change triggers rebuild", { timeout: 60000 }, async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const root = await makeWatchFixture();
+    const prints = [];
+    const real = mod.startCanonicalBuild;
+    const h = mod.runWatch({ argv: [], repoRoot: root, print: (m) => prints.push(m), printError: () => {}, startBuild: (r) => real(r) });
+    try {
+      await settled(400);
+      const builderPath = join(root, "dsh", "build-client.mjs");
+      await writeFile(builderPath, (await readFile(builderPath, "utf8")) + "\n// touch\n", "utf8");
+      assert.ok(await waitFor(() => Promise.resolve(prints.includes(REBUILT_LINE)), 2000), "builder edit rebuilds");
+    } finally {
+      await h.stop();
+      await settled(50);
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+  it("output write does not trigger", { timeout: 60000 }, async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const root = await makeWatchFixture();
+    const prints = [];
+    let builds = 0;
+    const real = mod.startCanonicalBuild;
+    const h = mod.runWatch({ argv: [], repoRoot: root, print: (m) => prints.push(m), printError: () => {}, startBuild: (r) => { builds += 1; return real(r); } });
+    try {
+      await settled(400);
+      await writeFile(join(root, "dsh", "client.js"), (await readFile(join(root, "dsh", "client.js"), "utf8")) + "\n// out\n", "utf8");
+      await settled(500);
+      assert.equal(builds, 1, "no rebuild for output write");
+      assert.ok(!prints.includes(REBUILT_LINE), "no rebuild line");
+    } finally {
+      await h.stop();
+      await settled(50);
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+  it("unrelated file does not trigger", { timeout: 60000 }, async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const root = await makeWatchFixture();
+    let builds = 0;
+    const real = mod.startCanonicalBuild;
+    const h = mod.runWatch({ argv: [], repoRoot: root, print: () => {}, printError: () => {}, startBuild: (r) => { builds += 1; return real(r); } });
+    try {
+      await settled(400);
+      await writeFile(join(root, "other.txt"), "hello\n", "utf8");
+      await settled(500);
+      assert.equal(builds, 1, "no rebuild for unrelated file");
+    } finally {
+      await h.stop();
+      await settled(50);
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+  it("burst collapses to one rebuild", { timeout: 60000 }, async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const root = await makeWatchFixture();
+    let builds = 0;
+    const real = mod.startCanonicalBuild;
+    const h = mod.runWatch({ argv: [], repoRoot: root, print: () => {}, printError: () => {}, startBuild: (r) => { builds += 1; return real(r); } });
+    try {
+      await settled(400);
+      for (let i = 0; i < 10; i += 1) {
+        await writeFile(join(root, "dsh", "client.mjs"), "export const MARK = " + i + ";\n", "utf8");
+        await settled(10);
+      }
+      assert.ok(await waitFor(() => Promise.resolve(builds >= 2), 2000), "burst rebuild ran");
+      await settled(500);
+      assert.ok(builds <= 2, "initial plus at most one burst rebuild, saw " + builds);
+    } finally {
+      await h.stop();
+      await settled(50);
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+  it("rebuilds serialize with max one concurrent builder", { timeout: 60000 }, async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const stub = stubWatch();
+    const builder = deferredBuilder();
+    const ok = { code: 0, stdout: "", stderr: "" };
+    let ready = false;
+    const h = mod.runWatch({ argv: [], repoRoot: "/fake/root", print: () => {}, printError: () => {}, startBuild: builder.fn, watchFile: stub.fn, debounceMs: 10, onReady: () => { ready = true; } });
+    assert.ok(await waitFor(() => Promise.resolve(builder.rec.count >= 1), 2000), "initial started");
+    builder.rec.releases[0](ok);
+    assert.ok(await waitFor(() => Promise.resolve(ready), 2000), "ready");
+    for (let i = 0; i < 5; i += 1) { stub.rec.listeners[0]("change"); }
+    assert.ok(await waitFor(() => Promise.resolve(builder.rec.count >= 2), 2000), "rebuild started");
+    for (let i = 0; i < 3; i += 1) { stub.rec.listeners[1]("change"); }
+    await settled(50);
+    assert.equal(builder.rec.max, 1, "never overlapping");
+    assert.equal(builder.rec.count, 2, "events during build collapse");
+    builder.rec.releases[1](ok);
+    assert.ok(await waitFor(() => Promise.resolve(builder.rec.count >= 3), 2000), "trailing rebuild ran");
+    assert.equal(builder.rec.max, 1, "still serialized");
+    builder.rec.releases[2](ok);
+    await settled(50);
+    assert.equal(builder.rec.count, 3, "one trailing build only");
+    assert.equal(await h.stop(), 0, "clean stop");
+  });
+  it("one queued slot collapses many events", { timeout: 60000 }, async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const stub = stubWatch();
+    const builder = deferredBuilder();
+    const ok = { code: 0, stdout: "", stderr: "" };
+    let ready = false;
+    const h = mod.runWatch({ argv: [], repoRoot: "/fake/root", print: () => {}, printError: () => {}, startBuild: builder.fn, watchFile: stub.fn, debounceMs: 10, onReady: () => { ready = true; } });
+    assert.ok(await waitFor(() => Promise.resolve(builder.rec.count >= 1), 2000), "initial started");
+    builder.rec.releases[0](ok);
+    assert.ok(await waitFor(() => Promise.resolve(ready), 2000), "ready");
+    stub.rec.listeners[0]("change");
+    assert.ok(await waitFor(() => Promise.resolve(builder.rec.count >= 2), 2000), "rebuild active");
+    for (let i = 0; i < 10; i += 1) { stub.rec.listeners[0]("change"); stub.rec.listeners[1]("change"); }
+    await settled(80);
+    assert.equal(builder.rec.count, 2, "no extra builds while pending");
+    builder.rec.releases[1](ok);
+    assert.ok(await waitFor(() => Promise.resolve(builder.rec.count >= 3), 2000), "trailing ran");
+    builder.rec.releases[2](ok);
+    await settled(80);
+    assert.equal(builder.rec.count, 3, "exactly one trailing build");
+    assert.equal(await h.stop(), 0, "clean stop");
+  });
+  it("rebuild failure continues watching", { timeout: 60000 }, async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const stub = stubWatch();
+    const codes = [{ code: 0, stdout: "", stderr: "" }, { code: 2, stdout: "", stderr: "boom-fail" }, { code: 0, stdout: "", stderr: "" }];
+    let calls = 0;
+    const prints = [];
+    const errors = [];
+    let ready = false;
+    const h = mod.runWatch({ argv: [], repoRoot: "/fake/root", print: (m) => prints.push(m), printError: (m) => errors.push(m), startBuild: () => { const res = codes[Math.min(calls, 2)]; calls += 1; return { child: null, done: Promise.resolve(res) }; }, watchFile: stub.fn, debounceMs: 10, onReady: () => { ready = true; } });
+    assert.ok(await waitFor(() => Promise.resolve(ready), 2000), "ready");
+    assert.equal(calls, 1, "initial only");
+    stub.rec.listeners[0]("change");
+    assert.ok(await waitFor(() => Promise.resolve(calls >= 2), 2000), "failed rebuild ran");
+    assert.ok(errors.join("\n").includes(FAILED_LINE), "failure line emitted");
+    assert.ok(errors.join("\n").includes("boom-fail"), "builder output surfaced");
+    stub.rec.listeners[0]("change");
+    assert.ok(await waitFor(() => Promise.resolve(calls >= 3), 2000), "later rebuild ran");
+    assert.ok(prints.includes(REBUILT_LINE), "success line after recovery");
+    assert.equal(await h.stop(), 0, "clean stop");
+  });
+  it("successful rebuild message is exact", async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const stub = stubWatch();
+    const prints = [];
+    let ready = false;
+    const h = mod.runWatch({ argv: [], repoRoot: "/fake/root", print: (m) => prints.push(m), printError: () => {}, startBuild: okBuilder(), watchFile: stub.fn, debounceMs: 10, onReady: () => { ready = true; } });
+    assert.ok(await waitFor(() => Promise.resolve(ready), 2000), "ready");
+    stub.rec.listeners[0]("change");
+    assert.ok(await waitFor(() => Promise.resolve(prints.length >= 1), 2000), "rebuild printed");
+    assert.deepEqual(prints, [REBUILT_LINE], "exactly one exact line");
+    assert.equal(await h.stop(), 0, "clean stop");
+  });
+  it("failed rebuild message is exact", async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const stub = stubWatch();
+    let calls = 0;
+    const errors = [];
+    let ready = false;
+    const h = mod.runWatch({ argv: [], repoRoot: "/fake/root", print: () => {}, printError: (m) => errors.push(m), startBuild: () => { calls += 1; const res = calls === 1 ? { code: 0, stdout: "", stderr: "" } : { code: 1, stdout: "", stderr: "builder-nope" }; return { child: null, done: Promise.resolve(res) }; }, watchFile: stub.fn, debounceMs: 10, onReady: () => { ready = true; } });
+    assert.ok(await waitFor(() => Promise.resolve(ready), 2000), "ready");
+    stub.rec.listeners[1]("change");
+    assert.ok(await waitFor(() => Promise.resolve(calls >= 2), 2000), "failed rebuild ran");
+    assert.deepEqual(errors, ["builder-nope", FAILED_LINE], "output plus exact line");
+    assert.equal(await h.stop(), 0, "clean stop");
+  });
+  it("stop closes owned resources only", async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const stub = stubWatch();
+    let ready = false;
+    let builds = 0;
+    const h = mod.runWatch({ argv: [], repoRoot: "/fake/root", print: () => {}, printError: () => {}, startBuild: () => { builds += 1; return { child: null, done: Promise.resolve({ code: 0, stdout: "", stderr: "" }) }; }, watchFile: stub.fn, debounceMs: 10, onReady: () => { ready = true; } });
+    assert.ok(await waitFor(() => Promise.resolve(ready), 2000), "ready");
+    assert.equal(stub.rec.closed, 0, "open while running");
+    assert.equal(await h.stop(), 0, "stop exits zero");
+    assert.equal(stub.rec.closed, 2, "both watchers closed");
+    stub.rec.listeners[0]("change");
+    stub.rec.listeners[1]("change");
+    await settled(80);
+    assert.equal(builds, 1, "no build after stop");
+  });
+  it("stop during active build signals only the owned child", { timeout: 60000 }, async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const stub = stubWatch();
+    const builder = deferredBuilder();
+    const ok = { code: 0, stdout: "", stderr: "" };
+    let ready = false;
+    let owned = null;
+    const h = mod.runWatch({ argv: [], repoRoot: "/fake/root", print: () => {}, printError: () => {}, startBuild: () => { const s = builder.fn(); owned = s.child; return s; }, watchFile: stub.fn, debounceMs: 10, onReady: () => { ready = true; } });
+    assert.ok(await waitFor(() => Promise.resolve(builder.rec.count >= 1), 2000), "initial started");
+    builder.rec.releases[0](ok);
+    assert.ok(await waitFor(() => Promise.resolve(ready), 2000), "ready");
+    stub.rec.listeners[0]("change");
+    assert.ok(await waitFor(() => Promise.resolve(builder.rec.count >= 2), 2000), "rebuild active");
+    const stopping = h.stop();
+    await settled(20);
+    assert.equal(owned.killed, 1, "owned child signaled once");
+    assert.equal(builder.rec.max, 1, "no foreign build");
+    builder.rec.releases[1](ok);
+    assert.equal(await stopping, 0, "shutdown settles clean");
+    assert.equal(stub.rec.closed, 2, "watchers closed");
+  });
+  it("zero DSH interaction", { timeout: 60000 }, async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const root = await makeWatchFixture();
+    const prints = [];
+    let builds = 0;
+    const real = mod.startCanonicalBuild;
+    const savedPath = process.env.PATH;
+    const savedHome = process.env.DSH_HOME;
+    const emptyDir = await mkdtemp(join(tmpdir(), "ocms-dx3empty-"));
+    process.env.PATH = emptyDir;
+    process.env.DSH_HOME = join(root, "no-home");
+    const h = mod.runWatch({ argv: [], repoRoot: root, print: (m) => prints.push(m), printError: () => {}, startBuild: (r) => { builds += 1; return real(r); } });
+    try {
+      await settled(400);
+      await writeFile(join(root, "dsh", "client.mjs"), "export const MARK = 9;\n", "utf8");
+      assert.ok(await waitFor(() => Promise.resolve(prints.includes(REBUILT_LINE)), 2000), "rebuilds without DSH");
+      assert.ok(builds >= 2, "builds ran");
+    } finally {
+      if (savedPath === undefined) { delete process.env.PATH; } else { process.env.PATH = savedPath; }
+      if (savedHome === undefined) { delete process.env.DSH_HOME; } else { process.env.DSH_HOME = savedHome; }
+      await h.stop();
+      await settled(50);
+      await rm(emptyDir, { recursive: true, force: true });
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});

@@ -3,11 +3,16 @@ import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve, dirname, delimiter, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
+import { watch } from "node:fs";
 
 const USAGE_REGISTER = "Usage: npm run register -- --profile <name>\n" + "  Register the local checkout into one explicit DSH profile.\n" + "  --profile <name>   required; an existing profile (never created here)";
 const TARGET_PREFIX = "ocms-s register: target profile ";
 const BACKSLASH = String.fromCharCode(92);
 const PROFILE_PATTERN = /^[A-Za-z0-9._-]+$/;
+const USAGE_WATCH = "Usage: npm run watch\n" + "  Rebuild dsh/client.js when its inputs change.\n" + "  Accepts no arguments.";
+export const WATCH_DEBOUNCE_MS = 150;
+const WATCH_REBUILT_LINE = "ocms-s watch: rebuilt dsh/client.js";
+const WATCH_FAILED_LINE = "ocms-s watch: build failed (watching continues)";
 
 export function parseRegisterArgs(argv) {
   if (!Array.isArray(argv) || argv.length === 0) {
@@ -209,17 +214,204 @@ export async function runRegister(options) {
   return await spawnFn(launch.file, launch.argsPrefix.concat(["plugin", "--profile", profile, "add", repoRoot]));
 }
 
+export function parseWatchArgs(argv) {
+  if (!Array.isArray(argv) || argv.length !== 0) {
+    throw new Error(USAGE_WATCH);
+  }
+  return {};
+}
+
+export function startCanonicalBuild(repoRoot) {
+  const script = join(repoRoot, "dsh", "build-client.mjs");
+  const child = spawn(process.execPath, [script], { cwd: repoRoot, stdio: ["ignore", "pipe", "pipe"], shell: false });
+  const done = new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("error", (err) => resolve({ code: 127, stdout, stderr: stderr + String(err) }));
+    child.on("exit", (code) => resolve({ code: typeof code === "number" ? code : 1, stdout, stderr }));
+  });
+  return { child, done };
+}
+
+export function runWatch(options) {
+  const opts = options || {};
+  const repoRoot = opts.repoRoot || "";
+  const print = opts.print || ((msg) => console.log(msg));
+  const printError = opts.printError || ((msg) => console.error(msg));
+  const startBuild = opts.startBuild || startCanonicalBuild;
+  const watchFile = opts.watchFile || ((path, listener) => watch(path, listener));
+  const debounceMs = opts.debounceMs !== undefined ? opts.debounceMs : WATCH_DEBOUNCE_MS;
+  const onReady = opts.onReady || null;
+  const state = { watchers: [], timer: null, busy: false, queued: false, shuttingDown: false, activeChild: null, settled: false, finalCode: 0 };
+  let resolveMain = null;
+  const main = new Promise((resolve) => { resolveMain = resolve; });
+  function clearTimer() {
+    if (state.timer !== null) {
+      clearTimeout(state.timer);
+      state.timer = null;
+    }
+  }
+  function closeWatchers() {
+    for (const w of state.watchers) {
+      try { w.close(); } catch { }
+    }
+    state.watchers = [];
+  }
+  function finish(code) {
+    if (state.settled) { return; }
+    state.settled = true;
+    state.finalCode = code;
+    closeWatchers();
+    clearTimer();
+    resolveMain(code);
+  }
+  async function stop() {
+    if (state.settled) { return state.finalCode; }
+    state.shuttingDown = true;
+    clearTimer();
+    state.queued = false;
+    closeWatchers();
+    if (state.busy && state.activeChild) {
+      try { state.activeChild.kill(); } catch { }
+    }
+    if (!state.busy) {
+      finish(0);
+      return state.finalCode;
+    }
+    await main;
+    return state.finalCode;
+  }
+  function onEvent() {
+    if (state.shuttingDown || state.settled) { return; }
+    clearTimer();
+    state.timer = setTimeout(requestRebuild, debounceMs);
+  }
+  function requestRebuild() {
+    state.timer = null;
+    if (state.shuttingDown || state.settled) { return; }
+    if (state.busy) {
+      state.queued = true;
+      return;
+    }
+    void startRebuild();
+  }
+  function beginBuild() {
+    try {
+      return startBuild(repoRoot);
+    } catch (err) {
+      return { child: null, done: Promise.resolve({ code: 1, stdout: "", stderr: String((err && err.message) || err) }) };
+    }
+  }
+  async function startRebuild() {
+    state.busy = true;
+    const started = beginBuild();
+    state.activeChild = started.child || null;
+    let res = null;
+    try {
+      res = await started.done;
+    } catch (err) {
+      res = { code: 1, stdout: "", stderr: String((err && err.message) || err) };
+    } finally {
+      state.activeChild = null;
+      state.busy = false;
+    }
+    if (!res || typeof res.code !== "number") {
+      res = { code: 1, stdout: "", stderr: "ocms-s watch: builder returned no exit code" };
+    }
+    if (res.code === 0) {
+      print(WATCH_REBUILT_LINE);
+    } else {
+      const out = String((res.stdout || "") + (res.stderr || ""));
+      if (out.length > 0) { printError(out); }
+      printError(WATCH_FAILED_LINE);
+    }
+    if (state.shuttingDown || state.settled) {
+      finish(0);
+      return;
+    }
+    if (state.queued) {
+      state.queued = false;
+      void startRebuild();
+    }
+  }
+  async function flow() {
+    let argv = opts.argv;
+    if (argv === undefined) { argv = []; }
+    try {
+      parseWatchArgs(argv);
+    } catch (err) {
+      printError(String((err && err.message) || err));
+      finish(1);
+      return;
+    }
+    const started = beginBuild();
+    state.activeChild = started.child || null;
+    let res = null;
+    try {
+      res = await started.done;
+    } catch (err) {
+      res = { code: 1, stdout: "", stderr: String((err && err.message) || err) };
+    } finally {
+      state.activeChild = null;
+    }
+    if (state.shuttingDown || state.settled) {
+      finish(0);
+      return;
+    }
+    if (!res || res.code !== 0) {
+      const out = String(((res && res.stdout) || "") + ((res && res.stderr) || ""));
+      if (out.length > 0) { printError(out); }
+      finish(res && typeof res.code === "number" ? res.code : 1);
+      return;
+    }
+    if (res.stdout && res.stdout.trim().length > 0) {
+      print(res.stdout.trim());
+    }
+    const inputs = [join(repoRoot, "dsh", "client.mjs"), join(repoRoot, "dsh", "build-client.mjs")];
+    try {
+      for (const input of inputs) {
+        state.watchers.push(watchFile(input, onEvent));
+      }
+    } catch (err) {
+      printError("ocms-s watch: watcher setup failed: " + String((err && err.message) || err));
+      finish(1);
+      return;
+    }
+    if (onReady) {
+      try { onReady(); } catch { }
+    }
+  }
+  main.stop = stop;
+  flow().catch((err) => {
+    try { printError(String((err && err.message) || err)); } catch { }
+    finish(1);
+  });
+  return main;
+}
+
 const invokedPath = process.argv[1] ? resolve(process.argv[1]) : "";
 const invokedAsMain = invokedPath === fileURLToPath(import.meta.url);
 if (invokedAsMain) {
   const cliArgs = process.argv.slice(2);
   const sub = cliArgs[0];
-  if (sub !== "register") {
-    console.error("ocms-s dev-tools: unknown subcommand " + JSON.stringify(sub || "") + "\n" + USAGE_REGISTER);
-    process.exitCode = 1;
-  } else {
+  if (sub === "register") {
     const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
     const code = await runRegister({ argv: cliArgs.slice(1), env: process.env, repoRoot: root });
     process.exitCode = code;
+  } else if (sub === "watch") {
+    const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+    const handle = runWatch({ argv: cliArgs.slice(1), repoRoot: root });
+    const onWatchSignal = () => { void handle.stop(); };
+    process.on("SIGINT", onWatchSignal);
+    process.on("SIGTERM", onWatchSignal);
+    const watchCode = await handle;
+    process.removeListener("SIGINT", onWatchSignal);
+    process.removeListener("SIGTERM", onWatchSignal);
+    process.exitCode = watchCode;
+  } else {
+    console.error("ocms-s dev-tools: unknown subcommand " + JSON.stringify(sub || "") + "\n" + USAGE_REGISTER);
+    process.exitCode = 1;
   }
 }
