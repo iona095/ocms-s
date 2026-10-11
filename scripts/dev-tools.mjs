@@ -177,6 +177,9 @@ export async function runRegister(options) {
   const existsCheck = options.profileExists || profileExists;
   const spawnFn = options.spawnFn || defaultSpawn;
   const onChild = options.onChild || null;
+  const isCancelled = options.isCancelled || null;
+  const cancelledNow = () => { try { return !!(isCancelled && isCancelled()); } catch { return false; } };
+  const cancelRefusal = () => { printError("ocms-s register: cancelled; refusing plugin mutation"); return 1; };
   const getPkgName = options.readPackageName || readPackageName;
   let profile;
   try {
@@ -188,11 +191,13 @@ export async function runRegister(options) {
   }
   print(TARGET_PREFIX + JSON.stringify(profile));
   const pkgName = await getPkgName(repoRoot);
+  if (cancelledNow()) { return cancelRefusal(); }
   if (pkgName !== "ocms-s") {
     printError("ocms-s register: unexpected package name for " + repoRoot);
     return 1;
   }
   const dshBin = await findDsh(env);
+  if (cancelledNow()) { return cancelRefusal(); }
   if (!dshBin) {
     printError("ocms-s register: dsh executable not found on PATH; install DSH 0.2.1-alpha.2 (no download attempted)");
     return 1;
@@ -206,15 +211,18 @@ export async function runRegister(options) {
     printError("ocms-s register: profile check failed for " + JSON.stringify(profile));
     return 1;
   }
+  if (cancelledNow()) { return cancelRefusal(); }
   if (!present) {
     printError("ocms-s register: profile " + JSON.stringify(profile) + " does not exist; refusing to create it (existing profiles only)");
     return 1;
   }
   const launch = await resolveLaunch(dshBin);
+  if (cancelledNow()) { return cancelRefusal(); }
   if (!launch || launch.shell !== false || typeof launch.file !== "string" || !Array.isArray(launch.argsPrefix)) {
     printError("ocms-s register: dsh launcher is not a safely invocable installation; refusing without shell fallback");
     return 1;
   }
+  if (cancelledNow()) { return cancelRefusal(); }
   const notify = onChild ? ((c) => { try { onChild(c); } catch { } }) : undefined;
   const spawned = await spawnFn(launch.file, launch.argsPrefix.concat(["plugin", "--profile", profile, "add", repoRoot]), notify, env);
   return typeof spawned === "number" ? spawned : spawned.code;
@@ -250,9 +258,28 @@ export function runWatch(options) {
   const watchFile = opts.watchFile || ((path, listener) => watch(path, listener));
   const debounceMs = opts.debounceMs !== undefined ? opts.debounceMs : WATCH_DEBOUNCE_MS;
   const onReady = opts.onReady || null;
-  const state = { watchers: [], timer: null, busy: false, queued: false, shuttingDown: false, activeChild: null, settled: false, finalCode: 0 };
+  const state = { watchers: [], timer: null, busy: false, queued: false, shuttingDown: false, activeChild: null, settled: false, finalCode: 0, fatal: false, fatalCode: 0 };  const signaledKids = [];
   let resolveMain = null;
   const main = new Promise((resolve) => { resolveMain = resolve; });
+  function signalOwned() {
+    const current = state.activeChild;
+    if (current && signaledKids.indexOf(current) === -1) {
+      signaledKids.push(current);
+      try { current.kill(); } catch { }
+    }
+  }
+  function onWatcherError(err) {
+    if (state.settled) { return; }
+    state.fatal = true;
+    state.fatalCode = 1;
+    state.shuttingDown = true;
+    state.queued = false;
+    clearTimer();
+    try { printError("ocms-s watch: watcher failed: " + String((err && err.message) || err)); } catch { }
+    signalOwned();
+    closeWatchers();
+    if (!state.busy) { finish(1); }
+  }
   function clearTimer() {
     if (state.timer !== null) {
       clearTimeout(state.timer);
@@ -279,9 +306,7 @@ export function runWatch(options) {
     clearTimer();
     state.queued = false;
     closeWatchers();
-    if (state.busy && state.activeChild) {
-      try { state.activeChild.kill(); } catch { }
-    }
+    signalOwned();
     if (!state.busy) {
       finish(0);
       return state.finalCode;
@@ -333,7 +358,9 @@ export function runWatch(options) {
       if (out.length > 0) { printError(out); }
       printError(WATCH_FAILED_LINE);
     }
-    if (state.shuttingDown || state.settled) {
+    if (state.settled) { return; }
+    if (state.fatal) { finish(state.fatalCode); return; }
+    if (state.shuttingDown) {
       finish(0);
       return;
     }
@@ -352,6 +379,7 @@ export function runWatch(options) {
       finish(1);
       return;
     }
+    state.busy = true;
     const started = beginBuild();
     state.activeChild = started.child || null;
     let res = null;
@@ -361,8 +389,11 @@ export function runWatch(options) {
       res = { code: 1, stdout: "", stderr: String((err && err.message) || err) };
     } finally {
       state.activeChild = null;
+      state.busy = false;
     }
-    if (state.shuttingDown || state.settled) {
+    if (state.settled) { return; }
+    if (state.fatal) { finish(state.fatalCode); return; }
+    if (state.shuttingDown) {
       finish(0);
       return;
     }
@@ -378,7 +409,11 @@ export function runWatch(options) {
     const inputs = [join(repoRoot, "dsh", "client.mjs"), join(repoRoot, "dsh", "build-client.mjs")];
     try {
       for (const input of inputs) {
-        state.watchers.push(watchFile(input, onEvent));
+        const created = watchFile(input, onEvent);
+        if (created && typeof created.on === "function") {
+          created.on("error", onWatcherError);
+        }
+        state.watchers.push(created);
       }
     } catch (err) {
       printError("ocms-s watch: watcher setup failed: " + String((err && err.message) || err));
@@ -442,7 +477,9 @@ function defaultRegisterStage(args) {
       repoRoot: args.repoRoot,
       print: args.print,
       printError: args.printError,
-      onChild: (c) => { try { args.track(c); } catch { } }
+      ...(args.registerDeps || {}),
+      onChild: (c) => { try { args.track(c); } catch { } },
+      isCancelled: args.isCancelled || null,
     });
     return { code };
   })();
@@ -467,7 +504,12 @@ export function runDevWeb(options) {
     return state.cancelSignal === "SIGTERM" ? DEVWEB_SIGTERM_CODE : DEVWEB_SIGINT_CODE;
   }
   function track(child) {
-    if (child) { state.activeChild = child; }
+    if (!child || state.settled) { return; }
+    state.activeChild = child;
+    if (state.shuttingDown && state.signaled.indexOf(child) === -1) {
+      state.signaled.push(child);
+      try { child.kill(); } catch { }
+    }
   }
   function signalOwned() {
     const current = state.activeChild;
@@ -530,7 +572,7 @@ export function runDevWeb(options) {
     if (buildRes.stdout && buildRes.stdout.trim().length > 0) {
       print(buildRes.stdout.trim());
     }
-    const reg = registerStage({ profile, env, repoRoot, print, printError, track });
+    const reg = registerStage({ profile, env, repoRoot, print, printError, track, registerDeps: opts.registerDeps || {}, isCancelled: () => state.cancelled });
     let regRes = null;
     try {
       regRes = await reg.done;

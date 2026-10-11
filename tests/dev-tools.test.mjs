@@ -1,10 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { execSync, spawnSync } from "node:child_process";
+import { execSync, spawnSync, spawn } from "node:child_process";
 import { readFile, writeFile, mkdir, mkdtemp, rm, chmod, readdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { EventEmitter } from "node:events";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "..");
@@ -1147,5 +1148,271 @@ describe("DX-3 cross-platform watch and rebuild", () => {
       await rm(emptyDir, { recursive: true, force: true });
       await rm(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe("R1 ownership and cancellation repair", () => {
+  const DEVTOOLS = join(ROOT, "scripts", "dev-tools.mjs");
+  async function r1Settled(ms) {
+    await new Promise((r) => setTimeout(r, ms));
+  }
+  async function r1WaitCount(get, n) {
+    const start = Date.now();
+    while (get() < n && Date.now() - start < 2000) {
+      await r1Settled(10);
+    }
+    return get() >= n;
+  }
+  async function r1Absent(p) {
+    try { await stat(p); return false; } catch { return true; }
+  }
+  function r1Deferred() {
+    const rec = { started: 0, max: 0, active: 0 };
+    const queue = [];
+    const child = { killed: 0, kill() { this.killed += 1; return true; } };
+    const start = () => {
+      rec.started += 1;
+      rec.active += 1;
+      if (rec.active > rec.max) { rec.max = rec.active; }
+      let rel = null;
+      const raw = new Promise((r) => { rel = r; });
+      queue.push(rel);
+      const done = raw.then((res) => { rec.active -= 1; return res; });
+      return { child, done };
+    };
+    const release = (res) => { const rel = queue.shift(); if (rel) { rel(res); } };
+    return { rec, start, release, child };
+  }
+  function r1EmitterWatch() {
+    const rec = { paths: [], watchers: [], closed: 0 };
+    const fn = (p, l) => {
+      const em = new EventEmitter();
+      em.on("change", l);
+      em.close = () => { rec.closed += 1; };
+      rec.paths.push(p);
+      rec.watchers.push(em);
+      return em;
+    };
+    return { rec, fn };
+  }
+  async function r1FixtureRoot() {
+    const root = await mkdtemp(join(tmpdir(), "ocms-r1root-"));
+    await mkdir(join(root, "dsh"), { recursive: true });
+    const builderSrc = await readFile(join(ROOT, "dsh", "build-client.mjs"), "utf8");
+    await writeFile(join(root, "dsh", "build-client.mjs"), builderSrc, "utf8");
+    await writeFile(join(root, "dsh", "client.mjs"), "export const MARK = 1;\n", "utf8");
+    await writeFile(join(root, "package.json"), JSON.stringify({ name: "ocms-s", private: true, type: "module" }) + "\n", "utf8");
+    return root;
+  }
+  async function r1Profile(home, name) {
+    const dir = join(home, "profiles", name);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "package.json"), JSON.stringify({ name: "dsh-profile-" + name, private: true }) + "\n", "utf8");
+    return dir;
+  }
+  async function r1FakeBin() {
+    const bin = await mkdtemp(join(tmpdir(), "ocms-r1bin-"));
+    const log = join(bin, "argv.log");
+    const pkgDir = join(bin, "node_modules", "@deepseek-ai", "dsh");
+    await mkdir(join(pkgDir, "lib"), { recursive: true });
+    const src = "const fs = require(" + JSON.stringify("node:fs") + ");\n"
+      + "const out = process.env[" + JSON.stringify("OCMS_FAKE_DSH_LOG") + "];\n"
+      + "const code = Number(process.env[" + JSON.stringify("OCMS_FAKE_DSH_EXIT") + "] || " + JSON.stringify("0") + ");\n"
+      + "fs.appendFileSync(out, JSON.stringify(process.argv.slice(2)) + " + JSON.stringify("\n") + ");\n"
+      + "process.exit(code);\n";
+    await writeFile(join(pkgDir, "lib", "bin.js"), src, "utf8");
+    await writeFile(join(pkgDir, "package.json"), JSON.stringify({ name: "@deepseek-ai/dsh", version: "0.0.0-test", bin: { dsh: "lib/bin.js" } }, null, 2) + "\n", "utf8");
+    await writeFile(join(bin, "dsh.cmd"), "@echo off\nrem fake npm shim\n", "utf8");
+    await writeFile(join(bin, "dsh"), "#!/bin/sh\n# fake shim\n", "utf8");
+    try { await chmod(join(bin, "dsh"), 0o755); } catch { }
+    return { bin, log };
+  }
+  function r1PathEnv(bin) {
+    const sep = process.platform === "win32" ? ";" : ":";
+    return bin + sep + process.env.PATH;
+  }
+  it("F1 stop during initial build settles owned child", async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const builder = r1Deferred();
+    let watched = false;
+    const h = mod.runWatch({ argv: [], repoRoot: "/fake/r1", print: () => {}, printError: () => {}, startBuild: builder.start, watchFile: () => { watched = true; return { close() {} }; }, onReady: () => {} });
+    assert.ok(await r1WaitCount(() => builder.rec.started, 1), "initial build active");
+    let stopSettled = false;
+    const stopping = h.stop().then((c) => { stopSettled = true; return c; });
+    await r1Settled(30);
+    assert.equal(builder.child.killed, 1, "initial child signaled once");
+    assert.ok(!stopSettled, "stop waits for settlement");
+    builder.release({ code: 0, stdout: "", stderr: "" });
+    assert.equal(await stopping, 0, "stop resolves zero after settlement");
+    assert.ok(!watched, "no watchers installed");
+    assert.equal(await h.stop(), 0, "repeated stop idempotent");
+    assert.equal(builder.child.killed, 1, "no duplicate signal");
+  });
+  it("F1 real child signaled and settled", { timeout: 60000 }, async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const sleep = { started: false, child: null, exited: false };
+    const realSleep = () => {
+      sleep.started = true;
+      const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 5000);"], { stdio: "ignore" });
+      sleep.child = child;
+      child.on("exit", () => { sleep.exited = true; });
+      const done = new Promise((resolve) => {
+        child.on("error", () => resolve({ code: 127, stdout: "", stderr: "" }));
+        child.on("exit", (code) => resolve({ code: typeof code === "number" ? code : 1, stdout: "", stderr: "" }));
+      });
+      return { child, done };
+    };
+    const foreign = spawn(process.execPath, ["-e", "setTimeout(() => {}, 5000);"], { stdio: "ignore" });
+    try {
+      let watched = false;
+      const h = mod.runWatch({ argv: [], repoRoot: "/fake/r1", print: () => {}, printError: () => {}, startBuild: realSleep, watchFile: () => { watched = true; return { close() {} }; } });
+      assert.ok(await r1WaitCount(() => (sleep.started ? 1 : 0), 1), "sleep spawned");
+      let stopDone = false;
+      const stopping = h.stop().then((c) => { stopDone = true; return c; });
+      await r1Settled(30);
+      if (stopDone) { assert.ok(sleep.exited, "never resolves before exit"); }
+      assert.equal(await stopping, 0, "stop resolves zero");
+      assert.ok(sleep.exited, "owned child actually exited");
+      assert.ok(!watched, "no watchers");
+      assert.ok(foreign.exitCode === null && foreign.signalCode === null, "foreign alive");
+    } finally {
+      try { foreign.kill(); } catch { }
+      await new Promise((r) => { if (foreign.exitCode !== null || foreign.signalCode !== null) { r(undefined); } else { foreign.on("exit", () => r(undefined)); } });
+    }
+  });
+  it("F2 cancelled preflight never spawns", async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const home = await mkdtemp(join(tmpdir(), "ocms-r1-"));
+    const root = await mkdtemp(join(tmpdir(), "ocms-r1root-"));
+    await writeFile(join(root, "package.json"), JSON.stringify({ name: "ocms-s", private: true }) + "\n", "utf8");
+    let releaseExists = null;
+    const gate = new Promise((r) => { releaseExists = r; });
+    let existsCalls = 0;
+    let spawns = 0;
+    let cancelled = false;
+    const prints = [];
+    const p = mod.runRegister({ argv: ["--profile", "dev-ocms"], env: Object.assign({}, process.env, { DSH_HOME: home }), repoRoot: root, print: (m) => prints.push(m), printError: () => {}, readPackageName: async () => "ocms-s", findDsh: async () => "/fake/dsh", profileExists: () => { existsCalls += 1; return gate.then(() => true); }, resolveLaunch: async () => ({ file: "/fake/dsh", argsPrefix: [], shell: false }), spawnFn: () => { spawns += 1; return Promise.resolve(0); }, isCancelled: () => cancelled });
+    assert.ok(await r1WaitCount(() => existsCalls, 1), "preflight paused");
+    assert.ok(prints.join("\n").includes("dev-ocms"), "target printed before cancel");
+    assert.equal(spawns, 0, "no spawn yet");
+    cancelled = true;
+    releaseExists(undefined);
+    assert.notEqual(await p, 0, "cancelled run fails");
+    assert.equal(spawns, 0, "no spawn after cancellation");
+    await rm(home, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true });
+  });
+  it("F2 dev:web cancel during register preflight", { timeout: 60000 }, async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    for (const sig of ["SIGINT", "SIGTERM"]) {
+      const want = sig === "SIGTERM" ? 143 : 130;
+      const root = await r1FixtureRoot();
+      const home = await mkdtemp(join(tmpdir(), "ocms-r1-"));
+      const fake = await r1FakeBin();
+      await r1Profile(home, "dev-ocms");
+      let releaseExists = null;
+      const gate = new Promise((r) => { releaseExists = r; });
+      const sep = process.platform === "win32" ? ";" : ":";
+      const env = Object.assign({}, process.env, { DSH_HOME: home, PATH: fake.bin + sep + process.env.PATH, OCMS_FAKE_DSH_LOG: fake.log });
+      const prints = [];
+      let depCalls = 0;
+      const h = mod.runDevWeb({ argv: ["--profile", "dev-ocms"], env, repoRoot: root, print: (m) => prints.push(m), printError: () => {}, registerDeps: { profileExists: () => { depCalls += 1; return gate.then(() => true); } } });
+      assert.ok(await r1WaitCount(() => (prints.join("\n").includes("dev-ocms") ? 1 : 0), 1), "inside register preflight");
+      assert.ok(await r1WaitCount(() => depCalls, 1), "injected preflight reached");
+      const stopping = h.shutdown(sig);
+      await r1Settled(20);
+      releaseExists(undefined);
+      assert.equal(await stopping, want, sig + " status");
+      assert.ok(await r1Absent(fake.log), "plugin add never spawned");
+      assert.deepEqual(await readdir(join(home, "profiles")), ["dev-ocms"], "no profile files touched");
+      await rm(root, { recursive: true, force: true });
+      await rm(home, { recursive: true, force: true });
+      await rm(fake.bin, { recursive: true, force: true });
+    }
+  });
+  it("F2 late child after cancel is adopted and settled", async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const late = { killed: 0, kill() { this.killed += 1; return true; } };
+    let capturedTrack = null;
+    let releaseReg = null;
+    const regGate = new Promise((r) => { releaseReg = r; });
+    const h = mod.runDevWeb({ argv: ["--profile", "dev-ocms"], repoRoot: "/fake/r1", print: () => {}, printError: () => {}, startBuild: () => ({ child: null, done: Promise.resolve({ code: 0, stdout: "", stderr: "" }) }), registerStage: (a) => { capturedTrack = a.track; return { done: regGate }; } });
+    await r1Settled(20);
+    const stopping = h.shutdown("SIGINT");
+    await r1Settled(20);
+    capturedTrack(late);
+    assert.equal(late.killed, 1, "late child signaled once");
+    releaseReg({ code: 0 });
+    assert.equal(await stopping, 130, "cancel status wins");
+    assert.equal(await h.shutdown("SIGINT"), 130, "idempotent");
+    assert.equal(late.killed, 1, "no duplicate signal");
+  });
+  it("F3 fatal watcher error while idle", async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const stub = r1EmitterWatch();
+    const errors = [];
+    let ready = false;
+    let builds = 0;
+    const h = mod.runWatch({ argv: [], repoRoot: "/fake/r1", print: () => {}, printError: (m) => errors.push(m), startBuild: () => { builds += 1; return { child: null, done: Promise.resolve({ code: 0, stdout: "", stderr: "" }) }; }, watchFile: stub.fn, debounceMs: 10, onReady: () => { ready = true; } });
+    assert.ok(await r1WaitCount(() => (ready ? 1 : 0), 1), "ready");
+    stub.rec.watchers[0].emit("error", new Error("watcher exploded"));
+    assert.equal(await h, 1, "fatal non-zero");
+    assert.ok(errors.join("\n").includes("watcher exploded"), "diagnostic surfaced");
+    assert.equal(stub.rec.closed, 2, "both watchers closed");
+    stub.rec.watchers[0].emit("change");
+    await r1Settled(60);
+    assert.equal(builds, 1, "no further rebuild");
+  });
+  it("F3 fatal watcher error during active rebuild", { timeout: 60000 }, async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const stub = r1EmitterWatch();
+    const builder = r1Deferred();
+    const ok = { code: 0, stdout: "", stderr: "" };
+    const errors = [];
+    let ready = false;
+    const h = mod.runWatch({ argv: [], repoRoot: "/fake/r1", print: () => {}, printError: (m) => errors.push(m), startBuild: builder.start, watchFile: stub.fn, debounceMs: 10, onReady: () => { ready = true; } });
+    assert.ok(await r1WaitCount(() => builder.rec.started, 1), "initial started");
+    builder.release(ok);
+    assert.ok(await r1WaitCount(() => (ready ? 1 : 0), 1), "ready");
+    stub.rec.watchers[0].emit("change");
+    assert.ok(await r1WaitCount(() => builder.rec.started, 2), "rebuild active");
+    let settledMain = false;
+    const waiting = h.then((c) => { settledMain = true; return c; });
+    stub.rec.watchers[1].emit("error", new Error("watcher broke"));
+    await r1Settled(30);
+    assert.equal(builder.child.killed, 1, "active child signaled once");
+    assert.ok(!settledMain, "waits for settlement");
+    builder.release(ok);
+    assert.equal(await waiting, 1, "fatal outcome kept");
+    assert.equal(stub.rec.closed, 2, "watchers closed");
+    assert.equal(builder.child.killed, 1, "no double signal");
+  });
+  it("F3 setup failure after first watcher cleans up", async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const closed = [];
+    let calls = 0;
+    const h = mod.runWatch({ argv: [], repoRoot: "/fake/r1", print: () => {}, printError: () => {}, startBuild: () => ({ child: null, done: Promise.resolve({ code: 0, stdout: "", stderr: "" }) }), watchFile: (p) => { calls += 1; if (calls > 1) { throw new Error("second fails"); } return { close() { closed.push(p); } }; } });
+    assert.equal(await h, 1, "setup failure non-zero");
+    assert.equal(closed.length, 1, "first watcher closed");
+  });
+  it("F3 competing stop and fatal error settle once", { timeout: 60000 }, async () => {
+    const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const stub = r1EmitterWatch();
+    const builder = r1Deferred();
+    const ok = { code: 0, stdout: "", stderr: "" };
+    let ready = false;
+    const h = mod.runWatch({ argv: [], repoRoot: "/fake/r1", print: () => {}, printError: () => {}, startBuild: builder.start, watchFile: stub.fn, debounceMs: 10, onReady: () => { ready = true; } });
+    assert.ok(await r1WaitCount(() => builder.rec.started, 1), "initial started");
+    builder.release(ok);
+    assert.ok(await r1WaitCount(() => (ready ? 1 : 0), 1), "ready");
+    stub.rec.watchers[0].emit("change");
+    assert.ok(await r1WaitCount(() => builder.rec.started, 2), "rebuild active");
+    const stopping = h.stop();
+    stub.rec.watchers[1].emit("error", new Error("race broke"));
+    await r1Settled(20);
+    assert.equal(builder.child.killed, 1, "single signal across stop and fatal");
+    builder.release(ok);
+    assert.equal(await stopping, 1, "fatal outcome authoritative");
+    assert.equal(await h, 1, "main agrees");
   });
 });
