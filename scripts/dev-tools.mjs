@@ -10,6 +10,7 @@ const TARGET_PREFIX = "ocms-s register: target profile ";
 const BACKSLASH = String.fromCharCode(92);
 const PROFILE_PATTERN = /^[A-Za-z0-9._-]+$/;
 const USAGE_WATCH = "Usage: npm run watch\n" + "  Rebuild dsh/client.js when its inputs change.\n" + "  Accepts no arguments.";
+const USAGE_BUILD = "Usage: npm run build\n" + "  Rebuild dsh/client.js from its inputs.\n" + "  Accepts no arguments.";
 export const WATCH_DEBOUNCE_MS = 150;
 const WATCH_REBUILT_LINE = "ocms-s watch: rebuilt dsh/client.js";
 const WATCH_FAILED_LINE = "ocms-s watch: build failed (watching continues)";
@@ -226,6 +227,54 @@ export async function runRegister(options) {
   const notify = onChild ? ((c) => { try { onChild(c); } catch { } }) : undefined;
   const spawned = await spawnFn(launch.file, launch.argsPrefix.concat(["plugin", "--profile", profile, "add", repoRoot]), notify, env);
   return typeof spawned === "number" ? spawned : spawned.code;
+}
+
+export function parseBuildArgs(argv) {
+  if (!Array.isArray(argv) || argv.length !== 0) {
+    throw new Error(USAGE_BUILD);
+  }
+  return {};
+}
+
+export async function runBuild(options) {
+  const opts = options || {};
+  const repoRoot = opts.repoRoot || "";
+  const env = opts.env || process.env;
+  const print = opts.print || ((msg) => console.log(msg));
+  const printError = opts.printError || ((msg) => console.error(msg));
+  const startBuild = opts.startBuild || ((root, _env) => startCanonicalBuild(root, _env || env));
+  let argv = opts.argv;
+  if (argv === undefined) { argv = []; }
+  try {
+    parseBuildArgs(argv);
+  } catch (err) {
+    printError(String((err && err.message) || err));
+    return 1;
+  }
+  let started = null;
+  try {
+    started = startBuild(repoRoot);
+  } catch (err) {
+    printError("ocms-s build: " + String((err && err.message) || err));
+    return 1;
+  }
+  let res = null;
+  try {
+    res = await started.done;
+  } catch (err) {
+    res = { code: 1, stdout: "", stderr: String((err && err.message) || err) };
+  }
+  if (!res || typeof res.code !== "number") {
+    printError("ocms-s build: builder did not exit cleanly");
+    return 1;
+  }
+  if (res.stdout && res.stdout.trim().length > 0) {
+    print(res.stdout.trim());
+  }
+  if (res.stderr && res.stderr.trim().length > 0) {
+    printError(res.stderr.trim());
+  }
+  return res.code;
 }
 
 export function parseWatchArgs(argv) {
@@ -630,7 +679,11 @@ const invokedAsMain = invokedPath === fileURLToPath(import.meta.url);
 if (invokedAsMain) {
   const cliArgs = process.argv.slice(2);
   const sub = cliArgs[0];
-  if (sub === "register") {
+  if (sub === "build") {
+    const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+    const code = await runBuild({ argv: cliArgs.slice(1), env: process.env, repoRoot: root });
+    process.exitCode = code;
+  } else if (sub === "register") {
     const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
     const code = await runRegister({ argv: cliArgs.slice(1), env: process.env, repoRoot: root });
     process.exitCode = code;

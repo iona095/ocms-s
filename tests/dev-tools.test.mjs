@@ -9,7 +9,7 @@ import { EventEmitter } from "node:events";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "..");
-const CANONICAL_BUILD = "node dsh/build-client.mjs";
+const CANONICAL_BUILD = "node scripts/dev-tools.mjs build";
 
 function runNpmBuild(cwd) {
   return execSync("npm run build", { cwd, stdio: "pipe", encoding: "utf8", timeout: 90000 });
@@ -19,13 +19,13 @@ describe("DX-1 deterministic cross-platform build", () => {
   it("package exposes canonical build command", async () => {
     const raw = await readFile(join(ROOT, "package.json"), "utf8");
     const pkg = JSON.parse(raw);
-    assert.equal(pkg.scripts && pkg.scripts.build, CANONICAL_BUILD, "scripts.build must be exactly the canonical builder");
+    assert.equal(pkg.scripts && pkg.scripts.build, CANONICAL_BUILD, "scripts.build must delegate to the shared CLI");
   });
 
   it("build command is exactly the direct canonical invocation (structural safety)", async () => {
     const pkg = JSON.parse(await readFile(join(ROOT, "package.json"), "utf8"));
     const cmd = pkg.scripts && pkg.scripts.build;
-    assert.equal(cmd, CANONICAL_BUILD, "build must equal canonical command");
+    assert.equal(cmd, CANONICAL_BUILD, "build must equal shared CLI command");
     assert.ok(!cmd.includes("--profile"), "build must not mention profile");
     assert.ok(!cmd.includes("dsh ") && !cmd.includes("plugin"), "build must not invoke dsh");
     assert.ok(!cmd.includes("settings"), "build must not reference settings");
@@ -50,8 +50,11 @@ describe("DX-1 deterministic cross-platform build", () => {
     const tmp = await mkdtemp(join(tmpdir(), "ocms-dx1-"));
     try {
       await mkdir(join(tmp, "dsh"), { recursive: true });
+      await mkdir(join(tmp, "scripts"), { recursive: true });
       const builder = await readFile(join(ROOT, "dsh", "build-client.mjs"), "utf8");
       await writeFile(join(tmp, "dsh", "build-client.mjs"), builder, "utf8");
+      const cli = await readFile(join(ROOT, "scripts", "dev-tools.mjs"), "utf8");
+      await writeFile(join(tmp, "scripts", "dev-tools.mjs"), cli, "utf8");
       await writeFile(join(tmp, "dsh", "client.mjs"), "import foo from " + JSON.stringify("bar") + ";" + "\n" + "const x = 1;" + "\n", "utf8");
       const fixturePkg = { name: "ocms-dx1-fixture", private: true, type: "module", scripts: { build: buildCmd } };
       await writeFile(join(tmp, "package.json"), JSON.stringify(fixturePkg, null, 2) + "\n", "utf8");
@@ -66,6 +69,97 @@ describe("DX-1 deterministic cross-platform build", () => {
     } finally {
       await rm(tmp, { recursive: true, force: true });
     }
+  });
+  it("empty build argv is valid", async () => {
+    const mod = await import(pathToFileURL(join(ROOT, "scripts", "dev-tools.mjs")).href);
+    assert.deepEqual(mod.parseBuildArgs([]), {}, "empty argv accepted");
+  });
+  it("any build argv is invalid", async () => {
+    const mod = await import(pathToFileURL(join(ROOT, "scripts", "dev-tools.mjs")).href);
+    assert.equal(typeof mod.parseBuildArgs, "function", "parser wired without execution");
+    for (const argv of [["--profile", "web"], ["--anything"], ["--profile=web"], ["extra"]]) {
+      assert.throws(() => mod.parseBuildArgs(argv), Error, "must reject " + JSON.stringify(argv));
+    }
+  });
+  it("invalid build argv fails with zero side effects", async () => {
+    const mod = await import(pathToFileURL(join(ROOT, "scripts", "dev-tools.mjs")).href);
+    let spawns = 0;
+    let usage = "";
+    const code = await mod.runBuild({ argv: ["--profile", "web"], repoRoot: ROOT, print: () => {}, printError: (m) => { usage += m; }, startBuild: () => { spawns += 1; return { child: null, done: Promise.resolve({ code: 0, stdout: "", stderr: "" }) }; } });
+    assert.notEqual(code, 0, "rejected argv fails");
+    assert.ok(usage.includes("Usage"), "usage on stderr");
+    assert.equal(spawns, 0, "zero builder spawns");
+  });
+  it("npm forwarding reaches the build parser", { timeout: 60000 }, async () => {
+    const before = await readFile(join(ROOT, "dsh", "client.js"));
+    let failed = false;
+    try {
+      execSync("npm run build -- --profile web", { cwd: ROOT, stdio: "pipe", encoding: "utf8", timeout: 60000 });
+    } catch (err) {
+      failed = true;
+      const out = String((err.stdout || "") + (err.stderr || ""));
+      assert.ok(out.includes("Usage"), "forwarded args reach the parser");
+    }
+    assert.ok(failed, "forwarded profile must fail");
+    assert.ok((await readFile(join(ROOT, "dsh", "client.js"))).equals(before), "no output side effect");
+  });
+  it("forbidden args leave an isolated checkout untouched", { timeout: 120000 }, async () => {
+    const pkg = JSON.parse(await readFile(join(ROOT, "package.json"), "utf8"));
+    const tmp = await mkdtemp(join(tmpdir(), "ocms-r2-"));
+    try {
+      await mkdir(join(tmp, "dsh"), { recursive: true });
+      await mkdir(join(tmp, "scripts"), { recursive: true });
+      await writeFile(join(tmp, "dsh", "build-client.mjs"), await readFile(join(ROOT, "dsh", "build-client.mjs"), "utf8"), "utf8");
+      await writeFile(join(tmp, "scripts", "dev-tools.mjs"), await readFile(join(ROOT, "scripts", "dev-tools.mjs"), "utf8"), "utf8");
+      await writeFile(join(tmp, "dsh", "client.mjs"), "export const MARK = 1;\n", "utf8");
+      const sentinel = "SENTINEL-BEFORE";
+      await writeFile(join(tmp, "dsh", "client.js"), sentinel, "utf8");
+      const beforeStat = await stat(join(tmp, "dsh", "client.js"));
+      await writeFile(join(tmp, "package.json"), JSON.stringify({ name: "ocms-s", private: true, type: "module", scripts: { build: pkg.scripts.build } }) + "\n", "utf8");
+      let failed = false;
+      try {
+        execSync("npm run build -- --profile web", { cwd: tmp, stdio: "pipe", encoding: "utf8", timeout: 60000 });
+      } catch (err) {
+        failed = true;
+        assert.ok(String((err.stdout || "") + (err.stderr || "")).includes("Usage"), "usage before execution");
+      }
+      assert.ok(failed, "forbidden args fail");
+      assert.equal(await readFile(join(tmp, "dsh", "client.js"), "utf8"), sentinel, "output bytes unchanged");
+      assert.equal((await stat(join(tmp, "dsh", "client.js"))).mtimeMs, beforeStat.mtimeMs, "output untouched");
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+  it("valid build invokes the canonical builder once", async () => {
+    const mod = await import(pathToFileURL(join(ROOT, "scripts", "dev-tools.mjs")).href);
+    const seen = [];
+    const code = await mod.runBuild({ argv: [], repoRoot: ROOT, print: () => {}, printError: () => {}, startBuild: (r) => { seen.push(r); return { child: null, done: Promise.resolve({ code: 0, stdout: "", stderr: "" }) }; } });
+    assert.equal(code, 0, "valid build succeeds");
+    assert.deepEqual(seen, [ROOT], "exactly one builder start with the repo root");
+  });
+  it("builder non-zero exit propagates", async () => {
+    const mod = await import(pathToFileURL(join(ROOT, "scripts", "dev-tools.mjs")).href);
+    const code = await mod.runBuild({ argv: [], repoRoot: ROOT, print: () => {}, printError: () => {}, startBuild: () => ({ child: null, done: Promise.resolve({ code: 3, stdout: "", stderr: "broke" }) }) });
+    assert.equal(code, 3, "exact builder code propagates");
+  });
+  it("builder output passes through", async () => {
+    const mod = await import(pathToFileURL(join(ROOT, "scripts", "dev-tools.mjs")).href);
+    const out = [];
+    const errs = [];
+    const code = await mod.runBuild({ argv: [], repoRoot: ROOT, print: (m) => out.push(m), printError: (m) => errs.push(m), startBuild: () => ({ child: null, done: Promise.resolve({ code: 0, stdout: "OUT-LINE\n", stderr: "" }) }) });
+    assert.equal(code, 0, "success");
+    assert.ok(out.join("\n").includes("OUT-LINE"), "stdout passes through");
+    const code2 = await mod.runBuild({ argv: [], repoRoot: ROOT, print: (m) => out.push(m), printError: (m) => errs.push(m), startBuild: () => ({ child: null, done: Promise.resolve({ code: 1, stdout: "partial", stderr: "ERR-LINE" }) }) });
+    assert.equal(code2, 1, "failure");
+    assert.ok(errs.join("\n").includes("ERR-LINE"), "stderr passes through");
+  });
+  it("import has no build side effects", async () => {
+    const beforeInt = process.listenerCount("SIGINT");
+    const beforeTerm = process.listenerCount("SIGTERM");
+    const mod = await import(pathToFileURL(join(ROOT, "scripts", "dev-tools.mjs")).href);
+    assert.equal(typeof mod.runBuild, "function", "runBuild wired without execution");
+    assert.equal(process.listenerCount("SIGINT"), beforeInt, "no SIGINT leak");
+    assert.equal(process.listenerCount("SIGTERM"), beforeTerm, "no SIGTERM leak");
   });
 });
 

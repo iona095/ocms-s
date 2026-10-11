@@ -5,7 +5,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node dsh/build-client.mjs",
+    "build": "node scripts/dev-tools.mjs build",
     "register": "node scripts/dev-tools.mjs register",
     "watch": "node scripts/dev-tools.mjs watch",
     "dev:web": "node scripts/dev-tools.mjs dev:web",
