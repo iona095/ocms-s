@@ -278,6 +278,27 @@
     </div>
   </section>
 
+  <section class="panel" aria-labelledby="profile-heading">
+    <h2 id="profile-heading">DSH Profile Target</h2>
+    <label for="profile-picker">Profile (explicit; no default, no fallback)</label>
+    <input id="profile-picker" data-testid="profile-picker" name="profile" type="text" placeholder="e.g. web" autocomplete="off" spellcheck="false">
+    <label for="overlays-input">Declared overlays (comma-separated absolute paths; mode B only)</label>
+    <input id="overlays-input" name="overlays" type="text" placeholder="exact launch overlay files, in order" autocomplete="off" spellcheck="false">
+    <fieldset id="live-state-group">
+      <legend>Live-state attestation (production targets only)</legend>
+      <p id="live-state-note">Default UNATTESTED: production Apply is refused with LIVE_OVERLAY_UNKNOWN until you explicitly acknowledge one mode. Current: <span id="attestation-state">UNATTESTED</span></p>
+      <label><input type="radio" name="live-state" value="unattested" checked> UNATTESTED (default; refuse production Apply)</label>
+      <label><input type="radio" name="live-state" value="not-running"> not-running: no running DSH process owns this profile</label>
+      <label><input type="radio" name="live-state" value="overlays"> overlays: the running owner uses exactly the listed overlay files and no others</label>
+      <label><input id="attest-ack" name="attest-ack" type="checkbox"> I explicitly acknowledge this live-state declaration (required for Apply)</label>
+    </fieldset>
+    <div class="target-row">
+      <span id="profile-classification" class="badge">UNKNOWN</span>
+      <code id="profile-identity" class="path">no profile preview yet</code>
+    </div>
+    <p id="attestation-display" class="path">UNATTESTED</p>
+  </section>
+
   <section class="panel" aria-labelledby="sources-heading">
     <h2 id="sources-heading">Upstream Sources</h2>
     <ul id="sources-list" class="sources">
@@ -370,6 +391,7 @@
     <dt>Fallback resolved</dt><dd id="confirm-count-fallback">&mdash;</dd>
   </dl>
   <p id="confirm-note" class="confirm-note">A timestamped backup will be created before replacement.</p>
+  <p id="confirm-attestation" class="confirm-note">Live-state attestation (re-displayed from the retained Preview): <span id="confirm-attestation-text">UNATTESTED</span></p>
   <div class="buttons">
     <button id="confirm-cancel" type="button">Cancel</button>
     <button id="confirm-apply" type="button">Apply</button>
@@ -677,6 +699,7 @@
     }
     if (preview && preview.target) renderTarget(preview.target);
     renderSources(preview && preview.sources);
+    renderProfilePreview(preview);
   }
 
   function clearPreview() {
@@ -740,6 +763,117 @@
     return data;
   }
 
+  // --- profile-aware binding (S5 additive; legacy requests send {}) -------
+
+  function selectedLiveState() {
+    const checked = document.querySelector('input[name="live-state"]:checked');
+    return checked ? checked.value : 'unattested';
+  }
+
+  function profilePreviewBody() {
+    const picker = $('profile-picker');
+    const name = picker && typeof picker.value === 'string' ? picker.value.trim() : '';
+    if (!name) return {};
+    const body = { profileName: name };
+    const overlaysEl = $('overlays-input');
+    const overlaysRaw = overlaysEl && typeof overlaysEl.value === 'string' ? overlaysEl.value : '';
+    if (overlaysRaw.trim()) {
+      const items = overlaysRaw.split(',').map((s) => s.trim());
+      if (items.some((s) => s.length === 0)) return { error: 'overlays-empty' };
+      body.declaredOverlays = items;
+    }
+    const mode = selectedLiveState();
+    if (mode === 'not-running' || mode === 'overlays') {
+      if (mode === 'overlays') {
+        const list = (body.declaredOverlays || []).join(',');
+        body.liveState = list ? 'overlays:' + list : 'overlays:';
+      } else {
+        body.liveState = 'not-running';
+      }
+      const ack = $('attest-ack');
+      body.acknowledged = !!(ack && ack.checked);
+    }
+    return body;
+  }
+
+  function renderProfilePreview(preview) {
+    const identityEl = $('profile-identity');
+    const classEl = $('profile-classification');
+    const displayEl = $('attestation-display');
+    const stateEl = $('attestation-state');
+    if (!preview || preview.profile !== true || !preview.target) {
+      if (identityEl) identityEl.textContent = 'no profile preview yet';
+      if (classEl) { classEl.textContent = 'UNKNOWN'; classEl.classList.remove('production', 'scratch'); }
+      if (displayEl) displayEl.textContent = 'UNATTESTED';
+      if (stateEl) stateEl.textContent = 'UNATTESTED';
+      return;
+    }
+    const target = preview.target;
+    if (identityEl) identityEl.textContent = target.profileName + ' :: ' + target.patchPathReal + ' (' + target.pluginEntryName + ')';
+    if (classEl) {
+      classEl.textContent = target.classification || 'UNKNOWN';
+      classEl.classList.toggle('production', target.classification === 'PRODUCTION');
+      classEl.classList.toggle('scratch', target.classification === 'SCRATCH');
+    }
+    const text = typeof preview.attestationText === 'string' && preview.attestationText ? preview.attestationText : 'UNATTESTED';
+    if (displayEl) displayEl.textContent = text;
+    if (stateEl) stateEl.textContent = preview.attestation && preview.attestation.mode ? preview.attestation.mode : 'UNATTESTED';
+  }
+
+  // S5-R2 B5: any edit to the operator selection after Preview invalidates
+  // the browser-retained Preview and closes the confirmation dialog. A fresh
+  // Preview is mandatory; Apply always echoes the CURRENT selection so the
+  // server can compare it against the retained binding and disk truth.
+  function invalidateProfilePreview(reason) {
+    if (!lastPreview || lastPreview.profile !== true) return;
+    previewId = null;
+    lastPreview = null;
+    clearPreview();
+    renderProfilePreview(null);
+    try {
+      if (confirmDialog.open) confirmDialog.close();
+    } catch {}
+    setState('IDLE');
+    setNotice(reason || 'Selection changed; run Refresh Preview to build a new one.', 'warn');
+  }
+
+  function currentSelection() {
+    const picker = $('profile-picker');
+    const name = picker && typeof picker.value === 'string' ? picker.value.trim() : '';
+    const overlaysEl = $('overlays-input');
+    const raw = overlaysEl && typeof overlaysEl.value === 'string' ? overlaysEl.value : '';
+    const selection = {
+      profileName: name,
+      declaredOverlays: raw.trim() ? raw.split(',').map((s) => s.trim()) : [],
+      attestation: lastPreview && typeof lastPreview.attestation !== 'undefined' ? lastPreview.attestation : null,
+    };
+    const mode = selectedLiveState();
+    if (mode === 'not-running' || mode === 'overlays') {
+      if (mode === 'overlays') {
+        const list = selection.declaredOverlays.join(',');
+        selection.liveState = 'overlays:' + list;
+      } else {
+        selection.liveState = 'not-running';
+      }
+      const ack = $('attest-ack');
+      selection.acknowledged = !!(ack && ack.checked);
+    }
+    return selection;
+  }
+
+  function wireProfileInvalidation() {
+    const picker = $('profile-picker');
+    if (picker) picker.addEventListener('input', () => invalidateProfilePreview('Profile selection changed; run Refresh Preview to build a new one.'));
+    const overlays = $('overlays-input');
+    if (overlays) overlays.addEventListener('input', () => invalidateProfilePreview('Overlay list changed; run Refresh Preview to build a new one.'));
+    try {
+      const modes = document.querySelectorAll ? document.querySelectorAll('input[name="live-state"]') : [];
+      for (const radio of modes) radio.addEventListener('change', () => invalidateProfilePreview('Attestation mode changed; run Refresh Preview to build a new one.'));
+    } catch {}
+    const ack = $('attest-ack');
+    if (ack) ack.addEventListener('change', () => invalidateProfilePreview('Acknowledgment changed; run Refresh Preview to build a new one.'));
+  }
+
   // --- actions -------------------------------------------------------------
 
   async function boot() {
@@ -767,12 +901,17 @@
 
   async function refreshPreview() {
     if (busy || applying) return;
+    const previewBody = profilePreviewBody();
+    if (previewBody && previewBody.error) {
+      setNotice('Declared overlays contain an empty entry; remove it before Preview.', 'error');
+      return;
+    }
     busy = true;
     document.body.setAttribute('aria-busy', 'true');
     syncControls();
     setNotice('Fetching preview from upstream sources\u2026', 'busy');
     try {
-      const data = await apiPost('/api/preview', {});
+      const data = await apiPost('/api/preview', previewBody);
       lastPreview = data;
       previewId = data && typeof data.previewId === 'string' && data.previewId ? data.previewId : null;
       renderPreview(data);
@@ -831,6 +970,11 @@
         ? 'PRODUCTION target: a timestamped backup will be created before replacement.'
         : 'A timestamped backup will be created before replacement.';
       confirmNoteEl.classList.toggle('production', production === true);
+      const attestText = $('confirm-attestation-text');
+      if (attestText) attestText.textContent = lastPreview && typeof lastPreview.attestationText === 'string' && lastPreview.attestationText ? lastPreview.attestationText : 'UNATTESTED';
+    } else {
+      const attestText = $('confirm-attestation-text');
+      if (attestText) attestText.textContent = 'UNATTESTED';
     }
     confirmDialog.showModal();
   }
@@ -851,8 +995,17 @@
     setState('APPLYING');
     setNotice('Applying synchronization\u2026', 'busy');
     try {
-      const data = await apiPost('/api/apply', { previewId: previewId });
+      const applyBody = lastPreview && lastPreview.profile === true ? { previewId: previewId, confirmed: true, selection: currentSelection() } : { previewId: previewId };
+      const data = await apiPost('/api/apply', applyBody);
       previewId = null;
+      if (data && data.profile !== undefined && data.liveActivation) {
+        setState(data.status === 'NO_CHANGE' ? 'NO_CHANGE' : 'UPDATED');
+        setNotice('Synchronization ' + data.status + '. liveActivation: ' + data.liveActivation + '.' + (data.backupPath ? ' Backup: ' + data.backupPath : ''), 'ok');
+        renderProfilePreview(null);
+        applying = false;
+        syncControls();
+        return;
+      }
       setState('UPDATED');
       const backupPath = data && typeof data.backupPath === 'string' && data.backupPath ? data.backupPath : null;
       setNotice(
@@ -887,6 +1040,7 @@
 
   // --- wiring --------------------------------------------------------------
 
+  wireProfileInvalidation();
   refreshBtn.addEventListener('click', refreshPreview);
   applyBtn.addEventListener('click', openConfirmation);
   confirmCancel.addEventListener('click', () => confirmDialog.close());

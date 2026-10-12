@@ -1,0 +1,75 @@
+// S5 test helpers — synthetic disposable scratch profiles only.
+// Nothing references the real DSH home, real profiles, accounts, or credentials.
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import { stringify as stringifyYaml } from 'yaml';
+import { resolveProfileTarget } from '../../profile/target-resolver.mjs';
+export { assert };
+let counter = 0;
+export function makeTempHome(prefix = 'ocms-s5-') {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), prefix + process.pid + '-' + (counter++) + '-'));
+  return { home, cleanup() { fs.rmSync(home, { recursive: true, force: true }); } };
+}
+export function sandboxDshHome() {
+  const saved = process.env.DSH_HOME;
+  const sandboxHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ocms-s5-sandbox-' + process.pid + '-' + (counter++) + '-'));
+  process.env.DSH_HOME = sandboxHome;
+  return () => {
+    if (saved === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = saved;
+    fs.rmSync(sandboxHome, { recursive: true, force: true });
+  };
+}
+export function llmRow({ config = { providers: {} } } = {}) {
+  const row = { id: 'llm-pi-ai', name: '@fixture/dsh-llm-fixture' };
+  if (config !== undefined) row.config = config;
+  return row;
+}
+export function makeProfile(home, name, { entries = null } = {}) {
+  const profileDir = path.join(home, 'profiles', name);
+  fs.mkdirSync(profileDir, { recursive: true });
+  fs.writeFileSync(path.join(profileDir, 'package.json'), JSON.stringify({ name, private: true, dsh: { profile: { bundles: [] } }, version: '0.0.0-fixture' }), 'utf8');
+  if (entries !== null) fs.writeFileSync(path.join(profileDir, 'cordis.patch.yml'), stringifyYaml(entries), 'utf8');
+  return profileDir;
+}
+export function makeProductionHome(prefix = "ocms-s5-prod-") {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), prefix + process.pid + "-" + (counter++) + "-"));
+  const saved = process.env.DSH_HOME;
+  process.env.DSH_HOME = home;
+  return { home, restore() { if (saved === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = saved; }, cleanup() { fs.rmSync(home, { recursive: true, force: true }); } };
+}
+export function writeTextFile(p, text) {
+  fs.writeFileSync(p, text, "utf8");
+  return p;
+}
+export function joinPath(...parts) {
+  return path.join(...parts);
+}
+// R2 reliability: parallel test files derive ports from a small per-file
+// base and can collide (EADDRINUSE). Retry across the rotating base until a
+// free port binds; concurrent holders stay far below the base size.
+export async function withR2Port(t, startFn) {
+  const v13 = await import("../v1.3/helpers.mjs");
+  let last = null;
+  for (let i = 0; i < 12; i++) {
+    const port = v13.nextTestPort();
+    try {
+      const started = await startFn(port);
+      t.after(async () => { try { await started.close(); } catch {} });
+      return started;
+    } catch (err) {
+      if (err && (err.code === "EADDRINUSE" || String((err && err.message) || "").includes("EADDRINUSE"))) {
+        last = err;
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw last;
+}
+export function bindTarget(home, name, extra = {}) {
+  const r = resolveProfileTarget({ profileName: name, dshHome: home, pathEnv: process.env.PATH ?? '', ...extra });
+  assert.equal(r.ok, true, 'bind failed: ' + JSON.stringify(r).slice(0, 800));
+  return r.target;
+}

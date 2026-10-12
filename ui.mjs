@@ -10,7 +10,13 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
-import { buildPlan, commitPlan, fetchSources, defaultSettingsPath } from './sync.mjs';
+import { buildPlan, commitPlan, fetchSources, defaultSettingsPath, classifySettingsPath, resolveLegacyBinding, legacyBindingsEqual } from './sync.mjs';
+import { isDeepStrictEqual } from 'node:util';
+import { buildProfilePreview } from './profile/preview-session.mjs';
+import { ProfileAwareCommit } from './profile/commit.mjs';
+import { formatAttestationText } from './profile/live-attestation.mjs';
+import { resolveProfileTarget, sameTarget } from './profile/target-resolver.mjs';
+import { readManagedConfig } from './profile/config-reader.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const HTML_PATH = path.join(MODULE_DIR, 'ui', 'index.html');
@@ -212,9 +218,22 @@ function knownSourceError(err) {
 
 export async function startServer(options = {}) {
   const { settingsPath, port, fetchFn, openBrowser, embedOrigin } = options;
-  const resolvedTarget = path.resolve(settingsPath !== undefined ? String(settingsPath) : defaultSettingsPath());
+  // S5 additive: optional server-bound profile defaults. Absent means legacy
+  // settings.yaml behavior exactly (T18). Per-request profile fields override.
+  const serverProfileName = typeof options.profileName === 'string' && options.profileName.length > 0 ? options.profileName : null;
+  // NOTE (S5-R2 B2): there is intentionally no server-default live-state.
+  // Attestation is always per-Preview explicit; a startup --live-state flag
+  // is accepted for CLI parity but never substituted into a Preview.
+  const serverScratchMode = options.scratchMode === true;
+  const serverDshHome = options.dshHome !== undefined ? options.dshHome : undefined;
+  const serverInstallAnchorDir = options.installAnchorDir !== undefined ? options.installAnchorDir : undefined;
+  // S5-R3 B2: explicit legacy admission. Without an explicitly supplied
+  // settings path there is no legacy target: the default production
+  // settings.yaml is never implicitly bound, Previewed or Applied.
+  const explicitLegacySettings = settingsPath !== undefined;
+  const resolvedTarget = explicitLegacySettings ? path.resolve(String(settingsPath)) : null;
   const resolvedDefault = path.resolve(defaultSettingsPath());
-  const production = resolvedTarget.toLowerCase() === resolvedDefault.toLowerCase();
+  const production = resolvedTarget !== null && resolvedTarget.toLowerCase() === resolvedDefault.toLowerCase();
   const displayPath = resolvedTarget;
 
   let boundPort = port;
@@ -241,12 +260,163 @@ export async function startServer(options = {}) {
   const targetInfo = () => ({ displayPath, production });
 
   function statePayload() {
+    if (serverProfileName === null && !(activePreview && activePreview.kind === 'profile')) {
+      return {
+        ok: true,
+        target: targetInfo(),
+        hasPreview: activePreview !== null,
+        previewState: activePreview ? activePreview.state : null,
+        generatedAt: activePreview ? activePreview.generatedAt : null,
+      };
+    }
+    // S5-R2 B6: minimal unauthenticated state. Detailed profile identity
+    // (patch paths, digests) and attestation text stay behind the
+    // authenticated Preview/Apply boundary; only the selected name shows.
+    const profileView = activePreview && activePreview.kind === 'profile'
+      ? { name: activePreview.preview.target.profileName }
+      : { name: serverProfileName };
     return {
       ok: true,
       target: targetInfo(),
       hasPreview: activePreview !== null,
       previewState: activePreview ? activePreview.state : null,
       generatedAt: activePreview ? activePreview.generatedAt : null,
+      profile: profileView,
+    };
+  }
+
+  // S5-R2 B2: the operator selection echoed at Apply must cohere with the
+  // retained attestation. UNATTESTED previews admit no live-state echo and
+  // no acknowledgment; attested previews require the same mode echoed back
+  // with an explicit acknowledgment (overlay item lists are compared
+  // separately against the retained ordered declared overlays).
+  function attestationMatchesSelection(attestation, sel) {
+    const s = sel && typeof sel === 'object' ? sel : {};
+    if (attestation === null || attestation === undefined) {
+      const mode = s.liveState;
+      if (mode !== undefined && mode !== null && mode !== 'unattested' && mode !== '') {
+        return { ok: false, detail: 'unattested-selection-mismatch' };
+      }
+      if (s.acknowledged === true) return { ok: false, detail: 'unattested-ack-mismatch' };
+      return { ok: true };
+    }
+    if (attestation.mode === 'NOT_RUNNING') {
+      if (s.liveState !== 'not-running') return { ok: false, detail: 'mode-mismatch' };
+      if (s.acknowledged !== true) return { ok: false, detail: 'acknowledgment-mismatch' };
+      return { ok: true };
+    }
+    if (attestation.mode === 'EXACT_OVERLAYS') {
+      if (typeof s.liveState !== 'string' || !s.liveState.startsWith('overlays:')) {
+        return { ok: false, detail: 'mode-mismatch' };
+      }
+      const items = s.liveState.slice('overlays:'.length).split(',');
+      const declared = Array.isArray(s.declaredOverlays) ? s.declaredOverlays : null;
+      if (declared === null || items.length !== declared.length) return { ok: false, detail: 'overlay-list-mismatch' };
+      for (let i = 0; i < items.length; i++) {
+        if (items[i] !== declared[i]) return { ok: false, detail: 'overlay-list-mismatch' };
+      }
+      if (s.acknowledged !== true) return { ok: false, detail: 'acknowledgment-mismatch' };
+      return { ok: true };
+    }
+    return { ok: false, detail: 'mode-unknown' };
+  }
+
+  // S5-R2 B2: server-authoritative Apply admission. Compares the echoed
+  // selection against the retained Preview AND against freshly re-resolved
+  // disk truth (never a retained duplicate of itself). Any drift refuses
+  // STALE_PREVIEW with zero writes and no commit invocation. S4 in-lock
+  // validation stays unchanged downstream.
+  async function verifyProfileApplySelection(retained, selection) {
+    const stale = (detail) => ({
+      ok: false, code: 'STALE_PREVIEW',
+      message: 'The operator selection changed since Preview; run Refresh Preview to build a new one.',
+      detail,
+    });
+    if (!selection || typeof selection !== 'object' || Array.isArray(selection)) {
+      return { ok: false, code: 'BAD_REQUEST', message: 'Malformed selection binding.' };
+    }
+    const preview = retained.preview;
+    const rt = preview.target;
+    if (typeof selection.profileName !== 'string' || !Array.isArray(selection.declaredOverlays) || !Object.hasOwn(selection, 'attestation')) {
+      return { ok: false, code: 'BAD_REQUEST', message: 'Malformed selection binding.' };
+    }
+    if (selection.profileName !== rt.profileName) return stale('profileName-mismatch');
+    if (selection.declaredOverlays.length !== preview.declaredOverlays.length) return stale('overlays-mismatch');
+    for (let i = 0; i < selection.declaredOverlays.length; i++) {
+      if (selection.declaredOverlays[i] !== preview.declaredOverlays[i]) return stale('overlays-mismatch');
+    }
+    let attestEqual = false;
+    try {
+      attestEqual = isDeepStrictEqual(selection.attestation ?? null, preview.attestation ?? null);
+    } catch {
+      attestEqual = false;
+    }
+    if (!attestEqual) return stale('attestation-mismatch');
+    const coh = attestationMatchesSelection(preview.attestation, selection);
+    if (!coh.ok) return stale(coh.detail);
+    const resolutionHome = path.dirname(path.dirname(rt.profileDirReal));
+    let fresh = null;
+    try {
+      fresh = resolveProfileTarget({
+        profileName: selection.profileName,
+        dshHome: resolutionHome,
+        declaredOverlays: [...selection.declaredOverlays],
+        liveAttestation: selection.attestation === null ? null : structuredClone(selection.attestation),
+        installAnchorDir: serverInstallAnchorDir !== undefined ? serverInstallAnchorDir : null,
+        pathEnv: process.env.PATH ?? '',
+      });
+    } catch {
+      return stale('reresolve-threw');
+    }
+    if (!fresh || fresh.ok !== true) return stale('reresolve-refused:' + ((fresh && fresh.code) || 'unknown'));
+    let identical = false;
+    try {
+      identical = sameTarget(fresh.target, rt);
+    } catch {
+      identical = false;
+    }
+    if (!identical) return stale('target-mismatch');
+    let reader = null;
+    try {
+      reader = await readManagedConfig({
+        target: structuredClone(fresh.target),
+        installAnchorDir: serverInstallAnchorDir !== undefined ? serverInstallAnchorDir : null,
+        pathEnv: process.env.PATH ?? '',
+      });
+    } catch {
+      return stale('reader-threw');
+    }
+    if (!reader || reader.ok !== true) return stale('reader-refused:' + ((reader && reader.code) || 'unknown'));
+    const retainedEff = retained.plan && typeof retained.plan.effectiveDigest === 'string'
+      ? retained.plan.effectiveDigest
+      : preview.effectiveDigest;
+    if (typeof reader.effectiveDigest === 'string' && typeof retainedEff === 'string' && reader.effectiveDigest !== retainedEff) {
+      return stale('effective-mismatch');
+    }
+    return { ok: true };
+  }
+
+  function profilePreviewPayload(preview) {
+    return {
+      ok: true,
+      state: preview.status,
+      profile: true,
+      target: {
+        profileName: preview.target.profileName,
+        profileDirReal: preview.target.profileDirReal,
+        patchPathReal: preview.target.patchPathReal,
+        pluginEntryName: preview.target.pluginEntryName,
+        classification: preview.target.classification,
+      },
+      storedDigest: preview.storedDigest !== undefined ? preview.storedDigest : preview.patchDigest,
+      effectiveDigest: preview.effectiveDigest !== undefined ? preview.effectiveDigest : null,
+      sourceSnapshotDigest: preview.sourceSnapshotDigest !== undefined ? preview.sourceSnapshotDigest : null,
+      declaredOverlays: Array.isArray(preview.declaredOverlays) ? [...preview.declaredOverlays] : [],
+      attestation: preview.attestation,
+      attestationText: preview.attestationText,
+      liveActivation: 'UNKNOWN_LIVE_UNVERIFIED',
+      previewId: preview.previewId,
+      generatedAt: preview.generatedAt,
     };
   }
 
@@ -282,7 +452,123 @@ export async function startServer(options = {}) {
     return body;
   }
 
-  async function handlePreview(req, res) {
+  async function handleProfilePreview(res, body, wantProfile) {
+    if (previewBusy || applyBusy) {
+      refusal(res, 409, 'PREVIEW_BUSY', 'Preview build already in progress.');
+      return;
+    }
+    previewBusy = true;
+    try {
+      let sources;
+      try {
+        sources = await fetchSources(fetchImpl);
+      } catch (err) {
+        refusal(res, 500, 'ERROR', 'Source fetch failed; no Preview retained.');
+        return;
+      }
+      let liveAttestation = null;
+      let liveStateRaw;
+      if (body.attestation !== undefined && body.attestation !== null) {
+        if (typeof body.attestation !== 'object' || Array.isArray(body.attestation)) {
+          refusal(res, 400, 'BAD_REQUEST', 'Malformed attestation object.');
+          return;
+        }
+        liveAttestation = body.attestation;
+      } else if (typeof body.liveState === 'string' || typeof body.liveStateRaw === 'string') {
+        const raw = typeof body.liveState === 'string' ? body.liveState : body.liveStateRaw;
+        if (body.acknowledged !== true) {
+          sendJson(res, 400, { ok: false, code: 'INVALID_ATTESTATION', message: 'Live-state attestation requires explicit acknowledgment; failing closed.' });
+          return;
+        }
+        liveStateRaw = raw;
+      }
+      const scratchMode = body.scratchMode === true ? true : serverScratchMode;
+      const declared = Array.isArray(body.declaredOverlays) ? body.declaredOverlays : (Array.isArray(body.overlays) ? body.overlays : undefined);
+      const args = {
+        profileName: wantProfile,
+        dshHome: body.dshHome !== undefined ? body.dshHome : serverDshHome,
+        origin: 'UI',
+        acknowledged: body.acknowledged === true,
+        scratchMode,
+        sources,
+        installAnchorDir: serverInstallAnchorDir,
+      };
+      if (declared !== undefined) args.declaredOverlays = declared;
+      if (liveAttestation !== null) args.liveAttestation = liveAttestation;
+      else if (liveStateRaw !== undefined) args.liveStateRaw = liveStateRaw;
+      else args.liveAttestation = null;
+      let built;
+      try {
+        built = await buildProfilePreview(args);
+      } catch (err) {
+        refusal(res, 500, 'ERROR', 'Unexpected internal error.');
+        return;
+      }
+      if (!built || built.ok !== true) {
+        const code = built && typeof built.code === 'string' ? built.code : 'ERROR';
+        const message = built && typeof built.message === 'string' ? built.message : 'Unexpected internal error.';
+        const status = (code === 'INVALID_LIVE_STATE' || code === 'INVALID_PROFILE_NAME' || code === 'INVALID_OVERLAYS' || code === 'VERIFY_FAILED') ? 400 : 409;
+        sendJson(res, status, { ok: false, code, message });
+        return;
+      }
+      const preview = built.preview;
+      activePreview = {
+        kind: 'profile',
+        previewId: preview.previewId,
+        targetPath: preview.target.patchPathReal,
+        production: preview.target.classification === 'PRODUCTION',
+        state: preview.status,
+        generatedAt: preview.generatedAt,
+        preview,
+        plan: preview.plan,
+      };
+      sendJson(res, 200, profilePreviewPayload(preview));
+      return;
+    } finally {
+      previewBusy = false;
+    }
+  }
+
+  async function handlePreview(req, res, parsed) {
+    // S5 additive: profile-aware Preview. Legacy settings.yaml path below is
+    // byte-for-byte behavior preserved when no profile is selected (T18).
+    try {
+      const body = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+      const bodyProfile = typeof body.profileName === 'string' && body.profileName.length > 0
+        ? body.profileName
+        : (typeof body.profile === 'string' && body.profile.length > 0 ? body.profile : null);
+      // S5-R2 B4: on a profile-mode server an unselected picker must refuse;
+      // the server default is never silently substituted into a Preview.
+      // (Legacy-mode servers keep the frozen empty-body behavior.)
+      const wantProfile = bodyProfile;
+      if (wantProfile === null && serverProfileName !== null) {
+        sendJson(res, 400, { ok: false, code: 'PROFILE_REQUIRED', message: 'No profile is selected; an explicit profile selection is required on this server.' });
+        return;
+      }
+      if (wantProfile !== null) {
+        await handleProfilePreview(res, body, wantProfile);
+        return;
+      }
+    } catch (err) {
+      try { refusal(res, 500, 'ERROR', 'Unexpected internal error.'); } catch {}
+      return;
+    }
+    // S5-R3 B2: legacy admission happens here, before any source fetch.
+    // Only an explicitly supplied, real-path SCRATCH-classified settings
+    // target may enter the frozen legacy transaction.
+    if (resolvedTarget === null) {
+      sendJson(res, 400, { ok: false, code: 'PROFILE_REQUIRED', message: 'No legacy target is bound and no profile was selected; supply an explicit profile selection or start the server with an explicit scratch settings target.' });
+      return;
+    }
+    const legacyBinding = resolveLegacyBinding(resolvedTarget, serverDshHome);
+    if (!legacyBinding.ok) {
+      sendJson(res, 400, { ok: false, code: 'SETTINGS_UNREADABLE', message: 'The bound settings target cannot be resolved.' });
+      return;
+    }
+    if (legacyBinding.classification !== 'SCRATCH') {
+      sendJson(res, 409, { ok: false, code: 'PRODUCTION_SETTINGS_REFUSED', message: 'Production-classified settings targets refuse.' });
+      return;
+    }
     if (previewBusy || applyBusy) {
       refusal(res, 409, 'PREVIEW_BUSY', 'Preview build already in progress.');
       return;
@@ -316,6 +602,7 @@ export async function startServer(options = {}) {
             previewId,
             targetPath: resolvedTarget,
             production,
+            legacyBinding: { canonicalTarget: legacyBinding.canonicalTarget, homeReal: legacyBinding.homeReal, classification: legacyBinding.classification },
             settingsDigest: null,
             sourceSnapshotDigest: null,
             state: 'BLOCKED',
@@ -350,6 +637,7 @@ export async function startServer(options = {}) {
         previewId,
         targetPath: resolvedTarget,
         production,
+        legacyBinding: { canonicalTarget: legacyBinding.canonicalTarget, homeReal: legacyBinding.homeReal, classification: legacyBinding.classification },
         settingsDigest: plan.settingsDigest !== undefined ? plan.settingsDigest : null,
         sourceSnapshotDigest: plan.sourceSnapshotDigest !== undefined ? plan.sourceSnapshotDigest : null,
         state: plan.state,
@@ -366,7 +654,117 @@ export async function startServer(options = {}) {
     }
   }
 
+  async function handleProfileApply(res, parsed) {
+    const keys = Object.keys(parsed);
+    const previewId = parsed.previewId;
+    const hasSchema = typeof previewId === 'string' && keys.length === 3 && keys.includes('previewId') && keys.includes('confirmed') && keys.includes('selection');
+    if (!hasSchema) {
+      if (typeof previewId !== 'string') {
+        refusal(res, 400, 'BAD_REQUEST', 'Malformed request.');
+        return;
+      }
+      sendJson(res, 400, { ok: false, code: 'CONFIRMATION_REQUIRED', message: 'Profile Apply requires confirmed:true with the current operator selection following the displayed Preview.' });
+      return;
+    }
+    if (parsed.confirmed !== true) {
+      sendJson(res, 400, { ok: false, code: 'CONFIRMATION_REQUIRED', message: 'Profile Apply requires confirmed:true with the current operator selection following the displayed Preview.' });
+      return;
+    }
+    if (applyBusy) {
+      refusal(res, 409, 'APPLY_BUSY', 'Apply already in progress.');
+      return;
+    }
+    if (previewBusy) {
+      refusal(res, 409, 'PREVIEW_BUSY', 'Preview build already in progress.');
+      return;
+    }
+    if (!activePreview || previewId !== activePreview.previewId) {
+      refusal(res, 409, 'STALE_PREVIEW', 'Preview is stale. Run Refresh Preview to build a new one.');
+      return;
+    }
+    if (activePreview.state !== 'READY' && activePreview.state !== 'NO_CHANGE') {
+      refusal(res, 409, 'PREVIEW_NOT_READY', 'Preview is not ready for Apply.');
+      return;
+    }
+    let binding = null;
+    try {
+      binding = await verifyProfileApplySelection(activePreview, parsed.selection);
+    } catch {
+      binding = null;
+    }
+    if (!binding || binding.ok !== true) {
+      const code = binding && typeof binding.code === 'string' ? binding.code : 'STALE_PREVIEW';
+      if (code === 'STALE_PREVIEW') {
+        activePreview = null;
+        refusal(res, 409, 'STALE_PREVIEW', 'Preview is stale. Run Refresh Preview to build a new one.');
+        return;
+      }
+      refusal(res, 400, 'BAD_REQUEST', 'Malformed request.');
+      return;
+    }
+    applyBusy = true;
+    try {
+      let outcome;
+      try {
+        outcome = await ProfileAwareCommit({ plan: activePreview.plan, waitMs: 15000 });
+      } catch (err) {
+        refusal(res, 500, 'ERROR', 'Unexpected internal error.');
+        return;
+      }
+      if (outcome && outcome.stale === true) {
+        activePreview = null;
+        refusal(res, 409, 'STALE_PREVIEW', 'Preview is stale. Run Refresh Preview to build a new one.');
+        return;
+      }
+      if (!outcome || outcome.ok !== true) {
+        const code = outcome && typeof outcome.code === 'string' ? outcome.code : 'ERROR';
+        const message = outcome && typeof outcome.message === 'string' ? outcome.message : 'Unexpected internal error.';
+        if (code === 'STALE_TARGET') activePreview = null;
+        const status = code === 'ERROR' ? 500 : 409;
+        sendJson(res, status, { ok: false, code, message });
+        return;
+      }
+      const target = outcome.target || activePreview.preview.target;
+      const body = {
+        ok: true,
+        status: outcome.status,
+        profile: true,
+        target: {
+          profileName: target.profileName,
+          profileDirReal: target.profileDirReal,
+          patchPathReal: target.patchPathReal,
+          pluginEntryName: target.pluginEntryName,
+          classification: target.classification,
+        },
+        liveActivation: outcome.liveActivation || 'UNKNOWN_LIVE_UNVERIFIED',
+      };
+      if (outcome.status === 'UPDATED') {
+        body.fileVerified = outcome.fileVerified === true;
+        body.effectiveComposition = outcome.effectiveComposition || 'MATCHED';
+        if (outcome.backupPath !== undefined) body.backupPath = outcome.backupPath;
+        if (outcome.newDigest !== undefined) body.newDigest = outcome.newDigest;
+      } else {
+        if (outcome.patchDigest !== undefined) body.patchDigest = outcome.patchDigest;
+      }
+      try {
+        body.attestationText = formatAttestationText(activePreview.preview.attestation);
+      } catch {}
+      activePreview = null;
+      sendJson(res, 200, body);
+      return;
+    } finally {
+      applyBusy = false;
+    }
+  }
+
   async function handleApply(req, res, parsed) {
+    // S5 additive: profile-bound retained Previews commit through the shared
+    // ProfileAwareCommit (same function the CLI uses, T15). Legacy previews
+    // keep the exact v1.3 transaction below (T18).
+    if (activePreview && activePreview.kind === 'profile') {
+      await handleProfileApply(res, parsed);
+      return;
+    }
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
       refusal(res, 400, 'BAD_REQUEST', 'Malformed request.');
       return;
@@ -391,6 +789,23 @@ export async function startServer(options = {}) {
     }
     if (activePreview.state !== 'READY') {
       refusal(res, 409, 'PREVIEW_NOT_READY', 'Preview is not ready for Apply.');
+      return;
+    }
+    const boundLegacy = activePreview.legacyBinding || null;
+    const freshLegacy = resolveLegacyBinding(resolvedTarget, serverDshHome);
+    if (!freshLegacy.ok) {
+      activePreview = null;
+      sendJson(res, 400, { ok: false, code: 'SETTINGS_UNREADABLE', message: 'The bound settings target cannot be resolved.' });
+      return;
+    }
+    if (freshLegacy.classification !== 'SCRATCH') {
+      activePreview = null;
+      sendJson(res, 409, { ok: false, code: 'PRODUCTION_SETTINGS_REFUSED', message: 'Production-classified settings targets refuse.' });
+      return;
+    }
+    if (!boundLegacy || !legacyBindingsEqual(boundLegacy, freshLegacy)) {
+      activePreview = null;
+      refusal(res, 409, 'STALE_PREVIEW', 'Preview is stale. Run Refresh Preview to build a new one.');
       return;
     }
     applyBusy = true;
@@ -498,7 +913,7 @@ export async function startServer(options = {}) {
       }
       if (pathname === '/api/preview') {
         if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
-          await handlePreview(req, res);
+          await handlePreview(req, res, parsed);
           return;
         }
         refusal(res, 400, 'BAD_REQUEST', 'Malformed request.');
@@ -538,7 +953,7 @@ export async function startServer(options = {}) {
   const url = 'http://' + BIND_HOST + ':' + actual + '/';
   try {
     console.log('OCMS-S v' + version + ' listening on ' + url);
-    console.log('target: ' + displayPath + ' (' + (production ? 'PRODUCTION' : 'SCRATCH') + ')');
+    console.log('target: ' + (displayPath === null ? 'no legacy target bound' : displayPath + ' (' + (production ? 'PRODUCTION' : 'SCRATCH') + ')'));
   } catch {}
   if (openBrowser) {
     try {
@@ -565,7 +980,7 @@ export async function startServer(options = {}) {
 
 function printUsage() {
   try {
-    console.error('Usage: node ui.mjs [--settings=<path>] [--port=<port>] [--no-open] [--embed-origin=<origin>]');
+    console.error('Usage: node ui.mjs [--settings=<path>] [--port=<port>] [--no-open] [--embed-origin=<origin>] [--profile=<name>] [--live-state=<not-running|overlays:<paths>>] [--scratch]');
   } catch {}
 }
 
@@ -596,14 +1011,23 @@ export function parseEmbedOrigin(raw) {
 
 export function parseCliArgs(argv) {
   // argv is the flag list proper (node/script entries already removed).
+  // S5 additive: --profile / --live-state / --scratch alongside the legacy
+  // surface. Legacy flags and refusals are unchanged.
   let settings;
   let settingsCount = 0;
+  let profile;
+  let profileCount = 0;
+  let liveState;
+  let liveCount = 0;
+  let scratch = false;
+  let scratchCount = 0;
   let port;
   let portCount = 0;
   let noOpen = false;
   let embedOrigin;
   let embedCount = 0;
-  for (const arg of argv) {
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
     if (arg === '--no-open') {
       noOpen = true;
       continue;
@@ -628,6 +1052,51 @@ export function parseCliArgs(argv) {
       continue;
     }
     if (arg === '--settings' || arg.startsWith('--settings')) throw new Error('INVALID_SETTINGS');
+    if (arg === '--profile') {
+      profileCount += 1;
+      if (profileCount > 1) throw new Error('DUPLICATE_PROFILE');
+      const next = argv[i + 1];
+      if (next === undefined || (typeof next === 'string' && next.startsWith('--'))) throw new Error('INVALID_PROFILE');
+      if (typeof next !== 'string' || next.length === 0) throw new Error('INVALID_PROFILE');
+      profile = next;
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith('--profile=')) {
+      profileCount += 1;
+      if (profileCount > 1) throw new Error('DUPLICATE_PROFILE');
+      const raw = arg.slice('--profile='.length);
+      if (!raw) throw new Error('INVALID_PROFILE');
+      profile = raw;
+      continue;
+    }
+    if (arg.startsWith('--profile')) throw new Error('INVALID_PROFILE');
+    if (arg === '--live-state') {
+      liveCount += 1;
+      if (liveCount > 1) throw new Error('DUPLICATE_LIVE_STATE');
+      const next = argv[i + 1];
+      if (next === undefined || (typeof next === 'string' && next.startsWith('--'))) throw new Error('INVALID_LIVE_STATE');
+      if (typeof next !== 'string' || next.length === 0) throw new Error('INVALID_LIVE_STATE');
+      liveState = next;
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith('--live-state=')) {
+      liveCount += 1;
+      if (liveCount > 1) throw new Error('DUPLICATE_LIVE_STATE');
+      const raw = arg.slice('--live-state='.length);
+      if (!raw) throw new Error('INVALID_LIVE_STATE');
+      liveState = raw;
+      continue;
+    }
+    if (arg.startsWith('--live-state')) throw new Error('INVALID_LIVE_STATE');
+    if (arg === '--scratch') {
+      scratchCount += 1;
+      if (scratchCount > 1) throw new Error('DUPLICATE_SCRATCH');
+      scratch = true;
+      continue;
+    }
+    if (arg.startsWith('--scratch')) throw new Error('INVALID_SCRATCH');
     if (arg.startsWith('--embed-origin=')) {
       embedCount += 1;
       if (embedCount > 1) throw new Error('DUPLICATE_EMBED_ORIGIN');
@@ -637,7 +1106,7 @@ export function parseCliArgs(argv) {
     if (arg.startsWith('--embed-origin')) throw new Error('INVALID_EMBED_ORIGIN');
     throw new Error('UNKNOWN_FLAG: ' + arg);
   }
-  return { settings, port, noOpen, embedOrigin };
+  return { settings, port, noOpen, embedOrigin, profile, liveState, scratch };
 }
 
 async function cliMain() {
@@ -649,10 +1118,15 @@ async function cliMain() {
     process.exitCode = 1;
     return;
   }
-  const settingsPath = parsed.settings !== undefined ? parsed.settings : defaultSettingsPath();
+  // S5-R3 B2: settingsPath stays undefined unless explicitly supplied, so
+  // the server never implicitly binds the default production settings.yaml.
+  // Legacy Preview/Apply without an admitted target refuse server-side;
+  // the Host-managed child therefore still starts (readiness probes pass)
+  // while no implicit production route exists.
+  const settingsPath = parsed.settings;
   const listenPort = parsed.port !== undefined ? parsed.port : DEFAULT_PORT;
   try {
-    await startServer({ settingsPath, port: listenPort, fetchFn: globalThis.fetch, openBrowser: parsed.noOpen ? false : true, embedOrigin: parsed.embedOrigin });
+    await startServer({ settingsPath, port: listenPort, fetchFn: globalThis.fetch, openBrowser: parsed.noOpen ? false : true, embedOrigin: parsed.embedOrigin, profileName: parsed.profile, scratchMode: parsed.scratch === true });
   } catch (err) {
     try { console.error(String((err && err.message) || err)); } catch {}
     process.exitCode = 1;

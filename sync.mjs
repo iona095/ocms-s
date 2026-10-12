@@ -14,6 +14,7 @@
 // bottom of this file performs a live run.
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { isDeepStrictEqual as deepEqual } from 'node:util';
@@ -29,8 +30,8 @@ export const SOURCE_URLS = {
   goRoster: 'https://opencode.ai/zen/go/v1/models',
   zenRoster: 'https://opencode.ai/zen/v1/models',
   catalog: 'https://models.opencode.ai/api.json',
-  goDocs: 'https://opencode.ai/docs/go/',
-  zenDocs: 'https://opencode.ai/docs/zen/',
+  goDocs: 'https://opencode.ai/v2/docs/console/go/',
+  zenDocs: 'https://opencode.ai/v2/docs/console/models/',
 };
 
 export const FETCH_TIMEOUT_MS = 20000;
@@ -1015,6 +1016,378 @@ export function resolveSettingsPath(argv = process.argv) {
   return defaultSettingsPath();
 }
 
+// S5 profile CLI (additive). See ticket S5 scope.
+export function parseProfileCliArgs(argv = []) {
+  const flags = Array.isArray(argv) ? argv : [];
+  let profile;
+  let profileCount = 0;
+  let liveStateRaw;
+  let liveCount = 0;
+  let scratch = false;
+  let scratchCount = 0;
+  let settings;
+  let settingsCount = 0;
+  for (let i = 0; i < flags.length; i++) {
+    const arg = flags[i];
+    if (arg === "--profile") {
+      profileCount += 1;
+      if (profileCount > 1) throw new Error("DUPLICATE_PROFILE");
+      const next = flags[i + 1];
+      if (next === undefined || (typeof next === "string" && next.startsWith("--"))) throw new Error("INVALID_PROFILE");
+      if (typeof next !== "string" || next.length === 0) throw new Error("INVALID_PROFILE");
+      profile = next;
+      i += 1;
+      continue;
+    }
+    if (typeof arg === "string" && arg.indexOf("--profile=") === 0) {
+      profileCount += 1;
+      if (profileCount > 1) throw new Error("DUPLICATE_PROFILE");
+      const raw = arg.slice(10);
+      if (!raw) throw new Error("INVALID_PROFILE");
+      profile = raw;
+      continue;
+    }
+    if (typeof arg === "string" && arg.indexOf("--profile") === 0) throw new Error("INVALID_PROFILE");
+    if (arg === "--live-state") {
+      liveCount += 1;
+      if (liveCount > 1) throw new Error("DUPLICATE_LIVE_STATE");
+      const next = flags[i + 1];
+      if (next === undefined || (typeof next === "string" && next.startsWith("--"))) throw new Error("INVALID_LIVE_STATE");
+      if (typeof next !== "string" || next.length === 0) throw new Error("INVALID_LIVE_STATE");
+      liveStateRaw = next;
+      i += 1;
+      continue;
+    }
+    if (typeof arg === "string" && arg.indexOf("--live-state=") === 0) {
+      liveCount += 1;
+      if (liveCount > 1) throw new Error("DUPLICATE_LIVE_STATE");
+      const raw = arg.slice(13);
+      if (!raw) throw new Error("INVALID_LIVE_STATE");
+      liveStateRaw = raw;
+      continue;
+    }
+    if (typeof arg === "string" && arg.indexOf("--live-state") === 0) throw new Error("INVALID_LIVE_STATE");
+    if (arg === "--scratch") {
+      scratchCount += 1;
+      if (scratchCount > 1) throw new Error("DUPLICATE_SCRATCH");
+      scratch = true;
+      continue;
+    }
+    if (typeof arg === "string" && arg.indexOf("--scratch") === 0) throw new Error("INVALID_SCRATCH");
+    if (arg === "--settings") {
+      settingsCount += 1;
+      if (settingsCount > 1) throw new Error("DUPLICATE_SETTINGS");
+      const next = flags[i + 1];
+      if (next === undefined || (typeof next === "string" && next.startsWith("--"))) throw new Error("INVALID_SETTINGS");
+      if (typeof next !== "string" || next.length === 0) throw new Error("INVALID_SETTINGS");
+      settings = next;
+      i += 1;
+      continue;
+    }
+    if (typeof arg === "string" && arg.indexOf("--settings=") === 0) {
+      settingsCount += 1;
+      if (settingsCount > 1) throw new Error("DUPLICATE_SETTINGS");
+      const raw = arg.slice(11);
+      if (!raw) throw new Error("INVALID_SETTINGS");
+      settings = raw;
+      continue;
+    }
+    if (typeof arg === "string" && arg.indexOf("--settings") === 0) throw new Error("INVALID_SETTINGS");
+    if (arg === "--help" || arg === "-h") return { help: true, profile: undefined, liveStateRaw: undefined, scratch: false, settings: undefined };
+    throw new Error("UNKNOWN_FLAG: " + String(arg));
+  }
+  if (profile === undefined) throw new Error("PROFILE_REQUIRED");
+  return { profile, liveStateRaw, scratch, settings };
+}
+export function formatProfileCliHelp() {
+  return "Usage: node sync.mjs --profile <name> [--live-state=<not-running|overlays:<paths>>] [--scratch] [--settings=<path>]";
+}
+
+// S5-R2 B1 — explicitly selected target handling (no default-settings writes).
+// The legacy pure planning/placement functions below are untouched; only the
+// executable dispatch is replaced. Profile flows fetch once, Preview once,
+// then commit the retained plan after an explicit affirmative confirmation
+// (never replan/refetch at Apply, never legacy commitPlan for profiles).
+export function defaultDshHomeDir() {
+  if (process.env.DSH_HOME) return process.env.DSH_HOME;
+  return path.join(os.homedir(), ".dsh");
+}
+export function classifySettingsPath(settingsPath, dshHome) {
+  const homeInput = dshHome !== undefined && dshHome !== null ? String(dshHome) : defaultDshHomeDir();
+  let fileReal = null;
+  let homeReal = null;
+  try {
+    fileReal = fs.realpathSync(path.resolve(String(settingsPath)));
+  } catch {
+    return "UNREADABLE";
+  }
+  try {
+    homeReal = fs.realpathSync(path.resolve(homeInput));
+  } catch {
+    return "UNREADABLE";
+  }
+  const norm = (p) => (process.platform === "win32" ? path.resolve(p).toLowerCase() : path.resolve(p));
+  const rel = path.relative(norm(homeReal), norm(fileReal));
+  if (rel !== "" && rel !== "." && rel !== ".." && !rel.startsWith(".." + path.sep) && !path.isAbsolute(rel)) return "PRODUCTION";
+  return "SCRATCH";
+}
+// S5-R4 B2 — narrow canonical-target binding for legacy SCRATCH identity.
+// Binds the canonical real path plus the real DSH home at Preview; Apply
+// re-resolves and requires both identity and SCRATCH to be unchanged before
+// commitPlan. No general filesystem framework; planning semantics untouched.
+export function resolveLegacyBinding(settingsPath, dshHome) {
+  const homeInput = dshHome !== undefined && dshHome !== null ? String(dshHome) : defaultDshHomeDir();
+  let canonicalTarget = null;
+  let homeReal = null;
+  try {
+    canonicalTarget = fs.realpathSync(path.resolve(String(settingsPath)));
+  } catch {
+    return { ok: false, code: 'SETTINGS_UNREADABLE', message: 'The explicit settings path cannot be resolved.' };
+  }
+  try {
+    homeReal = fs.realpathSync(path.resolve(homeInput));
+  } catch {
+    return { ok: false, code: 'SETTINGS_UNREADABLE', message: 'The DSH home cannot be resolved.' };
+  }
+  const norm = (p) => (process.platform === "win32" ? path.resolve(p).toLowerCase() : path.resolve(p));
+  let classification;
+  try {
+    const rel = path.relative(norm(homeReal), norm(canonicalTarget));
+    if (rel !== "" && rel !== "." && rel !== ".." && !rel.startsWith(".." + path.sep) && !path.isAbsolute(rel)) classification = "PRODUCTION";
+    else classification = "SCRATCH";
+  } catch {
+    return { ok: false, code: 'SETTINGS_UNREADABLE', message: 'The explicit settings path cannot be resolved.' };
+  }
+  return { ok: true, canonicalTarget, homeReal, classification };
+}
+export function legacyBindingsEqual(a, b) {
+  if (!a || !b || typeof a.canonicalTarget !== 'string' || typeof b.canonicalTarget !== 'string' || typeof a.homeReal !== 'string' || typeof b.homeReal !== 'string') return false;
+  const norm = (p) => (process.platform === "win32" ? path.resolve(String(p)).toLowerCase() : path.resolve(String(p)));
+  try {
+    return norm(a.canonicalTarget) === norm(b.canonicalTarget) && norm(a.homeReal) === norm(b.homeReal);
+  } catch {
+    return false;
+  }
+}
+function formatProfilePreviewText(preview) {
+  const lines = [];
+  const t = preview.target || {};
+  lines.push("profile: " + t.profileName);
+  lines.push("classification: " + t.classification);
+  lines.push("patch: " + t.patchPathReal);
+  lines.push("status: " + preview.status);
+  lines.push("storedDigest: " + preview.patchDigest);
+  if (preview.effectiveDigest) lines.push("effectiveDigest: " + preview.effectiveDigest);
+  if (preview.sourceSnapshotDigest) lines.push("sourceSnapshotDigest: " + preview.sourceSnapshotDigest);
+  lines.push("attestation: " + (preview.attestationText || "UNATTESTED"));
+  if (preview.plan && preview.plan.changes) {
+    const c = preview.plan.changes;
+    const n = (k) => (Array.isArray(c[k]) ? c[k].length : 0);
+    lines.push("changes: added=" + n("added") + " removed=" + n("removed") + " moved=" + n("moved") + " metadata=" + n("metadataChanged"));
+  }
+  return lines.join("\n");
+}
+async function defaultConfirmCli(promptText) {
+  try {
+    if (!process.stdin || process.stdin.isTTY !== true) return false;
+    const readline = await import("node:readline");
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const answer = await new Promise((resolve) => rl.question(String(promptText || "Apply? [y/N] "), resolve));
+    try { rl.close(); } catch {}
+    return /^(y|yes)$/i.test(String(answer).trim());
+  } catch {
+    return false;
+  }
+}
+export async function runProfileSync(opts = {}) {
+  const src = opts ?? {};
+  const profile = src.profile;
+  const liveStateRaw = src.liveStateRaw;
+  const scratch = src.scratch === true;
+  const fetchFn = src.fetchFn;
+  const confirmFn = typeof src.confirmFn === "function" ? src.confirmFn : defaultConfirmCli;
+  const dshHome = src.dshHome;
+  const installAnchorDir = src.installAnchorDir !== undefined ? src.installAnchorDir : null;
+  const pathEnv = src.pathEnv !== undefined ? src.pathEnv : (process.env.PATH ?? "");
+  const waitMs = src.waitMs !== undefined ? src.waitMs : 15000;
+  const say = typeof src.print === "function" ? src.print : (s) => { try { console.log(s); } catch {} };
+  if (typeof profile !== "string" || profile.length === 0) {
+    return { ok: false, mode: "profile", code: "PROFILE_REQUIRED", message: "Explicit --profile <name> is required." };
+  }
+  let sources;
+  try {
+    sources = await fetchSources(fetchFn);
+  } catch (err) {
+    return { ok: false, mode: "profile", code: "FETCH_FAILED", message: String((err && err.message) || err) };
+  }
+  const { buildProfilePreview } = await import("./profile/preview-session.mjs");
+  const built = await buildProfilePreview({ profileName: profile, dshHome, liveStateRaw, origin: "CLI", scratchMode: scratch, sources, installAnchorDir, pathEnv });
+  if (!built || built.ok !== true) {
+    return { ok: false, mode: "profile", code: (built && built.code) || "VERIFY_FAILED", message: (built && built.message) || "Preview failed.", detail: built && built.detail };
+  }
+  const preview = built.preview;
+  try { say(formatProfilePreviewText(preview)); } catch {}
+  if (preview.status !== "READY" && preview.status !== "NO_CHANGE") {
+    return { ok: false, mode: "profile", code: "PREVIEW_NOT_READY", message: "Preview is not ready for Apply." };
+  }
+  let confirmed = false;
+  try {
+    const answer = await confirmFn("Apply profile " + JSON.stringify(profile) + "? [y/N] ");
+    confirmed = answer === true || (typeof answer === "string" && /^(y|yes)$/i.test(answer.trim()));
+  } catch {
+    confirmed = false;
+  }
+  if (!confirmed) {
+    return { ok: false, mode: "profile", code: "CONFIRMATION_DECLINED", message: "Apply requires an explicit affirmative confirmation following the displayed Preview; declining refuses with zero writes." };
+  }
+  const { ProfileAwareCommit } = await import("./profile/commit.mjs");
+  const outcome = await ProfileAwareCommit({ plan: preview.plan, waitMs, installAnchorDir, pathEnv });
+  if (!outcome || outcome.ok !== true) {
+    return { ok: false, mode: "profile", code: (outcome && outcome.code) || "ERROR", message: (outcome && outcome.message) || "Apply failed.", detail: outcome && outcome.detail };
+  }
+  return { ok: true, mode: "profile", status: outcome.status, liveActivation: outcome.liveActivation, backupPath: outcome.backupPath, newDigest: outcome.newDigest, patchDigest: outcome.patchDigest, target: outcome.target };
+}
+export async function runSettingsSync(opts = {}) {
+  const src = opts ?? {};
+  const settingsPath = src.settingsPath;
+  const fetchFn = src.fetchFn;
+  const confirmFn = typeof src.confirmFn === "function" ? src.confirmFn : defaultConfirmCli;
+  const say = typeof src.print === "function" ? src.print : (s) => { try { console.log(s); } catch {} };
+  if (typeof settingsPath !== "string" || settingsPath.length === 0) {
+    return { ok: false, mode: "legacy-settings", code: "INVALID_SETTINGS", message: "Explicit settings path required." };
+  }
+  const initialBinding = resolveLegacyBinding(settingsPath, src.dshHome);
+  if (!initialBinding.ok) {
+    return { ok: false, mode: "legacy-settings", code: "SETTINGS_UNREADABLE", message: "The explicit settings path cannot be resolved." };
+  }
+  if (initialBinding.classification !== "SCRATCH") {
+    return { ok: false, mode: "legacy-settings", code: "PRODUCTION_SETTINGS_REFUSED", message: "Production-classified settings paths refuse; --scratch never reclassifies production." };
+  }
+  const realTarget = initialBinding.canonicalTarget;
+  const cls = initialBinding.classification;
+  let sources;
+  try { sources = await fetchSources(fetchFn); }
+  catch (err) { return { ok: false, mode: "legacy-settings", code: "FETCH_FAILED", message: String((err && err.message) || err) }; }
+  const plan = buildPlan({ settingsPath, sources });
+  try {
+    say("settings: " + realTarget + " (" + cls + ")\nstate: " + plan.state + "\n" + formatReport({
+      result: plan.state,
+      added: (plan.changes && plan.changes.added) || [],
+      removed: (plan.changes && plan.changes.removed) || [],
+      moved: (plan.changes && plan.changes.moved) || [],
+      metadataChanged: (plan.changes && plan.changes.metadataChanged) || [],
+      unresolved: [],
+      preservedUnresolved: plan.preservedUnresolved || [],
+      skippedUnresolved: plan.skippedUnresolved || [],
+      unsupportedSkipped: plan.unsupportedSkipped || [],
+      fallbackResolved: plan.fallbackResolved || [],
+    }));
+  } catch {}
+  if (plan.state === "BLOCKED") return { ok: false, mode: "legacy-settings", code: "PREVIEW_BLOCKED", message: "Settings Preview is blocked.", reasons: plan.blockedReasons };
+  if (plan.state === "NO_CHANGE") return { ok: true, mode: "legacy-settings", result: "NO_CHANGE", settingsPath, settingsDigest: plan.settingsDigest };
+  let confirmed = false;
+  try {
+    const answer = await confirmFn("Apply settings " + realTarget + "? [y/N] ");
+    confirmed = answer === true || (typeof answer === "string" && /^(y|yes)$/i.test(answer.trim()));
+  } catch { confirmed = false; }
+  if (!confirmed) return { ok: false, mode: "legacy-settings", code: "CONFIRMATION_DECLINED", message: "Apply requires explicit affirmative confirmation; declining refuses with zero writes." };
+  const freshBinding = resolveLegacyBinding(settingsPath, src.dshHome);
+  if (!freshBinding.ok) {
+    return { ok: false, mode: "legacy-settings", code: "SETTINGS_UNREADABLE", message: "The explicit settings path cannot be resolved before commit." };
+  }
+  if (freshBinding.classification !== "SCRATCH") {
+    return { ok: false, mode: "legacy-settings", code: "PRODUCTION_SETTINGS_REFUSED", message: "Production-classified settings paths refuse; --scratch never reclassifies production." };
+  }
+  if (!legacyBindingsEqual(initialBinding, freshBinding)) {
+    return { ok: false, mode: "legacy-settings", code: "SETTINGS_TARGET_CHANGED", message: "Settings target identity changed since Preview; refusing before commit." };
+  }
+  const outcome = commitPlan(plan);
+  if (outcome && outcome.stale === true) {
+    const reason = (outcome.unresolved && outcome.unresolved[0] && outcome.unresolved[0].reason) || "STALE_SETTINGS";
+    return { ok: false, mode: "legacy-settings", code: "STALE_SETTINGS", message: String(reason) };
+  }
+  if (!outcome || outcome.result !== "UPDATED") {
+    const reason = (outcome && outcome.unresolved && outcome.unresolved[0] && outcome.unresolved[0].reason) || "Commit refused.";
+    return { ok: false, mode: "legacy-settings", code: "COMMIT_REFUSED", message: String(reason) };
+  }
+  return { ok: true, mode: "legacy-settings", result: "UPDATED", settingsPath, report: formatReport(outcome) };
+}
+export async function dispatchSyncCli(argv = [], deps = {}) {
+  const flags = Array.isArray(argv) ? argv : [];
+  const d = deps ?? {};
+  const hasFlag = (name) => flags.some((a) => a === name || (typeof a === "string" && a.startsWith(name + "=")));
+  if (flags.some((a) => a === "--help" || a === "-h")) return { ok: true, mode: "help", help: formatProfileCliHelp() };
+  const hasProfile = hasFlag("--profile");
+  const hasSettings = flags.some((a) => a === "--settings" || (typeof a === "string" && a.startsWith("--settings=")));
+  if (hasProfile && hasSettings) {
+    return { ok: false, mode: "refused", code: "CONFLICTING_TARGETS", message: "--profile and --settings cannot be combined; select exactly one target." };
+  }
+  if (hasProfile) {
+    let parsed;
+    try {
+      parsed = parseProfileCliArgs(flags);
+    } catch (err) {
+      const text = String((err && err.message) || err);
+      const code = text.split(":")[0] || "INVALID_PROFILE_ARGS";
+      return { ok: false, mode: "refused", code, message: text };
+    }
+    if (parsed && parsed.help) return { ok: true, mode: "help", help: formatProfileCliHelp() };
+    if (parsed.settings !== undefined) {
+      return { ok: false, mode: "refused", code: "CONFLICTING_TARGETS", message: "--profile and --settings cannot be combined; select exactly one target." };
+    }
+    return runProfileSync({ profile: parsed.profile, liveStateRaw: parsed.liveStateRaw, scratch: parsed.scratch, fetchFn: d.fetchFn, confirmFn: d.confirmFn, dshHome: d.dshHome, installAnchorDir: d.installAnchorDir !== undefined ? d.installAnchorDir : null, pathEnv: d.pathEnv, waitMs: d.waitMs, print: d.print });
+  }
+  if (hasSettings) {
+    // S5-R3 B1: strict flag validation first (before source acquisition or
+    // file mutation), then real-path classification before fetching, then a
+    // Previewed + displayed + confirmed retained plan. The executable
+    // dispatch never uses the unconfirmed runSync write path; runSync
+    // itself stays available for its existing explicit library/test uses.
+    let value = null;
+    let count = 0;
+    let scratchCount = 0;
+    for (let i = 0; i < flags.length; i++) {
+      const a = flags[i];
+      if (a === "--settings") {
+        count += 1;
+        if (count > 1) return { ok: false, mode: "refused", code: "DUPLICATE_SETTINGS", message: "--settings given more than once." };
+        const next = flags[i + 1];
+        if (next === undefined || (typeof next === "string" && next.startsWith("--")) || typeof next !== "string" || next.length === 0) {
+          return { ok: false, mode: "refused", code: "INVALID_SETTINGS", message: "--settings requires a path." };
+        }
+        value = next;
+        i += 1;
+      } else if (typeof a === "string" && a.startsWith("--settings=")) {
+        count += 1;
+        if (count > 1) return { ok: false, mode: "refused", code: "DUPLICATE_SETTINGS", message: "--settings given more than once." };
+        value = a.slice("--settings=".length);
+        if (!value) return { ok: false, mode: "refused", code: "INVALID_SETTINGS", message: "--settings requires a path." };
+      } else if (a === "--scratch") {
+        scratchCount += 1;
+        if (scratchCount > 1) return { ok: false, mode: "refused", code: "DUPLICATE_SCRATCH", message: "--scratch given more than once." };
+      } else if (typeof a === "string" && a.startsWith("--scratch")) {
+        return { ok: false, mode: "refused", code: "INVALID_SCRATCH", message: "Malformed --scratch flag." };
+      } else if (typeof a === "string" && (a.startsWith("--live-state") || a.startsWith("--profile"))) {
+        return { ok: false, mode: "refused", code: "CONFLICTING_TARGETS", message: "Profile flags cannot be combined with --settings; select exactly one target." };
+      } else {
+        return { ok: false, mode: "refused", code: "UNKNOWN_FLAG", message: "Unknown flag: " + String(a) };
+      }
+    }
+    const cls = classifySettingsPath(value, d.dshHome);
+    if (cls === "UNREADABLE") return { ok: false, mode: "refused", code: "SETTINGS_UNREADABLE", message: "The explicit settings path cannot be resolved." };
+    if (cls === "PRODUCTION") {
+      const scratchAsked = flags.some((a) => a === "--scratch");
+      return { ok: false, mode: "refused", code: scratchAsked ? "SCRATCH_MODE_PRODUCTION_REFUSED" : "PRODUCTION_SETTINGS_REFUSED", message: "Production-classified settings paths refuse; --scratch never reclassifies production." };
+    }
+    return runSettingsSync({ settingsPath: value, fetchFn: d.fetchFn, confirmFn: d.confirmFn, print: d.print, dshHome: d.dshHome });
+  }
+  for (const a of flags) {
+    if (a === "--scratch") continue;
+    return { ok: false, mode: "refused", code: "UNKNOWN_FLAG", message: "Unknown flag: " + String(a) };
+  }
+  return { ok: false, mode: "refused", code: "PROFILE_REQUIRED", message: "Explicit --profile <name> is required; refusing to write default settings." };
+}
+
 export function readSettingsFile(settingsPath) {
   const bytes = fs.readFileSync(settingsPath);
   const text = bytes.toString('utf8');
@@ -1463,8 +1836,43 @@ export async function runSync({ settingsPath, fetchFn } = {}) {
 }
 
 async function main() {
-  const outcome = await runSync({});
-  if (outcome.result === 'NOT WRITTEN') process.exitCode = 1;
+  // S5-R2 B1: explicitly selected targets only. Bare invocation refuses
+  // without fetching or writing; legacy runSync({}) is never entered here.
+  let result = null;
+  try {
+    result = await dispatchSyncCli(process.argv.slice(2), {});
+  } catch (err) {
+    console.log(formatReport({
+      result: 'NOT WRITTEN',
+      added: [],
+      removed: [],
+      moved: [],
+      metadataChanged: [],
+      unresolved: [{ reason: String((err && err.message) || err) }],
+    }));
+    process.exitCode = 1;
+    return;
+  }
+  if (result && result.mode === 'help') {
+    console.log(result.help);
+    return;
+  }
+  if (result && result.mode === 'legacy-settings') {
+    if (result.result === 'NOT WRITTEN') process.exitCode = 1;
+    return;
+  }
+  if (result && result.ok === true) return;
+  try {
+    console.log(formatReport({
+      result: 'NOT WRITTEN',
+      added: [],
+      removed: [],
+      moved: [],
+      metadataChanged: [],
+      unresolved: [{ reason: String((result && result.code) || 'REFUSED') + ': ' + String((result && result.message) || 'refused') }],
+    }));
+  } catch {}
+  process.exitCode = 1;
 }
 
 const invokedAsMain =

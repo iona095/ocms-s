@@ -152,6 +152,9 @@ test('no broad DSH version ranges (§16)', () => {
 // unreviewed drift under v1.4.1.
 const V141_SYNC_SHA = 'cdd56032042775b39e3c09628e8988ef0ce7d6aa45fd9614196189157ef12b7d';
 const V141_UI_HTML_SHA = 'd2383cd3fb545da64dd51a21ad570f1944fee95e8caf8c98286d9d8d85919658';
+// S5-R4 final-reviewed pins (P1-S5-R4 G2-A/B). Computed from final post-repair source.
+const S5R4_SYNC_SHA = '1e14051f400a1eeb7e4c368de5bca5c2c536727a2026a626925dc065591d7935';
+const S5R4_UI_HTML_SHA = '5a8c4a233860fae364f115e46c1dfba1c4cb17e1ca87ec1b6a64abeefbe97bac';
 
 test('v1.3 identity: sync.mjs byte-identical to released v1.3 (§115/§181)', { skip: 'superseded by contract v1.4.1 §14 scope (see v1.4.1 pins below)' }, () => {
   const sha = sha256Hex(fs.readFileSync(path.join(REPO_ROOT, 'sync.mjs')));
@@ -163,14 +166,14 @@ test('v1.3 identity: ui/index.html byte-identical to released v1.3 (§116/§181)
   assert.equal(sha, V13_UI_HTML_SHA, 'ui/index.html must remain byte-identical to the released v1.3 hash');
 });
 
-test('v1.4.1 identity: sync.mjs pinned to the reviewed v1.4.1 bytes', () => {
+test('s5-r4 identity: sync.mjs pinned to the final-reviewed S5-R4 bytes', () => {
   const sha = sha256Hex(fs.readFileSync(path.join(REPO_ROOT, 'sync.mjs')));
-  assert.equal(sha, V141_SYNC_SHA, 'sync.mjs drift beyond the reviewed v1.4.1 implementation is forbidden');
+  assert.equal(sha, S5R4_SYNC_SHA, 'sync.mjs drift beyond the final-reviewed S5-R4 implementation is forbidden');
 });
 
-test('v1.4.1 identity: ui/index.html pinned to the reviewed v1.4.1 bytes', () => {
+test('s5-r4 identity: ui/index.html pinned to the final-reviewed S5-R4 bytes', () => {
   const sha = sha256Hex(fs.readFileSync(path.join(REPO_ROOT, 'ui', 'index.html'), 'utf8'));
-  assert.equal(sha, V141_UI_HTML_SHA, 'ui/index.html drift beyond the reviewed v1.4.1 implementation is forbidden');
+  assert.equal(sha, S5R4_UI_HTML_SHA, 'ui/index.html drift beyond the final-reviewed S5-R4 implementation is forbidden');
 });
 
 test('built client bundle carries the __ModuleLoader__ convention and no second React (§119/§121)', { skip: !fs.existsSync(CLIENT_BUNDLE_PATH) ? 'capability missing: dsh/client.js not built yet' : false }, () => {
