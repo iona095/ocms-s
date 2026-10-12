@@ -1912,6 +1912,21 @@ export async function runSync({ settingsPath, fetchFn } = {}) {
   return { ...outcome, report: formatReport(outcome) };
 }
 
+// v1.4.6-rc2 R1/R3/R4: expand a blocked-profile result into unresolved
+// entries. First entry is always "<code>: <message>"; each detail.reasons
+// string follows verbatim in order. Non-reasons details yield the single
+// entry only. Pure and total; exit-code mapping is unchanged.
+export function blockedProfileUnresolved(result) {
+  const code = String((result && result.code) || 'REFUSED');
+  const message = String((result && result.message) || 'refused');
+  const out = [{ reason: code + ': ' + message }];
+  const d = result && result.detail;
+  if (d && typeof d === 'object' && !Array.isArray(d) && Array.isArray(d.reasons) && d.reasons.length > 0 && d.reasons.every((r) => typeof r === 'string')) {
+    for (const r of d.reasons) out.push({ reason: r });
+  }
+  return out;
+}
+
 async function main() {
   // S5-R2 B1: explicitly selected targets only. Bare invocation refuses
   // without fetching or writing; legacy runSync({}) is never entered here.
@@ -1946,7 +1961,7 @@ async function main() {
       removed: [],
       moved: [],
       metadataChanged: [],
-      unresolved: [{ reason: String((result && result.code) || 'REFUSED') + ': ' + String((result && result.message) || 'refused') }],
+      unresolved: blockedProfileUnresolved(result),
     }));
   } catch {}
   process.exitCode = 1;

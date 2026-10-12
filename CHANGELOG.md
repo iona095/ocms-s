@@ -4,6 +4,23 @@ All notable project-level changes are summarized here.
 
 This file is intentionally concise. The authoritative behavioral specification remains the current contract.
 
+## v1.4.6-rc2
+
+**Release candidate: show why a profile Preview is blocked (contract v1.4.6-rc2).**
+
+### Fixed
+
+- Profile planning blockers were computed (detail.reasons, e.g. PLACEMENT_AMBIGUOUS) and carried through preview-session.mjs and runProfileSync, then dropped at presentation: the web /api/preview refusal carried only { ok, code, message } (the page showed bare ERROR) and the CLI report carried only "<code>: <message>". Blocked reasons are now visible verbatim and in order. Web refusals whose detail.reasons is a non-empty string array gain legacy-shaped blockedReasons: [{ reason }] (HTTP status and code unchanged; the page shows BLOCKED with the legacy "Synchronization blocked: r1 | r2" notice for VERIFY_FAILED plus reasons, ERROR otherwise). The CLI blocked-profile report lists each reason as its own unresolved entry after the existing line (exit code 1 unchanged). No other detail shapes are exposed (digest objects, internal strings).
+
+### Changed
+
+- Version 1.4.6-rc1 → 1.4.6-rc2; RC1 sync.mjs pin superseded by the RC2 pin; S5-R4 ui/index.html pin superseded by the RC2 UI pin (R2 requires index.html bytes to change; rc1 §7 "MUST stay green" explicitly superseded).
+- Committed HTTP proof that the legacy Preview payload carries endpointBaseDrift (rc1 future-gate item; additive, non-blocking, no production change).
+
+### Unchanged (explicit)
+
+- No planning, placement, classification, membership, diff, render, commit, or attestation behaviour change. v1.4.1 classification rules, v1.4.6-rc1 gateway bases/aliases/drift, Preview/Apply semantics, roster/catalog/docs URLs, and live-probe policy are unchanged.
+
 ## v1.4.6-rc1
 
 **Release candidate: gateway base derivation and documented base aliases (contract v1.4.6-rc1).**

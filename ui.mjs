@@ -158,6 +158,17 @@ function refusal(res, status, code, message) {
   sendJson(res, status, { ok: false, code, message });
 }
 
+// v1.4.6-rc2 R1/R2/R4: map a profile refusal detail to the legacy-shaped
+// blockedReasons array only when detail.reasons is a non-empty string array.
+// Every other detail shape (digest objects, internal strings) yields
+// undefined and nothing is exposed. Pure and total.
+export function profileRefusalBlockedReasons(detail) {
+  if (detail && typeof detail === 'object' && !Array.isArray(detail) && Array.isArray(detail.reasons) && detail.reasons.length > 0 && detail.reasons.every((r) => typeof r === 'string')) {
+    return detail.reasons.map((r) => ({ reason: String(r) }));
+  }
+  return undefined;
+}
+
 function readBody(req, limit) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -509,7 +520,10 @@ export async function startServer(options = {}) {
         const code = built && typeof built.code === 'string' ? built.code : 'ERROR';
         const message = built && typeof built.message === 'string' ? built.message : 'Unexpected internal error.';
         const status = (code === 'INVALID_LIVE_STATE' || code === 'INVALID_PROFILE_NAME' || code === 'INVALID_OVERLAYS' || code === 'VERIFY_FAILED') ? 400 : 409;
-        sendJson(res, status, { ok: false, code, message });
+        const blocked = profileRefusalBlockedReasons(built && built.detail);
+        const body = { ok: false, code, message };
+        if (blocked !== undefined) body.blockedReasons = blocked;
+        sendJson(res, status, body);
         return;
       }
       const preview = built.preview;

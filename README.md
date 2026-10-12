@@ -4,13 +4,13 @@ A small, manual Node.js utility that synchronizes **OpenCode Go** and **OpenCode
 
 OCMS-S is deliberately narrow. It is **not** a daemon, scheduler, account checker, quota monitor, or model-probing system. v1.4 adds one optional DSH integration: a `Models` conversation-view tab that owns OCMS server lifecycle (status/Start/Stop) and iframe hosting only. All synchronization authority stays in the released engine and Web UX.
 
-Current project version: **v1.4.6-rc1** (release candidate)
+Current project version: **v1.4.6-rc2** (release candidate)
 
 Current authoritative specification:
 
-`OpenCode Model Sync — Simple Script Contract v1.4.6-rc1.md`
+`OpenCode Model Sync — Simple Script Contract v1.4.6-rc2.md`
 
-v1.4.6-rc1 amends v1.4.1; v1.4.1 remains binding wherever v1.4.6-rc1 is silent. Profile-aware synchronization (S5) is specified in `SPEC_DSH_PROFILE_AWARE_SYNC.md`.
+v1.4.6-rc2 amends v1.4.6-rc1 and v1.4.1; earlier contracts remain binding wherever v1.4.6-rc2 is silent. Profile-aware synchronization (S5) is specified in `SPEC_DSH_PROFILE_AWARE_SYNC.md`.
 
 ---
 
@@ -193,7 +193,7 @@ node ui.mjs --settings=C:\Temp\ocms-test\settings.yaml
 node ui.mjs --profile=<name> [--live-state=<not-running|overlays:<paths>>] [--scratch]
 ```
 
-With `--profile`, the Web UX Previews and Applies against that DSH profile (S5): the target identity and live-state attestation are shown, bound to the Preview, and re-displayed at Apply confirmation; the acknowledgment control is never pre-checked.
+With `--profile`, the Web UX Previews and Applies against that DSH profile (S5): the target identity and live-state attestation are shown, bound to the Preview, and re-displayed at Apply confirmation; the acknowledgment control is never pre-checked. A blocked profile Preview whose refusal carries planning reasons shows BLOCKED with those reasons (same notice format as the legacy path); any other refusal shows ERROR.
 
 Behavior:
 
@@ -320,7 +320,7 @@ Verified on Windows with Node 22.23.3 and Node 24.15.0: `npm test` 363 tests (36
 npm test
 ```
 
-`npm test` runs the complete release suite with explicit cross-platform test paths (no wildcard expansion, so Windows/Node 20 behaves identically): 363 tests total — 70 legacy/v1.2 regression tests, 84 v1.3 engine/server/UI contract tests, 94 v1.4 DSH-integration tests (embed-origin, client view, lifecycle, ownership retention, compat, disposal-race, host/client compatibility, HMR sequencing), 14 v1.4.1 unsupported-protocol tests, 14 v1.4.6-rc1 gateway-base tests, and 87 developer-tooling tests (360 pass, 0 fail, 3 authorized skips: the two v1.3 byte-identity pins superseded by contract v1.4.1 §14 and the S5-R4 `sync.mjs` pin superseded by contract v1.4.6-rc1 §7).
+`npm test` runs the complete release suite with explicit cross-platform test paths (no wildcard expansion, so Windows/Node 20 behaves identically): 371 tests total — 70 legacy/v1.2 regression tests, 84 v1.3 engine/server/UI contract tests, 96 v1.4 DSH-integration tests (embed-origin, client view, lifecycle, ownership retention, compat including the two rc2 pins, disposal-race, host/client compatibility, HMR sequencing), 14 v1.4.1 unsupported-protocol tests, 14 v1.4.6-rc1 gateway-base tests, 6 v1.4.6-rc2 blocked-reasons tests, and 87 developer-tooling tests (365 pass, 0 fail, 6 authorized skips: the two v1.3 byte-identity pins superseded by contract v1.4.1 §14, the S5-R4 `sync.mjs` pin and RC1 `sync.mjs` pin and S5-R4 `ui/index.html` pin superseded by contract v1.4.6-rc2 §9, and one Typert-registry capability skip).
 
 The S5 profile suites (`tests/profile-*/`) are run separately and are not part of `npm test`.
 
@@ -377,6 +377,10 @@ node --test tests/v1.4.1/unsupported-protocol.test.mjs
 
 ```powershell
 node --test tests/v1.4.6-rc1/gateway-base.test.mjs
+```
+
+```powershell
+node --test tests/v1.4.6-rc2/blocked-reasons.test.mjs
 ```
 
 You can also perform syntax checks:
@@ -714,6 +718,8 @@ ENDPOINT_BASE_DRIFT (1):
 
 Every affected model is listed individually. Warnings are not reduced to counts only.
 
+A blocked profile run lists every planning reason as its own `unresolved` entry, verbatim and in order, after the existing `<code>: <message>` line (exit code 1 unchanged). No other planning `detail` is printed.
+
 ---
 
 ## Backup and write safety
@@ -827,9 +833,10 @@ OpenCode Model Sync — Simple Script Contract v1.3.md
 OpenCode Model Sync — Simple Script Contract v1.4.md
 OpenCode Model Sync — Simple Script Contract v1.4.1.md
 OpenCode Model Sync — Simple Script Contract v1.4.6-rc1.md
+OpenCode Model Sync — Simple Script Contract v1.4.6-rc2.md
 ```
 
-**v1.4.6-rc1 is the current authoritative contract** (additive over v1.4.1; v1.0–v1.4.1 unchanged).
+**v1.4.6-rc2 is the current authoritative contract** (additive over v1.4.6-rc1/v1.4.1; v1.0–v1.4.6-rc1 unchanged).
 
 v1.4 identities (immutable): contract SHA-256 `3a4461d099e8994c773c98cfe3d001b9fb872fc182c64d31eddf8e46d4f27831` (171 lines); `dsh/lifecycle.mjs` `36f65604cd95322ba643d6ba7baa225d459270113ef75298ad9839e8d79a0c47`; `tests/v1.4/disposal-race.test.mjs` `3edbb9a76cb8dc9cb653efb2006f4810177258060f5885223ae40f826e6cb6d9`; v1.3 baseline `sync.mjs` `9211544a0bba60e3e19a78a8d089d84f9eacedb6105631489ebe377285188c07` and `ui/index.html` `6610e7354f64eb1edbd4827df65fa120c1410ba9121e33fcab87637d96deddf8` unchanged; lineage `HEAD`/`v1.3.0` `50968d968ede3c0c847c6d127e1ff8059f790185`.
 
@@ -838,6 +845,8 @@ v1.4.1 identities (immutable): contract SHA-256 `f48e236f40ee5c15202f18c3e812d3f
 v1.4.2 identities: implementation commit `8167039d2120f859c79194e8273d08379a3ffa23` (tree `9f9629574d66aad61f4a2f2e586dc400e772324f`), recorded as line-ending-proof Git object ids — `dsh/host.mjs` `d54e53c77b5355de439443a0da5ad03b53e3eff8`, `dsh/lifecycle.mjs` `761a08a80ad5b3c938881f1cdb64c191076fa910`, `tests/v1.4/lifecycle.test.mjs` `04f053d421e3fb078269ff07366f85bfce1cb885`, `tests/v1.4/disposal-race.test.mjs` `a411a7626114b5af0ca9486506fbf25eacf1e411`, `tests/v1.4/ownership.test.mjs` `a1205f884705bde2547887c78814e11c3b8227c1`, `tests/v1.4/hmr-generation.test.mjs` `a264cc4bd9e6451e47c5d597c09455ea42ef23b4`. v1.4.1 authority is unchanged: `sync.mjs` and `ui/index.html` remain byte-identical (`1533be1fa08b017c9f32bce96e89d46498ef5a54`, `a81fc9f1044bb82c3752c57c1f7d59152ce1c7b2`). v1.4.2 is a correctness release against the v1.4.1 contract; it adds no contract text.
 
 v1.4.6-rc1 identities: contract SHA-256 `f041e7540875e53419243316289cd9b98ef52606cdff4c8ec665c3c9df41fa38` (236 lines); `sync.mjs` `e348ad7456e6ea2ddb83515c34a9a444e9d602051721325cf81283f039b70bad`; commits `77380793f9d71ef7c47b3e7b32a8e2dead3a0a80` (S5 profile-aware sync + R1 docs URL repair) and `cec2f19412c8ffff0cdbbc5a8cdb1a8e39bf93de` (rc1), tag `v1.4.6-rc1`.
+
+v1.4.6-rc2 identities: contract SHA-256 `00204930eb1a12a4250a9eaeecd2828ac1fb83b17ffba8b2772c6d81dd56484a` (227 lines); `sync.mjs` `765a56ee26c165be05ab50b2d25ef7cd38b1e53355d328a0228ad6daf5e512f4`; `ui/index.html` `5979979d8d13d556a5dada32814fe6fb22e39810a27b39fdadb2ff0235ca3321`; baseline tag `v1.4.6-rc1`.
 
 v1.0 and v1.1 are historical artifacts.
 
@@ -863,6 +872,8 @@ OCMS-S v1.4.1 adds generic unsupported-protocol containment on the v1.4 engine: 
 OCMS-S v1.4.2 (historical) made child lifetime exact and the HMR handoff safe: ownership is released only by the owned child's own `exit` event, disposal completes only on that exit, and Stop/disposal/Start-abort share one termination sequence. v1.4.2 also added a process-global per-root coordinator that serialized DSH HMR generations; **v1.4.4 removes that coordinator**, because DSH 0.2.1-alpha.2 awaits old Fiber disposal before replacement (see above), and the acceptance smoke now proves the retirement-before-replacement ordering instead. v1.4.2 was verified test-first (controlled RED before each production edit) with 10 new tests, three independent adversarial audits, a clean-checkout suite run of 243 tests (241 pass, 0 fail, 2 authorized §14 skips) as measured at that release, and a real-runtime smoke test with a real `ui.mjs` child, real Remote calls, and OS-level child-liveness observation. Two v1.4.2-era boundaries are intentional and documented above: one cold DSH restart after upgrading, and a deliberately blocking disposal for an unconfirmable child.
 
 OCMS-S v1.4.6-rc1 adds profile-aware synchronization (S5) and restores exact Zen docs authority after OpenCode moved its documented Zen endpoints to `/inference/v1` (gateway base derivation, closed documented-base aliases, non-blocking `ENDPOINT_BASE_DRIFT`). Verified test-first: 14 v1.4.6-rc1 tests; full suite 363 tests (360 pass, 0 fail, 3 authorized skips) on Windows with Node 22 and Node 24; acceptance smoke PASS; two independent five-axis reviews and a three-specialist ship review, all without Critical findings.
+
+OCMS-S v1.4.6-rc2 shows why a profile Preview is blocked: planning reasons already carried as `detail.reasons` are now visible verbatim and in order in the web `/api/preview` refusal (`blockedReasons`, status/code unchanged; page shows BLOCKED with the legacy notice for `VERIFY_FAILED` plus reasons, ERROR otherwise) and in the CLI blocked-profile report (each reason its own `unresolved` entry, exit 1 unchanged); no other `detail` is exposed. Verified test-first: 6 v1.4.6-rc2 tests; full suite 371 tests (365 pass, 0 fail, 6 authorized skips) on Windows with Node 22 (v22.23.3 via node-win-x64) and Node 24 (v24.15.0); acceptance smoke PASS (13 steps) on both. Future gate: retire or re-anchor the S5 snapshot footprint tests (`tests/profile-reader/t19-footprint.test.mjs`, `tests/profile-acceptance/env04-staging.test.mjs`), which hard-code the S5 gate snapshot and already fail at the rc1 baseline.
 
 Future changes should remain narrow and contract-driven.
 

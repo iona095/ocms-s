@@ -742,6 +742,7 @@
       : 'Request failed with status ' + response.status + '.';
     const err = new Error(message);
     err.code = code;
+    if (data && Array.isArray(data.blockedReasons)) err.blockedReasons = data.blockedReasons;
     return err;
   }
 
@@ -938,6 +939,15 @@
       if (err && err.code === 'PREVIEW_BUSY') {
         // Nonfatal: keep the current view; the user may act again explicitly.
         setNotice(err.message, 'warn');
+      } else if (err && err.code === 'VERIFY_FAILED' && Array.isArray(err.blockedReasons) && err.blockedReasons.length > 0) {
+        previewId = null;
+        setState('BLOCKED');
+        const reasons = Array.isArray(err.blockedReasons) ? err.blockedReasons : [];
+        const reasonText = reasons
+          .map((r) => (r && typeof r.reason === 'string' ? r.reason : ''))
+          .filter((r) => r.length > 0)
+          .join(' | ');
+        setNotice('Synchronization blocked' + (reasonText ? ': ' + reasonText : '.'), 'warn');
       } else {
         previewId = null;
         setState('ERROR');
