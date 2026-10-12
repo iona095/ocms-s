@@ -4,31 +4,33 @@ A small, manual Node.js utility that synchronizes **OpenCode Go** and **OpenCode
 
 OCMS-S is deliberately narrow. It is **not** a daemon, scheduler, account checker, quota monitor, or model-probing system. v1.4 adds one optional DSH integration: a `Models` conversation-view tab that owns OCMS server lifecycle (status/Start/Stop) and iframe hosting only. All synchronization authority stays in the released engine and Web UX.
 
-Current project version: **v1.4.5**
+Current project version: **v1.4.6-rc1** (release candidate)
 
 Current authoritative specification:
 
-`OpenCode Model Sync — Simple Script Contract v1.4.1.md`
+`OpenCode Model Sync — Simple Script Contract v1.4.6-rc1.md`
+
+v1.4.6-rc1 amends v1.4.1; v1.4.1 remains binding wherever v1.4.6-rc1 is silent. Profile-aware synchronization (S5) is specified in `SPEC_DSH_PROFILE_AWARE_SYNC.md`.
 
 ---
 
 ## Important warning
 
-Running:
+Since v1.4.6-rc1 the CLI never writes to an implicit target. A bare run refuses:
 
 ```powershell
 node sync.mjs
+# NOT WRITTEN — PROFILE_REQUIRED: Explicit --profile <name> is required; refusing to write default settings.
 ```
 
-targets your real DSH configuration at:
+Every run must select exactly one explicit target, and every write is Previewed and then confirmed (`[y/N]`):
 
-```text
-%USERPROFILE%\.dsh\settings.yaml
-```
+- `--profile <name>` targets the configuration of an existing DSH profile. Production profiles also require an explicit `--live-state=` declaration (see [Run OCMS-S](#run-ocms-s)).
+- `--settings=<path>` targets a scratch settings file only. A path under your real DSH home is classified as production and refused.
 
-OCMS-S validates the generated configuration and creates a timestamped backup before replacing the production file when an update is required.
+OCMS-S validates the generated configuration and creates a timestamped backup before replacing a file when an update is required.
 
-If you are evaluating the project for the first time, use an explicitly supplied **scratch settings file** instead:
+If you are evaluating the project for the first time, use an explicitly supplied **scratch settings file**:
 
 ```powershell
 node sync.mjs --settings=C:\Temp\ocms-test\settings.yaml
@@ -141,19 +143,27 @@ npm ci
 
 ## Run OCMS-S
 
-From the repository directory:
+From the repository directory, select exactly one explicit target:
 
 ```powershell
-node sync.mjs
+# a DSH profile (profile-aware synchronization, S5)
+node sync.mjs --profile <name> --live-state=not-running
+node sync.mjs --profile <name> --live-state=overlays:<comma-separated-paths>
+
+# a scratch settings file
+node sync.mjs --settings=C:\Temp\ocms-test\settings.yaml
+
+node sync.mjs --help
 ```
 
-Normal execution targets:
+Rules (normative detail in `SPEC_DSH_PROFILE_AWARE_SYNC.md` §8):
 
-```text
-%USERPROFILE%\.dsh\settings.yaml
-```
-
-No interactive confirmation is shown. Running the command is the instruction to synchronize the production settings file.
+- No implicit target: no default profile, no `web` fallback, no environment-derived profile. A bare `node sync.mjs` refuses with `PROFILE_REQUIRED` and fetches nothing.
+- `--profile` and `--settings` cannot be combined (`CONFLICTING_TARGETS`).
+- The profile must already exist; OCMS-S never creates or initializes a profile directory.
+- A production profile requires an explicit `--live-state=` declaration: `not-running` (DSH is not running that profile) or `overlays:<paths>` (the explicit live overlay files). Without it the run refuses. Production outcomes are reported with `liveActivation: UNKNOWN_LIVE_UNVERIFIED`; OCMS-S does not observe the running DSH process.
+- `--scratch` is a restriction, never a reclassification: it refuses production targets (`SCRATCH_MODE_PRODUCTION_REFUSED`) instead of downgrading them.
+- Each run fetches the five public sources once, shows the Preview, and writes only after an explicit `y` confirmation of that retained Preview. Apply never re-fetches or re-plans.
 
 ---
 
@@ -165,7 +175,7 @@ To operate on a deliberately supplied test file instead of production:
 node sync.mjs --settings=C:\Temp\ocms-test\settings.yaml
 ```
 
-The explicit `--settings=<path>` interface exists for scratch, testing, and audit workflows.
+The explicit `--settings=<path>` interface exists for scratch, testing, and audit workflows. Since v1.4.6-rc1 it accepts scratch-classified paths only (a path under the real DSH home is refused as production), shows the Preview, and asks for confirmation before writing.
 
 OCMS-S does **not** support an environment-variable settings override such as `OCMS_SETTINGS`.
 
@@ -180,7 +190,10 @@ node ui.mjs
 node ui.mjs --no-open
 node ui.mjs --port=18752
 node ui.mjs --settings=C:\Temp\ocms-test\settings.yaml
+node ui.mjs --profile=<name> [--live-state=<not-running|overlays:<paths>>] [--scratch]
 ```
+
+With `--profile`, the Web UX Previews and Applies against that DSH profile (S5): the target identity and live-state attestation are shown, bound to the Preview, and re-displayed at Apply confirmation; the acknowledgment control is never pre-checked.
 
 Behavior:
 
@@ -195,7 +208,7 @@ timestamped backup before every successful update
 STALE_PREVIEW refusal if settings change after Preview
 ```
 
-`node ui.mjs` without `--settings=<path>` uses the normal production target:
+`node ui.mjs` without `--settings=<path>` or `--profile` uses the legacy production target (unchanged legacy behavior of the Web UX):
 
 ```text
 %USERPROFILE%\.dsh\settings.yaml
@@ -225,8 +238,8 @@ Build and install into your normal `web` profile:
 ```powershell
 node dsh/build-client.mjs
 npm pack
-# records ocms-s-1.4.5.tgz; tarballs are never committed (*.tgz)
-dsh plugin --profile web add .\ocms-s-1.4.5.tgz
+# records ocms-s-1.4.6-rc1.tgz; tarballs are never committed (*.tgz)
+dsh plugin --profile web add .\ocms-s-1.4.6-rc1.tgz
 ```
 
 Then restart the DSH `web` profile and hard-refresh the browser. Expected:
@@ -278,6 +291,22 @@ v1.4.5 changes no runtime, model-sync, transport, contract, or Apply behavior re
 
 Developer ergonomics (`npm run build`, `npm run register -- --profile <explicit>`, `npm run watch`, possibly safe `dev:web`) remain post-release follow-up and are not part of v1.4.4.
 
+### OCMS-S v1.4.6-rc1 (release candidate)
+
+v1.4.6-rc1 is a release candidate. It contains two changes:
+
+```text
+- Profile-aware synchronization (S5): explicit --profile targets for the CLI and Web UX,
+  live-state attestation, scratch/production classification; bare CLI runs refuse.
+- Gateway base derivation (contract v1.4.6-rc1): OpenCode's Zen docs now document endpoints
+  under https://opencode.ai/inference/v1/...; these are recognized again, so exact docs
+  authority applies to Zen. Settings still receive the unchanged /zen and /zen/go base URLs.
+  A new non-blocking ENDPOINT_BASE_DRIFT report section shows models documented under an
+  alias base.
+```
+
+Verified on Windows with Node 22.23.3 and Node 24.15.0: `npm test` 363 tests (360 pass, 0 fail, 3 authorized skips) and `npm run test:smoke` PASS. Known open items (contract v1.4.6-rc1 §10): `/zen/v1` liveness is not probed; a usable catalog hint can still override a genuinely unrecognized documented endpoint; roster fetches send no API key or session header.
+
 ### Upgrading to v1.4.2 (historical: two v1.4.2-era boundaries)
 
 1. **Restart DSH once.** A generation that was already running when v1.4.2 was installed does not participate in the generation handoff, so a hot reload across that one transition is not serialized: the replacement reaches publication while the predecessor is still serving and Cordis refuses the duplicate service registration. Restart the DSH profile after installing v1.4.2; under v1.4.2 every later reload was serialized by the OCMS-S coordinator (v1.4.4 removes that coordinator — see above). Nothing else about the installation changes.
@@ -291,7 +320,9 @@ Developer ergonomics (`npm run build`, `npm run register -- --profile <explicit>
 npm test
 ```
 
-`npm test` runs the complete release suite with explicit cross-platform test paths (no wildcard expansion, so Windows/Node 20 behaves identically): 261 tests total — 70 legacy/v1.2 regression tests, 84 v1.3 engine/server/UI contract tests, 93 v1.4 DSH-integration tests (embed-origin, client view, lifecycle, ownership retention, compat, disposal-race, host/client compatibility, HMR sequencing), and 14 v1.4.1 unsupported-protocol tests (259 pass, 0 fail, 2 authorized §14 skips: the v1.3 byte-identity pins superseded by contract v1.4.1 §14).
+`npm test` runs the complete release suite with explicit cross-platform test paths (no wildcard expansion, so Windows/Node 20 behaves identically): 363 tests total — 70 legacy/v1.2 regression tests, 84 v1.3 engine/server/UI contract tests, 94 v1.4 DSH-integration tests (embed-origin, client view, lifecycle, ownership retention, compat, disposal-race, host/client compatibility, HMR sequencing), 14 v1.4.1 unsupported-protocol tests, 14 v1.4.6-rc1 gateway-base tests, and 87 developer-tooling tests (360 pass, 0 fail, 3 authorized skips: the two v1.3 byte-identity pins superseded by contract v1.4.1 §14 and the S5-R4 `sync.mjs` pin superseded by contract v1.4.6-rc1 §7).
+
+The S5 profile suites (`tests/profile-*/`) are run separately and are not part of `npm test`.
 
 You can also run the suites separately:
 
@@ -342,6 +373,10 @@ node --test $tests14
 
 ```powershell
 node --test tests/v1.4.1/unsupported-protocol.test.mjs
+```
+
+```powershell
+node --test tests/v1.4.6-rc1/gateway-base.test.mjs
 ```
 
 You can also perform syntax checks:
@@ -460,6 +495,8 @@ OCMS-S manages exactly six model arrays.
 | `opencode-messages` | `anthropic-messages` | `https://opencode.ai/zen` |
 | `opencode` | `openai-responses` | `https://opencode.ai/zen/v1` |
 
+Since v1.4.6-rc1 the six base URLs are derived from one canonical base per gateway (`GATEWAY_BASE`: `https://opencode.ai/zen/go` and `https://opencode.ai/zen`): `anthropic-messages` routes use the base, every other route uses `<base>/v1`. The values written to settings are unchanged from v1.4.5.
+
 Existing unrelated configuration is preserved.
 
 For an existing managed route, only its `models` array is replaced. Route-level configuration outside `models` is preserved.
@@ -477,8 +514,8 @@ OCMS-S reads these public sources on every normal synchronization run:
 | `https://opencode.ai/zen/go/v1/models` | current Go roster |
 | `https://opencode.ai/zen/v1/models` | current Zen roster |
 | `https://models.opencode.ai/api.json` | model metadata |
-| `https://opencode.ai/docs/go/` | exact Go endpoint placement |
-| `https://opencode.ai/docs/zen/` | exact Zen endpoint placement |
+| `https://opencode.ai/v2/docs/console/go/` | exact Go endpoint placement |
+| `https://opencode.ai/v2/docs/console/models/` | exact Zen endpoint placement |
 
 OCMS-S does not need authenticated model probes to determine placement.
 
@@ -507,6 +544,16 @@ Earlier authority always wins.
 /responses        → responses route
 /models/{id}      → unsupported Google-style protocol
 ```
+
+The endpoint suffix is read after a recognized documented base. Recognized bases are a closed list per gateway (`DOC_ENDPOINT_BASES`, contract v1.4.6-rc1):
+
+```text
+Go:  /zen/go/v1/
+Zen: /zen/v1/          (canonical)
+     /inference/v1/    (documented alias, current Zen docs)
+```
+
+An alias affects recognition only; it is never written to settings. The lists never overlap across gateways, and an unlisted base is not guessed (`ENDPOINT_UNSUPPORTED`). Live models documented under an alias base are reported in `ENDPOINT_BASE_DRIFT` (see [Reporting](#reporting)).
 
 ### Exact model-local `provider.npm` mapping
 
@@ -658,6 +705,13 @@ FREE_COUNTERPART_FALLBACK 1
 - zen/deepseek-v4-flash-free counterpart=zen/deepseek-v4-flash route=opencode-completions
 ```
 
+Since v1.4.6-rc1, documentation base drift is also reported. It never blocks a run:
+
+```text
+ENDPOINT_BASE_DRIFT (1):
+  - zen documented=https://opencode.ai/inference/v1 routed=https://opencode.ai/zen/v1 models=88
+```
+
 Every affected model is listed individually. Warnings are not reduced to counts only.
 
 ---
@@ -772,15 +826,18 @@ OpenCode Model Sync — Simple Script Contract v1.2.md
 OpenCode Model Sync — Simple Script Contract v1.3.md
 OpenCode Model Sync — Simple Script Contract v1.4.md
 OpenCode Model Sync — Simple Script Contract v1.4.1.md
+OpenCode Model Sync — Simple Script Contract v1.4.6-rc1.md
 ```
 
-**v1.4.1 is the current authoritative contract** (additive over v1.4; v1.0–v1.4 unchanged).
+**v1.4.6-rc1 is the current authoritative contract** (additive over v1.4.1; v1.0–v1.4.1 unchanged).
 
 v1.4 identities (immutable): contract SHA-256 `3a4461d099e8994c773c98cfe3d001b9fb872fc182c64d31eddf8e46d4f27831` (171 lines); `dsh/lifecycle.mjs` `36f65604cd95322ba643d6ba7baa225d459270113ef75298ad9839e8d79a0c47`; `tests/v1.4/disposal-race.test.mjs` `3edbb9a76cb8dc9cb653efb2006f4810177258060f5885223ae40f826e6cb6d9`; v1.3 baseline `sync.mjs` `9211544a0bba60e3e19a78a8d089d84f9eacedb6105631489ebe377285188c07` and `ui/index.html` `6610e7354f64eb1edbd4827df65fa120c1410ba9121e33fcab87637d96deddf8` unchanged; lineage `HEAD`/`v1.3.0` `50968d968ede3c0c847c6d127e1ff8059f790185`.
 
 v1.4.1 identities (immutable): contract SHA-256 `f48e236f40ee5c15202f18c3e812d3f41742804304d0de0d070342c0adeeb05b` (392 lines); `sync.mjs` `cdd56032042775b39e3c09628e8988ef0ce7d6aa45fd9614196189157ef12b7d`; `ui/index.html` `d2383cd3fb545da64dd51a21ad570f1944fee95e8caf8c98286d9d8d85919658`; lineage `HEAD`/`v1.4.0` `48fb7419508f7f3b43266a045537c65c543784e4`.
 
 v1.4.2 identities: implementation commit `8167039d2120f859c79194e8273d08379a3ffa23` (tree `9f9629574d66aad61f4a2f2e586dc400e772324f`), recorded as line-ending-proof Git object ids — `dsh/host.mjs` `d54e53c77b5355de439443a0da5ad03b53e3eff8`, `dsh/lifecycle.mjs` `761a08a80ad5b3c938881f1cdb64c191076fa910`, `tests/v1.4/lifecycle.test.mjs` `04f053d421e3fb078269ff07366f85bfce1cb885`, `tests/v1.4/disposal-race.test.mjs` `a411a7626114b5af0ca9486506fbf25eacf1e411`, `tests/v1.4/ownership.test.mjs` `a1205f884705bde2547887c78814e11c3b8227c1`, `tests/v1.4/hmr-generation.test.mjs` `a264cc4bd9e6451e47c5d597c09455ea42ef23b4`. v1.4.1 authority is unchanged: `sync.mjs` and `ui/index.html` remain byte-identical (`1533be1fa08b017c9f32bce96e89d46498ef5a54`, `a81fc9f1044bb82c3752c57c1f7d59152ce1c7b2`). v1.4.2 is a correctness release against the v1.4.1 contract; it adds no contract text.
+
+v1.4.6-rc1 identities: contract SHA-256 `f041e7540875e53419243316289cd9b98ef52606cdff4c8ec665c3c9df41fa38` (236 lines); `sync.mjs` `e348ad7456e6ea2ddb83515c34a9a444e9d602051721325cf81283f039b70bad`; commits `77380793f9d71ef7c47b3e7b32a8e2dead3a0a80` (S5 profile-aware sync + R1 docs URL repair) and `cec2f19412c8ffff0cdbbc5a8cdb1a8e39bf93de` (rc1), tag `v1.4.6-rc1`.
 
 v1.0 and v1.1 are historical artifacts.
 
@@ -805,6 +862,8 @@ OCMS-S v1.4.1 adds generic unsupported-protocol containment on the v1.4 engine: 
 
 OCMS-S v1.4.2 (historical) made child lifetime exact and the HMR handoff safe: ownership is released only by the owned child's own `exit` event, disposal completes only on that exit, and Stop/disposal/Start-abort share one termination sequence. v1.4.2 also added a process-global per-root coordinator that serialized DSH HMR generations; **v1.4.4 removes that coordinator**, because DSH 0.2.1-alpha.2 awaits old Fiber disposal before replacement (see above), and the acceptance smoke now proves the retirement-before-replacement ordering instead. v1.4.2 was verified test-first (controlled RED before each production edit) with 10 new tests, three independent adversarial audits, a clean-checkout suite run of 243 tests (241 pass, 0 fail, 2 authorized §14 skips) as measured at that release, and a real-runtime smoke test with a real `ui.mjs` child, real Remote calls, and OS-level child-liveness observation. Two v1.4.2-era boundaries are intentional and documented above: one cold DSH restart after upgrading, and a deliberately blocking disposal for an unconfirmable child.
 
+OCMS-S v1.4.6-rc1 adds profile-aware synchronization (S5) and restores exact Zen docs authority after OpenCode moved its documented Zen endpoints to `/inference/v1` (gateway base derivation, closed documented-base aliases, non-blocking `ENDPOINT_BASE_DRIFT`). Verified test-first: 14 v1.4.6-rc1 tests; full suite 363 tests (360 pass, 0 fail, 3 authorized skips) on Windows with Node 22 and Node 24; acceptance smoke PASS; two independent five-axis reviews and a three-specialist ship review, all without Critical findings.
+
 Future changes should remain narrow and contract-driven.
 
 A change to model authority, placement semantics, transaction behavior, or preservation rules should be specified and tested before production use.
@@ -828,12 +887,19 @@ ocms-s/
 ├── OpenCode Model Sync — Simple Script Contract v1.3.md
 ├── OpenCode Model Sync — Simple Script Contract v1.4.md
 ├── OpenCode Model Sync — Simple Script Contract v1.4.1.md
+├── OpenCode Model Sync — Simple Script Contract v1.4.6-rc1.md
+├── P1_IMPLEMENTATION_READINESS.md
 ├── README.md
+├── SPEC.md
+├── SPEC_DSH_PROFILE_AWARE_SYNC.md
 ├── cordis.patch.yml
 ├── package.json
 ├── package-lock.json
 ├── sync.mjs
 ├── ui.mjs
+├── profile/               # S5 profile-aware target resolution, Preview and commit
+├── scripts/
+│   └── dev-tools.mjs      # npm run build / register / watch / dev:web
 ├── dsh/
 │   ├── host.mjs
 │   ├── lifecycle.mjs
@@ -864,9 +930,15 @@ ocms-s/
     │   ├── disposal-race.test.mjs
     │   ├── hmr-generation.test.mjs
     │   └── host-client-compat.test.mjs
-    └── v1.4.1/
-        ├── helpers.mjs
-        └── unsupported-protocol.test.mjs
+    ├── v1.4.1/
+    │   ├── helpers.mjs
+    │   └── unsupported-protocol.test.mjs
+    ├── v1.4.6-rc1/
+    │   ├── helpers.mjs
+    │   ├── gateway-base.test.mjs
+    │   └── fixtures/      # captured 2026-10-12 Go/Zen docs pages
+    ├── dev-tools.test.mjs
+    └── profile-*/         # S5 suites: acceptance, cli-ui, commit, reader, render, target
 ```
 
 `node_modules/` is generated by `npm ci` and is intentionally excluded from Git.

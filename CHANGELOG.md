@@ -8,6 +8,10 @@ This file is intentionally concise. The authoritative behavioral specification r
 
 **Release candidate: gateway base derivation and documented base aliases (contract v1.4.6-rc1).**
 
+### Added
+
+- Profile-aware synchronization (S5, commit `7738079`): explicit `--profile <name>` targets for `sync.mjs` and `ui.mjs`, explicit `--live-state=` attestation for production profiles, `--scratch` as a restriction mode, and real-path scratch/production classification. A bare `node sync.mjs` now refuses (`PROFILE_REQUIRED`); `--settings=<path>` accepts scratch paths only and asks for confirmation. Also includes the R1 repair of the Go/Zen docs source URLs (`/v2/docs/console/go/`, `/v2/docs/console/models/`).
+
 ### Fixed
 
 - Zen docs moved every endpoint to `https://opencode.ai/inference/v1/...`; `endpointApi` only knew `/zen/v1/`, so all 88 Zen docs rows were ENDPOINT_UNSUPPORTED and placement silently fell back to `provider.npm` hints (or misclassified ordinary models as unsupported). Documented bases are now a closed per-gateway list (`DOC_ENDPOINT_BASES`: Go `/zen/go/v1/`; Zen `/zen/v1/`, `/inference/v1/`) and docs authority is restored for Zen (79 managed, 7 Google-style, 2 unrecognized on the 2026-10-12 captures).
