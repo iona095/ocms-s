@@ -4,6 +4,24 @@ All notable project-level changes are summarized here.
 
 This file is intentionally concise. The authoritative behavioral specification remains the current contract.
 
+## v1.4.6-rc1
+
+**Release candidate: gateway base derivation and documented base aliases (contract v1.4.6-rc1).**
+
+### Fixed
+
+- Zen docs moved every endpoint to `https://opencode.ai/inference/v1/...`; `endpointApi` only knew `/zen/v1/`, so all 88 Zen docs rows were ENDPOINT_UNSUPPORTED and placement silently fell back to `provider.npm` hints (or misclassified ordinary models as unsupported). Documented bases are now a closed per-gateway list (`DOC_ENDPOINT_BASES`: Go `/zen/go/v1/`; Zen `/zen/v1/`, `/inference/v1/`) and docs authority is restored for Zen (79 managed, 7 Google-style, 2 unrecognized on the 2026-10-12 captures).
+
+### Changed
+
+- One canonical base per gateway (`GATEWAY_BASE`); all six managed route `baseURL`s are derived via `routeBaseURL(gateway, api)` (anthropic-messages → base, others → base/v1). Emitted values are byte-identical to v1.4.5; `/inference` is never written to settings.
+- New non-blocking report section `ENDPOINT_BASE_DRIFT` (and additive `endpointBaseDrift` field on plans, outcomes and the Preview payload) shows live models whose docs use an alias base.
+- Version 1.4.5 → 1.4.6-rc1; rc1 `sync.mjs` byte pin supersedes the S5-R4 pin.
+
+### Unchanged (explicit)
+
+- v1.4.1 classification rules (S0–S2, U1–U4, F1–F4), route keys, apiKeyEnv, roster/catalog URLs, Preview/Apply semantics, `ui/index.html`, DSH lifecycle/host.
+
 ## v1.4.5
 
 **Package reproducibility repair (no runtime behavior change).**

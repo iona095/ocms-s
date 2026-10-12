@@ -443,6 +443,7 @@ export async function startServer(options = {}) {
       skippedUnresolved: skipped,
       unsupportedSkipped: unsupported,
       fallbackResolved: fallback,
+      endpointBaseDrift: Array.isArray(plan.endpointBaseDrift) ? plan.endpointBaseDrift.map((e) => ({ ...e })) : [],
       previewId: retained.previewId,
       generatedAt: retained.generatedAt,
     };
@@ -592,6 +593,7 @@ export async function startServer(options = {}) {
             skippedUnresolved: [],
             unsupportedSkipped: [],
             fallbackResolved: [],
+            endpointBaseDrift: [],
             settingsPath: resolvedTarget,
             settingsDigest: null,
             sourceSnapshotDigest: null,

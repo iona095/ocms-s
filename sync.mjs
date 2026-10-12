@@ -37,44 +37,69 @@ export const SOURCE_URLS = {
 export const FETCH_TIMEOUT_MS = 20000;
 
 // ---------------------------------------------------------------------------
-// Managed routes (contract section 3).
+// Gateway bases (contract v1.4.6-rc1 R1/R2).
+//
+// One canonical base per gateway; every managed route URL is derived from it
+// (anthropic-messages -> <base>, every other managed API -> <base>/v1).
+// DOC_ENDPOINT_BASES lists the documented endpoint path bases recognized per
+// gateway: canonical first, documented aliases after. Aliases affect docs
+// recognition only and are never written to settings (I-ALIAS-INERT). The
+// lists are closed and disjoint across gateways (I-DISJOINT).
+// ---------------------------------------------------------------------------
+
+export const GATEWAY_BASE = Object.freeze({
+  go: 'https://opencode.ai/zen/go',
+  zen: 'https://opencode.ai/zen',
+});
+
+export function routeBaseURL(gateway, api) {
+  return api === 'anthropic-messages' ? GATEWAY_BASE[gateway] : GATEWAY_BASE[gateway] + '/v1';
+}
+
+export const DOC_ENDPOINT_BASES = Object.freeze({
+  go: Object.freeze(['/zen/go/v1/']),
+  zen: Object.freeze(['/zen/v1/', '/inference/v1/']),
+});
+
+// ---------------------------------------------------------------------------
+// Managed routes (contract section 3; baseURLs derived per v1.4.6-rc1 R1).
 // ---------------------------------------------------------------------------
 
 export const MANAGED_ROUTES = {
   'opencode-go': {
     gateway: 'go',
     api: 'openai-completions',
-    baseURL: 'https://opencode.ai/zen/go/v1',
+    baseURL: routeBaseURL('go', 'openai-completions'),
     apiKeyEnv: 'OPENCODE_GO_API_KEY',
   },
   'opencode-go-messages': {
     gateway: 'go',
     api: 'anthropic-messages',
-    baseURL: 'https://opencode.ai/zen/go',
+    baseURL: routeBaseURL('go', 'anthropic-messages'),
     apiKeyEnv: 'OPENCODE_GO_API_KEY',
   },
   'opencode-go-responses': {
     gateway: 'go',
     api: 'openai-responses',
-    baseURL: 'https://opencode.ai/zen/go/v1',
+    baseURL: routeBaseURL('go', 'openai-responses'),
     apiKeyEnv: 'OPENCODE_GO_API_KEY',
   },
   'opencode-completions': {
     gateway: 'zen',
     api: 'openai-completions',
-    baseURL: 'https://opencode.ai/zen/v1',
+    baseURL: routeBaseURL('zen', 'openai-completions'),
     apiKeyEnv: 'OPENCODE_API_KEY',
   },
   'opencode-messages': {
     gateway: 'zen',
     api: 'anthropic-messages',
-    baseURL: 'https://opencode.ai/zen',
+    baseURL: routeBaseURL('zen', 'anthropic-messages'),
     apiKeyEnv: 'OPENCODE_API_KEY',
   },
   'opencode': {
     gateway: 'zen',
     api: 'openai-responses',
-    baseURL: 'https://opencode.ai/zen/v1',
+    baseURL: routeBaseURL('zen', 'openai-responses'),
     apiKeyEnv: 'OPENCODE_API_KEY',
   },
 };
@@ -243,8 +268,11 @@ export function endpointApi(endpoint, gateway, id) {
   ) {
     throw unresolved('ENDPOINT_INVALID: ' + gateway + '/' + id);
   }
-  const base = gateway === 'go' ? '/zen/go/v1/' : '/zen/v1/';
-  if (!url.pathname.startsWith(base)) throw unresolved('ENDPOINT_UNSUPPORTED: ' + gateway + '/' + id);
+  // Contract v1.4.6-rc1 R2: closed per-gateway documented bases; the tail
+  // map below is unchanged. No prefix guessing.
+  const bases = Object.hasOwn(DOC_ENDPOINT_BASES, gateway) ? DOC_ENDPOINT_BASES[gateway] : [];
+  const base = bases.find((candidate) => url.pathname.startsWith(candidate));
+  if (base === undefined) throw unresolved('ENDPOINT_UNSUPPORTED: ' + gateway + '/' + id);
   const tail = url.pathname.slice(base.length);
   if (tail === 'chat/completions') return 'openai-completions';
   if (tail === 'messages') return 'anthropic-messages';
@@ -257,6 +285,42 @@ export function routeFor(gateway, api) {
   return MANAGED_ROUTE_KEYS.find(
     (route) => MANAGED_ROUTES[route].gateway === gateway && MANAGED_ROUTES[route].api === api,
   );
+}
+
+// Contract v1.4.6-rc1 R3: visible, non-blocking report of live roster IDs
+// whose exact docs row uses a documented alias base instead of the canonical
+// base. Pure; never throws (malformed rows block through the planner path).
+export function endpointBaseDrift({ rosters, docs } = {}) {
+  const out = [];
+  for (const gateway of ['go', 'zen']) {
+    const ids = rosters && Array.isArray(rosters[gateway]) ? rosters[gateway] : [];
+    const docsMap = docs && isMapping(docs[gateway]) ? docs[gateway] : undefined;
+    if (!docsMap) continue;
+    const aliases = DOC_ENDPOINT_BASES[gateway].slice(1);
+    const counts = new Map();
+    for (const id of ids) {
+      if (!Object.hasOwn(docsMap, id)) continue;
+      let url;
+      try {
+        url = new URL(String(docsMap[id]).trim());
+      } catch {
+        continue;
+      }
+      if (url.protocol !== 'https:' || url.hostname !== 'opencode.ai' || url.port || url.username || url.password || url.search || url.hash) continue;
+      const alias = aliases.find((candidate) => url.pathname.startsWith(candidate));
+      if (alias === undefined) continue;
+      counts.set(alias, (counts.get(alias) || 0) + 1);
+    }
+    for (const alias of [...counts.keys()].sort()) {
+      out.push({
+        gateway,
+        documentedBase: 'https://opencode.ai' + alias.slice(0, -1),
+        routedBase: routeBaseURL(gateway, 'openai-completions'),
+        models: counts.get(alias),
+      });
+    }
+  }
+  return out;
 }
 
 // Parse one gateway docs page: exactly one recognized endpoint table with
@@ -1281,6 +1345,7 @@ export async function runSettingsSync(opts = {}) {
       skippedUnresolved: plan.skippedUnresolved || [],
       unsupportedSkipped: plan.unsupportedSkipped || [],
       fallbackResolved: plan.fallbackResolved || [],
+      endpointBaseDrift: plan.endpointBaseDrift || [],
     }));
   } catch {}
   if (plan.state === "BLOCKED") return { ok: false, mode: "legacy-settings", code: "PREVIEW_BLOCKED", message: "Settings Preview is blocked.", reasons: plan.blockedReasons };
@@ -1468,6 +1533,7 @@ function blockedPlan(settingsPath, blockedReasons, generatedAt) {
     skippedUnresolved: [],
     unsupportedSkipped: [],
     fallbackResolved: [],
+    endpointBaseDrift: [],
     settingsPath,
     settingsDigest: null,
     sourceSnapshotDigest: null,
@@ -1558,6 +1624,7 @@ export function buildPlan({ settingsPath, sources }) {
       skippedUnresolved,
       unsupportedSkipped,
       fallbackResolved,
+      endpointBaseDrift: endpointBaseDrift({ rosters: sources.rosters, docs: sources.docs }),
       settingsPath,
       settingsDigest,
       sourceSnapshotDigest,
@@ -1659,6 +1726,7 @@ export function commitPlan(plan) {
       skippedUnresolved: plan.skippedUnresolved,
       unsupportedSkipped: Array.isArray(plan.unsupportedSkipped) ? plan.unsupportedSkipped : [],
       fallbackResolved: plan.fallbackResolved,
+      endpointBaseDrift: Array.isArray(plan.endpointBaseDrift) ? plan.endpointBaseDrift : [],
     };
   } catch (err) {
     // A failed temporary-file validation or replacement leaves the original
@@ -1690,6 +1758,7 @@ export function syncFromSources({ settingsPath, sources }) {
       skippedUnresolved: plan.skippedUnresolved,
       unsupportedSkipped: Array.isArray(plan.unsupportedSkipped) ? plan.unsupportedSkipped : [],
       fallbackResolved: plan.fallbackResolved,
+      endpointBaseDrift: Array.isArray(plan.endpointBaseDrift) ? plan.endpointBaseDrift : [],
     };
   }
   return commitPlan(plan);
@@ -1748,7 +1817,7 @@ export async function fetchSources(fetchFn = globalThis.fetch) {
   };
 }
 
-export function formatReport({ result, added = [], removed = [], moved = [], metadataChanged = [], unresolved = [], preservedUnresolved = [], skippedUnresolved = [], unsupportedSkipped = [], fallbackResolved = [] }) {
+export function formatReport({ result, added = [], removed = [], moved = [], metadataChanged = [], unresolved = [], preservedUnresolved = [], skippedUnresolved = [], unsupportedSkipped = [], fallbackResolved = [], endpointBaseDrift = [] }) {
   const lines = [];
   const show = (label, items, render) => {
     lines.push(label + ' (' + items.length + '):');
@@ -1790,6 +1859,14 @@ export function formatReport({ result, added = [], removed = [], moved = [], met
   lines.push('FREE_COUNTERPART_FALLBACK (' + fallbacks.length + '):');
   if (fallbacks.length === 0) lines.push('  (none)');
   else for (const item of fallbacks) lines.push('  - ' + item.gateway + '/' + item.id + ' counterpart=' + item.gateway + '/' + item.counterpart + ' route=' + item.route);
+  const drift = [...endpointBaseDrift].sort((a, b) =>
+    a.gateway !== b.gateway ? (a.gateway < b.gateway ? -1 : 1) : a.documentedBase < b.documentedBase ? -1 : a.documentedBase > b.documentedBase ? 1 : 0,
+  );
+  lines.push('ENDPOINT_BASE_DRIFT (' + drift.length + '):');
+  if (drift.length === 0) lines.push('  (none)');
+  else for (const item of drift) {
+    lines.push('  - ' + item.gateway + ' documented=' + item.documentedBase + ' routed=' + item.routedBase + ' models=' + item.models);
+  }
   show(
     'unresolved',
     unresolved.map((x) => (x.gateway || '') + (x.id ? '/' + x.id : '') + (x.reason ? ': ' + x.reason : '')),

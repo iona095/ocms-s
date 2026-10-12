@@ -165,7 +165,7 @@ const badgeText = (node) => node.children.filter((c) => typeof c === 'string').j
 test('anchor: dsh/client.mjs exports PLUGIN_VERSION', { skip: !hasClient && 'capability missing: makeModelsView' }, async () => {
   const m = await loadClientSourceModule();
   assert.equal(typeof m.PLUGIN_VERSION, 'string', 'capability missing: dsh/client.mjs must export PLUGIN_VERSION');
-  assert.match(m.PLUGIN_VERSION, /^\d+\.\d+\.\d+$/, 'PLUGIN_VERSION is an exact semver literal, got ' + JSON.stringify(m.PLUGIN_VERSION));
+  assert.match(m.PLUGIN_VERSION, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?$/, 'PLUGIN_VERSION is an exact semver literal (pre-release allowed for rc builds), got ' + JSON.stringify(m.PLUGIN_VERSION));
 });
 
 test('PLUGIN_VERSION equals the package.json release version (drift guard)', { skip: !hasClient && 'capability missing: makeModelsView' }, async () => {
