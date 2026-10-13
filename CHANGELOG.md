@@ -4,6 +4,55 @@ All notable project-level changes are summarized here.
 
 This file is intentionally concise. The authoritative behavioral specification remains the current contract.
 
+## v1.4.6
+
+**Release: promotes v1.4.6-rc5 unchanged in behaviour (contract v1.4.6).**
+
+### For users
+
+- Documented /inference/v1 bases with drift notices: exact docs authority applies to Zen endpoints again, and a non-blocking ENDPOINT_BASE_DRIFT report flags alias-base routing.
+- Blocked-Preview reasons shown verbatim in order: web refusals carry legacy-shaped blockedReasons with the BLOCKED notice for VERIFY_FAILED, and the CLI blocked-profile report lists each reason as its own entry (exit code 1 unchanged).
+
+### Verification
+
+- Hermetic tests: explicit temp DSH homes, stubbed dsh binaries and install anchors, bounded waits instead of hangs.
+- CI timeouts and a clean-machine guard on the npm-test job; S5 profile suites in CI against pinned real DSH 0.2.1-alpha.2 installed into a job-local prefix.
+- Portable run-time DSH scope and repo-root derivation, LF-exact checkouts for byte-pinned files, and an npm-test guard that fails on any absolute machine path under tests/.
+
+### Honest record
+
+- Tag v1.4.6-rc4's profile CI job was red (449 tests / 429 pass / 13 fail / 7 skipped): absolute developer-DSH paths, a hard-coded developer repo root, and a CRLF checkout breaking byte pins. v1.4.6-rc5 fixed the test setup with no product change, and CI is green on tag v1.4.6-rc5 (run 38368970261: npm test 377 / 0 fail on Node 20 and 22; profile suites 449 / 0 fail; smoke pass). The rc4 tag stays as published.
+
+### Known risks
+
+- Inference/Zen endpoint evolution is unprobed live; one header test is second-boundary sensitive; dev-tools assumes the checkout folder name contains ocms-s; nested DSH packages float on tilde ranges. See the v1.4.7 backlog.
+
+### Changed
+
+- Version 1.4.6-rc5 → 1.4.6 (metadata only). Release tarball ocms-s-1.4.6.tgz.
+
+### Unchanged (explicit)
+
+- No product behaviour change: sync.mjs, ui.mjs, ui/index.html and profile/* are byte-identical to v1.4.6-rc5; all RC2/RC3/RC4/RC5 pins stay green.
+
+## v1.4.7 backlog
+
+- routeBaseURL unknown-gateway guard.
+- longest-prefix base match.
+- one shared URL-validation helper for endpointApi and endpointBaseDrift.
+- copy the drift array into outcomes.
+- endpointBaseDrift null-arg tolerance.
+- formatReport comparator style.
+- one shared non-empty string reasons helper for sync.mjs and ui.mjs (rc2).
+- S2 visibility or per-ID protocol pins.
+- profile CI job also checks nested DSH package versions (tilde-range drift).
+- rename RC4_ALLOWED in t19-footprint.
+- embed-origin Date-header second-boundary flake.
+- dev-tools assumption that the repo folder name contains ocms-s.
+- optionally switch the Zen model list to /inference/v1/models.
+- authenticated check that /zen/v1 still serves chat (close it if the maintainer confirms daily Zen use works).
+- recorded closed with evidence: the model-list endpoints (/inference/v1/models, /zen/v1/models, /zen/go/v1/models) answered 200 without a key or session header on 2026-10-13, and /zen/v1/models and /inference/v1/models served identical model lists (84 IDs).
+
 ## v1.4.6-rc5
 
 **Release candidate: S5 profile suites pass on GitHub's runner (contract v1.4.6-rc5).**
