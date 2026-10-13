@@ -20,6 +20,7 @@ import {
   authHeaders,
   validSourceBodies,
   deferred,
+  withTimeout,
 } from './helpers.mjs';
 
 const SKIP = !hasUiServer;
@@ -40,7 +41,7 @@ test('G1: second concurrent Preview is refused 409 PREVIEW_BUSY while the first 
     };
     const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn });
     const first = postJson(started.port, '/api/preview', {}, authHeaders(started.token));
-    await buildStarted.promise; // first preview is provably inside acquisition
+    await withTimeout(buildStarted.promise, 15000, 'first preview to reach acquisition'); // first preview is provably inside acquisition
     try {
       const second = await postJson(started.port, '/api/preview', {}, authHeaders(started.token));
       assert.equal(second.status, 409, 'second concurrent preview refused');
@@ -71,7 +72,7 @@ test('G2: Apply while a Preview build is in progress is refused, writes nothing,
     };
     const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn });
     const preview = postJson(started.port, '/api/preview', {}, authHeaders(started.token));
-    await buildStarted.promise; // preview build is provably in progress
+    await withTimeout(buildStarted.promise, 15000, 'preview build to reach acquisition'); // preview build is provably in progress
     try {
       const apply = await postJson(started.port, '/api/apply', { previewId: 'a'.repeat(64) }, authHeaders(started.token));
       assert.equal(apply.status, 409, 'Apply during an in-flight preview build is refused');

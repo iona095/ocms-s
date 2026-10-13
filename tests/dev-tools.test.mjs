@@ -287,16 +287,19 @@ describe("DX-2 explicit-profile local registration", () => {
   });
   it("nonexistent profile fails before plugin add", async () => {
     const home = await makeHome();
+    const fake = await makeFakeBin();
     try {
-      const r = runCli(["register", "--profile", "nope-missing-1"], { DSH_HOME: home });
+      const r = runCli(["register", "--profile", "nope-missing-1"], { DSH_HOME: home, PATH: binFirst(fake.bin), OCMS_FAKE_DSH_LOG: fake.log });
       assert.notEqual(r.status, 0, "missing profile must fail");
       const out = String(r.stdout + r.stderr);
       assert.ok(out.includes("nope-missing-1"), "error names the profile");
       assert.ok(out.toLowerCase().includes("does not exist"), "clear not-found error");
       assert.ok(await dirAbsent(join(home, "profiles", "nope-missing-1")), "profile directory remains nonexistent");
       assert.ok(!out.includes("initialized profile"), "DSH auto-init must not have run");
+      assert.ok(await dirAbsent(fake.log), "no DSH invocation for a missing profile");
     } finally {
       await rm(home, { recursive: true, force: true });
+      await rm(fake.bin, { recursive: true, force: true });
     }
   });
   it("exact mutation argv uses absolute repo root", { timeout: 60000 }, async () => {
@@ -575,11 +578,18 @@ describe("DX-4 safe explicit-profile dev web launcher", () => {
   });
   it("target printed before first action", async () => {
     const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const home = await dwHome();
+    const fake = await dwFakeBin();
     const events = [];
-    const h = mod.runDevWeb({ argv: ["--profile", "dev-ocms"], repoRoot: "/fake/root", print: (m) => events.push("print:" + m), printError: () => {}, startBuild: () => { events.push("build-start"); return { child: null, done: Promise.resolve({ code: 0, stdout: "", stderr: "" }) }; }, registerStage: () => { events.push("register"); return { done: Promise.resolve({ code: 0 }) }; }, startLaunch: () => { events.push("launch"); return { child: null, done: Promise.resolve({ code: 0 }) }; } });
+    try {
+    const h = mod.runDevWeb({ argv: ["--profile", "dev-ocms"], env: dwEnv(home, fake), repoRoot: "/fake/root", print: (m) => events.push("print:" + m), printError: () => {}, startBuild: () => { events.push("build-start"); return { child: null, done: Promise.resolve({ code: 0, stdout: "", stderr: "" }) }; }, registerStage: () => { events.push("register"); return { done: Promise.resolve({ code: 0 }) }; }, startLaunch: () => { events.push("launch"); return { child: null, done: Promise.resolve({ code: 0 }) }; } });
     assert.equal(await h, 0, "stubbed run succeeds");
     assert.ok(events[0] === "print:" + DEV_TARGET + JSON.stringify("dev-ocms"), "target first, saw " + JSON.stringify(events));
     assert.equal(events[1], "build-start", "build second");
+    } finally {
+      await rm(home, { recursive: true, force: true });
+      await rm(fake.bin, { recursive: true, force: true });
+    }
   });
   it("exactly one dev:web disclosure", { timeout: 60000 }, async () => {
     const mod = await import(pathToFileURL(DEVTOOLS).href);
@@ -802,19 +812,29 @@ describe("DX-4 safe explicit-profile dev web launcher", () => {
   });
   it("shutdown during web waits owned settlement", { timeout: 60000 }, async () => {
     const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const home = await dwHome();
+    const fake = await dwFakeBin();
     const web = dwDeferred();
-    const h = mod.runDevWeb({ argv: ["--profile", "dev-ocms"], repoRoot: "/fake/root", print: () => {}, printError: () => {}, startBuild: () => ({ child: null, done: Promise.resolve({ code: 0, stdout: "", stderr: "" }) }), registerStage: () => ({ done: Promise.resolve({ code: 0 }) }), startLaunch: () => web.start() });
+    try {
+    const h = mod.runDevWeb({ argv: ["--profile", "dev-ocms"], env: dwEnv(home, fake), repoRoot: "/fake/root", print: () => {}, printError: () => {}, startBuild: () => ({ child: null, done: Promise.resolve({ code: 0, stdout: "", stderr: "" }) }), registerStage: () => ({ done: Promise.resolve({ code: 0 }) }), startLaunch: () => web.start() });
     assert.ok(await dwWaitCount(() => web.rec.started, 1), "web active");
     const stopping = h.shutdown("SIGINT");
     await dwSettled(20);
     assert.equal(web.child.killed, 1, "owned web signaled once");
     web.release({ code: 0 });
     assert.equal(await stopping, 130, "signal status");
+    } finally {
+      await rm(home, { recursive: true, force: true });
+      await rm(fake.bin, { recursive: true, force: true });
+    }
   });
   it("repeated shutdown is idempotent", { timeout: 60000 }, async () => {
     const mod = await import(pathToFileURL(DEVTOOLS).href);
+    const home = await dwHome();
+    const fake = await dwFakeBin();
     const web = dwDeferred();
-    const h = mod.runDevWeb({ argv: ["--profile", "dev-ocms"], repoRoot: "/fake/root", print: () => {}, printError: () => {}, startBuild: () => ({ child: null, done: Promise.resolve({ code: 0, stdout: "", stderr: "" }) }), registerStage: () => ({ done: Promise.resolve({ code: 0 }) }), startLaunch: () => web.start() });
+    try {
+    const h = mod.runDevWeb({ argv: ["--profile", "dev-ocms"], env: dwEnv(home, fake), repoRoot: "/fake/root", print: () => {}, printError: () => {}, startBuild: () => ({ child: null, done: Promise.resolve({ code: 0, stdout: "", stderr: "" }) }), registerStage: () => ({ done: Promise.resolve({ code: 0 }) }), startLaunch: () => web.start() });
     assert.ok(await dwWaitCount(() => web.rec.started, 1), "web active");
     const s1 = h.shutdown("SIGINT");
     const s2 = h.shutdown("SIGINT");
@@ -823,6 +843,10 @@ describe("DX-4 safe explicit-profile dev web launcher", () => {
     web.release({ code: 0 });
     assert.equal(await s1, 130, "first settles");
     assert.equal(await s2, 130, "second settles same");
+    } finally {
+      await rm(home, { recursive: true, force: true });
+      await rm(fake.bin, { recursive: true, force: true });
+    }
   });
   it("no foreign process is signaled", { timeout: 60000 }, async () => {
     const mod = await import(pathToFileURL(DEVTOOLS).href);
@@ -888,10 +912,17 @@ describe("DX-4 safe explicit-profile dev web launcher", () => {
     const beforeInt = process.listenerCount("SIGINT");
     const beforeTerm = process.listenerCount("SIGTERM");
     const mod = await import(pathToFileURL(DEVTOOLS).href);
-    const h = mod.runDevWeb({ argv: ["--profile", "dev-ocms"], repoRoot: "/fake/root", print: () => {}, printError: () => {}, startBuild: () => ({ child: null, done: Promise.resolve({ code: 0, stdout: "", stderr: "" }) }), registerStage: () => ({ done: Promise.resolve({ code: 0 }) }), startLaunch: () => ({ child: null, done: Promise.resolve({ code: 0 }) }) });
+    const home = await dwHome();
+    const fake = await dwFakeBin();
+    try {
+    const h = mod.runDevWeb({ argv: ["--profile", "dev-ocms"], env: dwEnv(home, fake), repoRoot: "/fake/root", print: () => {}, printError: () => {}, startBuild: () => ({ child: null, done: Promise.resolve({ code: 0, stdout: "", stderr: "" }) }), registerStage: () => ({ done: Promise.resolve({ code: 0 }) }), startLaunch: () => ({ child: null, done: Promise.resolve({ code: 0 }) }) });
     assert.equal(await h, 0, "stubbed run succeeds");
     assert.equal(process.listenerCount("SIGINT"), beforeInt, "no SIGINT leak");
     assert.equal(process.listenerCount("SIGTERM"), beforeTerm, "no SIGTERM leak");
+    } finally {
+      await rm(home, { recursive: true, force: true });
+      await rm(fake.bin, { recursive: true, force: true });
+    }
   });
 });
 
@@ -1560,6 +1591,6 @@ describe("R1 ownership and cancellation repair", () => {
     const pkg = JSON.parse(await readFile(join(ROOT, "package.json"), "utf8"));
     assert.deepEqual(pkg.files, ["sync.mjs", "ui.mjs", "ui/", "dsh/host.mjs", "dsh/lifecycle.mjs", "dsh/client.js", "cordis.patch.yml"], "files whitelist");
     assert.deepEqual(Object.keys(pkg.dependencies || {}), ["yaml", "node-html-parser"], "no new runtime dependency");
-    assert.equal(pkg.version, "1.4.6-rc2", "version bump only by contract v1.4.6-rc2 \u00a79");
+    assert.equal(pkg.version, "1.4.6-rc3", "version bump only by contract v1.4.6-rc3 \u00a78");
   });
 });

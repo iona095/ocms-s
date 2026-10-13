@@ -325,12 +325,35 @@ export async function expectRefusal(response, expectedStatus, expectedCodes) {
 // injection used to stub the five public source classes.
 // ---------------------------------------------------------------------------
 
-export async function startTestServer(t, { settingsPath, port, fetchFn = fetchNever, openBrowser = false }) {
+export function tempDshHome(t, prefix = 'ocms-v13-home-') {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  t.after(() => {
+    try { fs.rmSync(home, { recursive: true, force: true }); } catch { /* best effort */ }
+  });
+  return home;
+}
+
+export async function withTimeout(promise, ms, label) {
+  let timer = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('TIMED_OUT waiting for ' + label + ' after ' + ms + 'ms')), ms);
+      }),
+    ]);
+  } finally {
+    if (timer !== null) clearTimeout(timer);
+  }
+}
+
+export async function startTestServer(t, { settingsPath, port, fetchFn = fetchNever, openBrowser = false, dshHome } = {}) {
   if (!hasUiServer) throw new Error('capability missing: ui.mjs does not exist yet');
   const ui = await loadUiServerModule();
   assert.equal(typeof ui.startServer, 'function', 'ui.mjs must export startServer(options)');
   if (settingsPath !== undefined) assertScratchTarget(settingsPath);
-  const started = await ui.startServer({ settingsPath, port, fetchFn, openBrowser });
+  const home = dshHome !== undefined ? dshHome : tempDshHome(t);
+  const started = await ui.startServer({ settingsPath, port, fetchFn, openBrowser, dshHome: home });
   assert.equal(typeof started.port, 'number', 'started.port present');
   assert.equal(typeof started.token, 'string', 'started.token present (test seam only)');
   assert.equal(typeof started.close, 'function', 'started.close present');

@@ -24,7 +24,7 @@ const VIEW_META = Object.freeze({
 // must stay import-free (dsh/build-client.mjs enforces it), so package.json
 // remains the release single source of truth and
 // tests/v1.4/client-view.test.mjs pins the two together as a drift guard.
-const PLUGIN_VERSION = '1.4.6-rc2';
+const PLUGIN_VERSION = '1.4.6-rc3';
 
 const STATES = Object.freeze(['OFFLINE', 'STARTING', 'ONLINE', 'STOPPING', 'EXTERNAL', 'ERROR']);
 

@@ -4,13 +4,13 @@ A small, manual Node.js utility that synchronizes **OpenCode Go** and **OpenCode
 
 OCMS-S is deliberately narrow. It is **not** a daemon, scheduler, account checker, quota monitor, or model-probing system. v1.4 adds one optional DSH integration: a `Models` conversation-view tab that owns OCMS server lifecycle (status/Start/Stop) and iframe hosting only. All synchronization authority stays in the released engine and Web UX.
 
-Current project version: **v1.4.6-rc2** (release candidate)
+Current project version: **v1.4.6-rc3** (release candidate)
 
 Current authoritative specification:
 
-`OpenCode Model Sync — Simple Script Contract v1.4.6-rc2.md`
+`OpenCode Model Sync — Simple Script Contract v1.4.6-rc3.md`
 
-v1.4.6-rc2 amends v1.4.6-rc1 and v1.4.1; earlier contracts remain binding wherever v1.4.6-rc2 is silent. Profile-aware synchronization (S5) is specified in `SPEC_DSH_PROFILE_AWARE_SYNC.md`.
+v1.4.6-rc3 amends v1.4.6-rc2 (hermetic tests only); earlier contracts remain binding wherever v1.4.6-rc3 is silent. Profile-aware synchronization (S5) is specified in `SPEC_DSH_PROFILE_AWARE_SYNC.md`.
 
 ---
 
@@ -320,7 +320,7 @@ Verified on Windows with Node 22.23.3 and Node 24.15.0: `npm test` 363 tests (36
 npm test
 ```
 
-`npm test` runs the complete release suite with explicit cross-platform test paths (no wildcard expansion, so Windows/Node 20 behaves identically): 371 tests total — 70 legacy/v1.2 regression tests, 84 v1.3 engine/server/UI contract tests, 96 v1.4 DSH-integration tests (embed-origin, client view, lifecycle, ownership retention, compat including the two rc2 pins, disposal-race, host/client compatibility, HMR sequencing), 14 v1.4.1 unsupported-protocol tests, 14 v1.4.6-rc1 gateway-base tests, 6 v1.4.6-rc2 blocked-reasons tests, and 87 developer-tooling tests (365 pass, 0 fail, 6 authorized skips: the two v1.3 byte-identity pins superseded by contract v1.4.1 §14, the S5-R4 `sync.mjs` pin and RC1 `sync.mjs` pin and S5-R4 `ui/index.html` pin superseded by contract v1.4.6-rc2 §9, and one Typert-registry capability skip).
+`npm test` runs the complete release suite with explicit cross-platform test paths (no wildcard expansion, so Windows/Node 20 behaves identically): 372 tests total — 70 legacy/v1.2 regression tests, 84 v1.3 engine/server/UI contract tests, 96 v1.4 DSH-integration tests (embed-origin, client view, lifecycle, ownership retention, compat including the two rc2 pins, disposal-race, host/client compatibility, HMR sequencing), 14 v1.4.1 unsupported-protocol tests, 14 v1.4.6-rc1 gateway-base tests, 6 v1.4.6-rc2 blocked-reasons tests, 1 v1.4.6-rc3 freeze test, and 87 developer-tooling tests (367 pass, 0 fail, 5 authorized pin skips: the two v1.3 byte-identity pins superseded by contract v1.4.1 §14 and the S5-R4 `sync.mjs` pin, RC1 `sync.mjs` pin and S5-R4 `ui/index.html` pin superseded by contract v1.4.6-rc2 §9; the Typert-registry admission test additionally skips with "capability missing" where no DSH runtime is installed). `tests/support/clean-env-run.mjs` runs the same suite under a scrubbed home with no DSH on PATH and asserts no `.dsh` was created there.
 
 The S5 profile suites (`tests/profile-*/`) are run separately and are not part of `npm test`.
 
@@ -381,6 +381,14 @@ node --test tests/v1.4.6-rc1/gateway-base.test.mjs
 
 ```powershell
 node --test tests/v1.4.6-rc2/blocked-reasons.test.mjs
+```
+
+```powershell
+node --test tests/v1.4.6-rc3/freeze.test.mjs
+```
+
+```powershell
+node tests/support/clean-env-run.mjs
 ```
 
 You can also perform syntax checks:
@@ -834,9 +842,10 @@ OpenCode Model Sync — Simple Script Contract v1.4.md
 OpenCode Model Sync — Simple Script Contract v1.4.1.md
 OpenCode Model Sync — Simple Script Contract v1.4.6-rc1.md
 OpenCode Model Sync — Simple Script Contract v1.4.6-rc2.md
+OpenCode Model Sync — Simple Script Contract v1.4.6-rc3.md
 ```
 
-**v1.4.6-rc2 is the current authoritative contract** (additive over v1.4.6-rc1/v1.4.1; v1.0–v1.4.6-rc1 unchanged).
+**v1.4.6-rc3 is the current authoritative contract** (test hermeticity only; v1.0–v1.4.6-rc2 unchanged).
 
 v1.4 identities (immutable): contract SHA-256 `3a4461d099e8994c773c98cfe3d001b9fb872fc182c64d31eddf8e46d4f27831` (171 lines); `dsh/lifecycle.mjs` `36f65604cd95322ba643d6ba7baa225d459270113ef75298ad9839e8d79a0c47`; `tests/v1.4/disposal-race.test.mjs` `3edbb9a76cb8dc9cb653efb2006f4810177258060f5885223ae40f826e6cb6d9`; v1.3 baseline `sync.mjs` `9211544a0bba60e3e19a78a8d089d84f9eacedb6105631489ebe377285188c07` and `ui/index.html` `6610e7354f64eb1edbd4827df65fa120c1410ba9121e33fcab87637d96deddf8` unchanged; lineage `HEAD`/`v1.3.0` `50968d968ede3c0c847c6d127e1ff8059f790185`.
 
@@ -847,6 +856,8 @@ v1.4.2 identities: implementation commit `8167039d2120f859c79194e8273d08379a3ffa
 v1.4.6-rc1 identities: contract SHA-256 `f041e7540875e53419243316289cd9b98ef52606cdff4c8ec665c3c9df41fa38` (236 lines); `sync.mjs` `e348ad7456e6ea2ddb83515c34a9a444e9d602051721325cf81283f039b70bad`; commits `77380793f9d71ef7c47b3e7b32a8e2dead3a0a80` (S5 profile-aware sync + R1 docs URL repair) and `cec2f19412c8ffff0cdbbc5a8cdb1a8e39bf93de` (rc1), tag `v1.4.6-rc1`.
 
 v1.4.6-rc2 identities: contract SHA-256 `00204930eb1a12a4250a9eaeecd2828ac1fb83b17ffba8b2772c6d81dd56484a` (227 lines); `sync.mjs` `765a56ee26c165be05ab50b2d25ef7cd38b1e53355d328a0228ad6daf5e512f4`; `ui/index.html` `5979979d8d13d556a5dada32814fe6fb22e39810a27b39fdadb2ff0235ca3321`; baseline tag `v1.4.6-rc1`.
+
+v1.4.6-rc3 identities: contract SHA-256 `d31553f23681bb8372ff01a7fefc999d9ea4f4e74a2ac327551a98d4c42399cb` (238 lines); product bytes identical to v1.4.6-rc2 (`sync.mjs` `765a56ee26c165be05ab50b2d25ef7cd38b1e53355d328a0228ad6daf5e512f4`, `ui/index.html` `5979979d8d13d556a5dada32814fe6fb22e39810a27b39fdadb2ff0235ca3321`); baseline tag `v1.4.6-rc2`.
 
 v1.0 and v1.1 are historical artifacts.
 
@@ -874,6 +885,8 @@ OCMS-S v1.4.2 (historical) made child lifetime exact and the HMR handoff safe: o
 OCMS-S v1.4.6-rc1 adds profile-aware synchronization (S5) and restores exact Zen docs authority after OpenCode moved its documented Zen endpoints to `/inference/v1` (gateway base derivation, closed documented-base aliases, non-blocking `ENDPOINT_BASE_DRIFT`). Verified test-first: 14 v1.4.6-rc1 tests; full suite 363 tests (360 pass, 0 fail, 3 authorized skips) on Windows with Node 22 and Node 24; acceptance smoke PASS; two independent five-axis reviews and a three-specialist ship review, all without Critical findings.
 
 OCMS-S v1.4.6-rc2 shows why a profile Preview is blocked: planning reasons already carried as `detail.reasons` are now visible verbatim and in order in the web `/api/preview` refusal (`blockedReasons`, status/code unchanged; page shows BLOCKED with the legacy notice for `VERIFY_FAILED` plus reasons, ERROR otherwise) and in the CLI blocked-profile report (each reason its own `unresolved` entry, exit 1 unchanged); no other `detail` is exposed. Verified test-first: 6 v1.4.6-rc2 tests; full suite 371 tests (365 pass, 0 fail, 6 authorized skips) on Windows with Node 22 (v22.23.3 via node-win-x64) and Node 24 (v24.15.0); acceptance smoke PASS (13 steps) on both. Future gate: retire or re-anchor the S5 snapshot footprint tests (`tests/profile-reader/t19-footprint.test.mjs`, `tests/profile-acceptance/env04-staging.test.mjs`), which hard-code the S5 gate snapshot and already fail at the rc1 baseline.
+
+OCMS-S v1.4.6-rc3 makes `npm test` hermetic with zero product changes: every suite passes on a clean machine (no `~/.dsh`, no `DSH_HOME`, no `dsh` on PATH) via explicit temp homes, stubbed dsh discovery, a test-only composition stub anchor for the rc2 blocked-reasons tests, and bounded barrier waits; the CI test job proves the clean condition and carries a 15-minute timeout. Verified test-first (clean-env RED→GREEN): full suite 372 tests (367 pass, 0 fail, 5 authorized pin skips) identically in the normal and clean-environment runs on Windows Node 24 (v24.15.0), and green on Node 22 (v22.23.3); acceptance smoke PASS (13 steps) on both; S5 profile suites unchanged at 448 tests (438 pass, 5 pre-existing snapshot failures, 5 skipped) before and after. Future gates: a parity check that the stub anchor and the real DSH composition produce the same result for the rc2 fixtures; running the S5 profile suites in CI against pinned DSH packages installed outside package.json.
 
 Future changes should remain narrow and contract-driven.
 

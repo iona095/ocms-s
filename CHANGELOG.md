@@ -4,6 +4,27 @@ All notable project-level changes are summarized here.
 
 This file is intentionally concise. The authoritative behavioral specification remains the current contract.
 
+## v1.4.6-rc3
+
+**Release candidate: hermetic npm test (contract v1.4.6-rc3).**
+
+### Fixed
+
+- `npm test` now passes on a clean machine with no ~/.dsh, no DSH_HOME, and no dsh on PATH. Test setup no longer borrows the developer machine: servers under test receive an explicit temp DSH home, dev-tools flows use stubbed homes and fake dsh bins, the rc2 blocked-reasons tests use a test-only stub install anchor, and concurrency barriers fail fast instead of hanging. The CI test job has a 15-minute timeout and a pre-test step proving the clean-machine condition.
+
+### Changed
+
+- Version 1.4.6-rc2 → 1.4.6-rc3 (metadata only).
+
+### Unchanged (explicit)
+
+- No product behaviour change: sync.mjs, ui.mjs, ui/index.html and profile/* are byte-identical to v1.4.6-rc2; all RC2 pins stay green. Fail-closed home/anchor admission is deliberate and untouched.
+
+### Future gates
+
+- A parity check that the stub anchor and the real DSH composition produce the same result for the rc2 fixtures.
+- Running the S5 profile suites in CI against pinned DSH packages installed outside package.json.
+
 ## v1.4.6-rc2
 
 **Release candidate: show why a profile Preview is blocked (contract v1.4.6-rc2).**

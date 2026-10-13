@@ -14,6 +14,8 @@ import {
   sha256HexBytes,
   countTextLines,
   REPO_ROOT,
+  makeStubAnchor,
+  sandboxPathWithoutDsh,
 } from './helpers.mjs';
 import {
   catRecord,
@@ -89,8 +91,10 @@ describe('v1.4.6-rc2 show why a profile Preview is blocked', () => {
       const dir = makeS4Profile(home, 'rc2blk', { entries: seedEntries(), bundles: ['@fixture/base'] });
       makeFixtureBundle(dir);
       const sources = blockingSources();
+      const { anchor } = makeStubAnchor(t);
+      t.after(sandboxPathWithoutDsh());
       const ui = await import('../../ui.mjs');
-      const started = await withR2Port(t, (port) => ui.startServer({ port, fetchFn: fetchFromBodies(validSourceBodies(sources)), openBrowser: false }));
+      const started = await withR2Port(t, (port) => ui.startServer({ port, fetchFn: fetchFromBodies(validSourceBodies(sources)), openBrowser: false, installAnchorDir: anchor }));
       const res = await postJson(started.port, '/api/preview', { profileName: 'rc2blk', dshHome: home }, authHeaders(started.token));
       assert.equal(res.status, 400, 'VERIFY_FAILED refusal keeps HTTP 400 (body: ' + res.body.slice(0, 300) + ')');
       assert.equal(res.json.ok, false);
@@ -99,7 +103,7 @@ describe('v1.4.6-rc2 show why a profile Preview is blocked', () => {
       assert.ok(Array.isArray(res.json.blockedReasons), 'blockedReasons present');
       assert.equal(res.json.blockedReasons.length, 2);
       const { buildProfilePreview } = await import('../../profile/preview-session.mjs');
-      const built = await buildProfilePreview({ profileName: 'rc2blk', dshHome: home, origin: 'UI', scratchMode: false, sources, installAnchorDir: null });
+      const built = await buildProfilePreview({ profileName: 'rc2blk', dshHome: home, origin: 'UI', scratchMode: false, sources, installAnchorDir: anchor, pathEnv: '' });
       assert.equal(built.ok, false);
       const expected = built.detail.reasons;
       assert.ok(Array.isArray(expected) && expected.length === 2, 'planner yields 2 reasons');
@@ -126,10 +130,11 @@ describe('v1.4.6-rc2 show why a profile Preview is blocked', () => {
       assert.equal('detail' in res.json, false, 'object detail must not leak as detail');
     });
 
-    it('5. cli-blocked-reasons: blocked profile run reports every reason with exit 1', async () => {
+    it('5. cli-blocked-reasons: blocked profile run reports every reason with exit 1', async (t) => {
       const dir = makeS4Profile(home, 'rc2cli', { entries: seedEntries(), bundles: ['@fixture/base'] });
       makeFixtureBundle(dir);
       const sources = blockingSources();
+      const { anchor } = makeStubAnchor(t);
       const syncMod = await import('../../sync.mjs');
       assert.equal(typeof syncMod.blockedProfileUnresolved, 'function', 'CLI mapping helper must exist');
       const { dispatchSyncCli } = syncMod;
@@ -137,6 +142,8 @@ describe('v1.4.6-rc2 show why a profile Preview is blocked', () => {
         fetchFn: fetchFromBodies(validSourceBodies(sources)),
         confirmFn: async () => false,
         dshHome: home,
+        installAnchorDir: anchor,
+        pathEnv: '',
         print: () => {},
       });
       assert.equal(result.ok, false);

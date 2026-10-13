@@ -10,6 +10,7 @@ permissions:
 jobs:
   test:
     runs-on: windows-latest
+    timeout-minutes: 15
 
     strategy:
       fail-fast: false
@@ -39,6 +40,12 @@ jobs:
           node --check dsh/build-client.mjs
           node --check tests/sync.test.mjs
           node --check tests/v1.4/disposal-race.test.mjs
+
+      - name: Prove clean-machine condition
+        shell: pwsh
+        run: |
+          if (Test-Path (Join-Path $env:USERPROFILE '.dsh')) { throw 'runner has a real ~/.dsh; tests must be hermetic' }
+          if (Get-Command dsh -ErrorAction SilentlyContinue) { throw 'runner has dsh on PATH; tests must be hermetic' }
 
       - name: Run tests
         run: npm test

@@ -19,6 +19,7 @@ import {
   fetchFromBodies,
   fetchNever,
   startTestServer,
+  tempDshHome,
   captureConsole,
   getJson,
   postJson,
@@ -66,7 +67,7 @@ test('F2: port conflict fails clearly instead of binding elsewhere', { skip: SKI
   let second = null;
   let bindFailed = false;
   try {
-    second = await ui.startServer({ settingsPath: file, port, fetchFn: fetchNever });
+    second = await ui.startServer({ settingsPath: file, port, fetchFn: fetchNever, dshHome: tempDshHome(t) });
   } catch {
     bindFailed = true;
   }
