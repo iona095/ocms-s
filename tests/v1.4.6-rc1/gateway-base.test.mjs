@@ -70,7 +70,7 @@ describe('v1.4.6-rc1 gateway base derivation and documented aliases', () => {
   it('3. doc-bases-disjoint: no base of one gateway prefixes a base of the other', () => {
     const bases = sync.DOC_ENDPOINT_BASES;
     assert.ok(Object.isFrozen(bases) && Object.isFrozen(bases.go) && Object.isFrozen(bases.zen));
-    assert.deepEqual([...bases.go], ['/zen/go/v1/']);
+    assert.deepEqual([...bases.go], ['/zen/go/v1/', '/inference/go/v1/']);
     assert.deepEqual([...bases.zen], ['/zen/v1/', '/inference/v1/']);
     for (const g of ['go', 'zen']) {
       const canonical = new URL(sync.routeBaseURL(g, 'openai-completions')).pathname + '/';
@@ -102,16 +102,16 @@ describe('v1.4.6-rc1 gateway base derivation and documented aliases', () => {
   });
 
   it('7. cross-gateway-rejection: aliases never cross gateways', () => {
-    assert.equal(apiOrError(ZEN_ALIAS + '/responses', 'go', 'm'), 'ENDPOINT_UNSUPPORTED');
-    assert.equal(apiOrError('https://opencode.ai/zen/v1/responses', 'go', 'm'), 'ENDPOINT_UNSUPPORTED');
-    assert.equal(apiOrError('https://opencode.ai/zen/go/v1/responses', 'zen', 'm'), 'ENDPOINT_UNSUPPORTED');
+    assert.equal(apiOrError(ZEN_ALIAS + '/responses', 'go', 'm'), 'ENDPOINT_BASE_UNKNOWN');
+    assert.equal(apiOrError('https://opencode.ai/zen/v1/responses', 'go', 'm'), 'ENDPOINT_BASE_UNKNOWN');
+    assert.equal(apiOrError('https://opencode.ai/zen/go/v1/responses', 'zen', 'm'), 'ENDPOINT_BASE_UNKNOWN');
     assert.equal(sync.endpointApi('https://opencode.ai/zen/go/v1/responses', 'go', 'm'), 'openai-responses');
   });
 
   it('8. no-prefix-guessing: unlisted bases rejected; malformed identity still invalid', () => {
     for (const g of ['go', 'zen']) {
-      assert.equal(apiOrError('https://opencode.ai/other/v1/responses', g, 'm'), 'ENDPOINT_UNSUPPORTED');
-      assert.equal(apiOrError('https://opencode.ai/v1/responses', g, 'm'), 'ENDPOINT_UNSUPPORTED');
+      assert.equal(apiOrError('https://opencode.ai/other/v1/responses', g, 'm'), 'ENDPOINT_BASE_UNKNOWN');
+      assert.equal(apiOrError('https://opencode.ai/v1/responses', g, 'm'), 'ENDPOINT_BASE_UNKNOWN');
       assert.equal(apiOrError('https://evil.example/inference/v1/responses', g, 'm'), 'ENDPOINT_INVALID');
       assert.equal(apiOrError(ZEN_ALIAS + '/responses?x=1', g, 'm'), 'ENDPOINT_INVALID');
     }

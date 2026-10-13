@@ -43,13 +43,14 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
     // Tracked modifications only (diff, not untracked): the S1/S2 additions
     // are untracked by design and must not trip this gate.
     const modified = new Set([...gitLines(['diff', '--name-only']), ...gitLines(['diff', '--cached', '--name-only'])]);
-    // CURRENT authorized surfaces (rc4 P3 row 2 re-anchor of the S5-R4 pins):
-    // exact pins to the current reviewed bytes (values equal the v1.4.6-rc2
-    // reviewed bytes; this gate makes no product change per P6). All other
+    // CURRENT authorized surfaces (rc4 P3 row 2 re-anchor of the S5-R4 pins,
+    // re-pinned by v1.4.7-rc1 G5 for the G1/G2 product change with named reason):
+    // exact pins to the current reviewed bytes (sync value equals the v1.4.7-rc1
+    // reviewed bytes; ui values unchanged). All other
     // forbidden files stay binding; no wildcards, no directory exemptions
     // beyond the §10-authorized version-bump files below.
     const CURRENT_PINS = new Map([
-      ['sync.mjs', '765a56ee26c165be05ab50b2d25ef7cd38b1e53355d328a0228ad6daf5e512f4'],
+      ['sync.mjs', '99e4f9dc78bbaf31a26692fd045f319509d9565bfd20f7419cbe5681a4b34b75'],
       ['ui.mjs', '90edc2fcb30312dc9e4e56fdce4dd83e67c895ed0f6f6613fedd54fb94754384'],
       ['ui/index.html', '5979979d8d13d556a5dada32814fe6fb22e39810a27b39fdadb2ff0235ca3321'],
     ]);

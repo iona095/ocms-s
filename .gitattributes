@@ -40,3 +40,8 @@ tests/profile-target/helpers.mjs text eol=lf
 tests/profile-target/target-admission.test.mjs text eol=lf
 tests/profile-target/boundary.test.mjs text eol=lf
 tests/profile-acceptance/env02-native.test.mjs text eol=lf
+
+# v1.4.7-rc1 captured docs fixtures (contract v1.4.7-rc1 G4): the G4 test hashes
+# the working-tree bytes against the recorded capture SHAs, so checkout must
+# preserve exact bytes on every platform. Same treatment as contracts above.
+tests/v1.4.7-rc1/fixtures/*.html -text

@@ -57,7 +57,7 @@ export function routeBaseURL(gateway, api) {
 }
 
 export const DOC_ENDPOINT_BASES = Object.freeze({
-  go: Object.freeze(['/zen/go/v1/']),
+  go: Object.freeze(['/zen/go/v1/', '/inference/go/v1/']),
   zen: Object.freeze(['/zen/v1/', '/inference/v1/']),
 });
 
@@ -272,7 +272,12 @@ export function endpointApi(endpoint, gateway, id) {
   // map below is unchanged. No prefix guessing.
   const bases = Object.hasOwn(DOC_ENDPOINT_BASES, gateway) ? DOC_ENDPOINT_BASES[gateway] : [];
   const base = bases.find((candidate) => url.pathname.startsWith(candidate));
-  if (base === undefined) throw unresolved('ENDPOINT_UNSUPPORTED: ' + gateway + '/' + id);
+  // Contract v1.4.7-rc1 G2: a well-formed documented URL whose base is not in
+  // this gateway's closed list fails closed with the base, gateway, model and
+  // full URL named. It must never read as ENDPOINT_UNSUPPORTED (which feeds the
+  // skip and catalog-hint fallback paths); those stay for unrecognized tails
+  // on a KNOWN base below.
+  if (base === undefined) throw unresolved('ENDPOINT_BASE_UNKNOWN: ' + gateway + '/' + id + ' ' + String(endpoint).trim());
   const tail = url.pathname.slice(base.length);
   if (tail === 'chat/completions') return 'openai-completions';
   if (tail === 'messages') return 'anthropic-messages';

@@ -94,17 +94,17 @@ test('package peers target DSH 0.2.1-alpha.2 exactly (old runtime dropped)', () 
   for (const [k, v] of Object.entries(pkg.peerDependencies)) {
     assert.doesNotMatch(String(v), /[\^~*]|>=|<=|x/, 'peer ' + k + ' must be exact (got ' + v + ')');
   }
-  assert.equal(pkg.version, '1.4.6', 'release metadata per contract v1.4.6 \u00a78');
+  assert.equal(pkg.version, '1.4.7-rc1', 'release metadata per contract v1.4.7-rc1 \u00a78');
   assert.equal(pkg.engines?.dsh, '0.2.1-alpha.2', 'engines.dsh declares the exact supported DSH target');
 });
 
-test('lockfile root peers mirror package.json and root version is 1.4.6', () => {
+test('lockfile root peers mirror package.json and root version is 1.4.7-rc1', () => {
   const lock = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package-lock.json'), 'utf8'));
   assert.equal(lock.name, 'ocms-s', 'lock root name');
-  assert.equal(lock.version, '1.4.6', 'lock root version must equal package version 1.4.6');
+  assert.equal(lock.version, '1.4.7-rc1', 'lock root version must equal package version 1.4.7-rc1');
   const rootPkg = lock.packages?.[''];
   assert.ok(rootPkg, 'lockfileVersion 3 root package entry must exist');
-  assert.equal(rootPkg.version, '1.4.6', 'lock root package version must equal package version 1.4.6');
+  assert.equal(rootPkg.version, '1.4.7-rc1', 'lock root package version must equal package version 1.4.7-rc1');
   assert.deepEqual(rootPkg.peerDependencies, { ...DSH_TARGET_PEERS }, 'lock root peers must mirror package.json peers');
 });
 
@@ -161,6 +161,13 @@ const RC1_SYNC_SHA = 'e348ad7456e6ea2ddb83515c34a9a444e9d602051721325cf81283f039
 // the S5-R4 ui/index.html pin, which R2 requires changing. The superseded
 // tests below become skips citing rc2, as rc1 did.
 const RC2_SYNC_SHA = '765a56ee26c165be05ab50b2d25ef7cd38b1e53355d328a0228ad6daf5e512f4';
+// v1.4.7-rc1 pin (contract v1.4.7-rc1 G5): supersedes the RC2 sync.mjs pin,
+// which G1 (inference/go base) and G2 (unknown-base distinction) require
+// changing. Named reason: docs-move plus fail-closed block.
+const RC1GATE_SYNC_SHA = '99e4f9dc78bbaf31a26692fd045f319509d9565bfd20f7419cbe5681a4b34b75';
+// v1.4.7-rc1 Amendment A A4 pin: surgical-render.mjs had no byte pin. Named
+// reason: G3 empty-list line ending.
+const RC1GATE_RENDER_SHA = 'bd2884fd33abf0e6495bd356463da932728ae11983fb67c98afb0f7d9e4eea86';
 const RC2_UI_HTML_SHA = '5979979d8d13d556a5dada32814fe6fb22e39810a27b39fdadb2ff0235ca3321';
 const S5R4_UI_HTML_SHA = '5a8c4a233860fae364f115e46c1dfba1c4cb17e1ca87ec1b6a64abeefbe97bac';
 
@@ -189,9 +196,19 @@ test('s5-r4 identity: ui/index.html pinned to the final-reviewed S5-R4 bytes', {
   assert.equal(sha, S5R4_UI_HTML_SHA, 'ui/index.html drift beyond the final-reviewed S5-R4 implementation is forbidden');
 });
 
-test('v1.4.6-rc2 identity: sync.mjs pinned to the rc2 bytes', () => {
+test('v1.4.6-rc2 identity: sync.mjs pinned to the rc2 bytes', { skip: 'superseded by contract v1.4.7-rc1 G5 (see rc1 pin below)' }, () => {
   const sha = sha256Hex(fs.readFileSync(path.join(REPO_ROOT, 'sync.mjs')));
   assert.equal(sha, RC2_SYNC_SHA, 'sync.mjs drift beyond the v1.4.6-rc2 implementation is forbidden');
+});
+
+test('v1.4.7-rc1 identity: sync.mjs pinned to the rc1 bytes', () => {
+  const sha = sha256Hex(fs.readFileSync(path.join(REPO_ROOT, 'sync.mjs')));
+  assert.equal(sha, RC1GATE_SYNC_SHA, 'sync.mjs drift beyond the v1.4.7-rc1 implementation is forbidden');
+});
+
+test('v1.4.7-rc1 Amendment A identity: surgical-render pinned to the rc1 bytes', () => {
+  const sha = sha256Hex(fs.readFileSync(path.join(REPO_ROOT, 'profile', 'surgical-render.mjs')));
+  assert.equal(sha, RC1GATE_RENDER_SHA, 'surgical-render drift beyond the v1.4.7-rc1 implementation is forbidden');
 });
 
 test('v1.4.6-rc2 identity: ui/index.html pinned to the rc2 bytes', () => {
@@ -207,7 +224,7 @@ test('built client bundle carries the __ModuleLoader__ convention and no second 
   assert.ok(!/react-development|react-dom[^/]*\.min\.js/.test(text), 'no vendored react runtime copy');
 });
 
-test('root package version is 1.4.6 at release', () => {
+test('root package version is 1.4.7-rc1 at release candidate', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8'));
-  assert.equal(pkg.version, '1.4.6');
+  assert.equal(pkg.version, '1.4.7-rc1');
 });

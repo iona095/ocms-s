@@ -419,7 +419,7 @@ describe('9. generated YAML parses and matches the rosters', () => {
   it('endpointApi validates identity strictly', () => {
     assert.equal(endpointApi('https://opencode.ai/zen/go/v1/chat/completions', 'go', 'x'), 'openai-completions');
     assert.throws(() => endpointApi('http://opencode.ai/zen/go/v1/chat/completions', 'go', 'x'), /ENDPOINT_INVALID/);
-    assert.throws(() => endpointApi('https://opencode.ai/zen/v1/chat/completions', 'go', 'x'), /ENDPOINT_UNSUPPORTED/);
+    assert.throws(() => endpointApi('https://opencode.ai/zen/v1/chat/completions', 'go', 'x'), /ENDPOINT_BASE_UNKNOWN/);
     assert.equal(routeFor('go', 'anthropic-messages'), 'opencode-go-messages');
   });
 });

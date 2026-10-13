@@ -613,7 +613,10 @@ export function renderDesiredState(input) {
     if (wanted.length === 0) {
       if (sameLine) frag = '[]';
       else {
-        frag = '[]';
+        // Contract v1.4.7-rc1 G3: an emptied next-line list keeps its line
+        // ending, or the following key lands on the same line as the brackets
+        // and the candidate no longer parses.
+        frag = '[]' + eol;
       }
     } else {
       const block = stringify(wanted);

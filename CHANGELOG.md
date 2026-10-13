@@ -4,6 +4,20 @@ All notable project-level changes are summarized here.
 
 This file is intentionally concise. The authoritative behavioral specification remains the current contract.
 
+## v1.4.7-rc1
+
+**Release candidate: Go docs move, fail-closed unknown base, empty-list render (contract v1.4.7-rc1).**
+
+### Fixed
+
+- The live Go docs moved to https://opencode.ai/inference/go/v1/ (20 chat/completions, 6 messages, 6 responses); that base is admitted to DOC_ENDPOINT_BASES.go with written /zen/go URLs and drift notices unchanged.
+- A documented endpoint on an unlisted base now blocks planning with an ENDPOINT_BASE_UNKNOWN reason naming gateway, model and URL: never skipped, never placed via catalog hints, never dropped or moved. Unknown tails on known bases keep their classification.
+- An emptied managed list renders valid YAML with following keys on their own lines and reparse-equal candidates.
+
+### Changed
+
+- Version 1.4.6 → 1.4.7-rc1 (metadata only, plus the G1–G3 product changes above with re-pinned bytes).
+
 ## v1.4.6
 
 **Release: promotes v1.4.6-rc5 unchanged in behaviour (contract v1.4.6).**
