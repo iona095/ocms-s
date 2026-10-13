@@ -80,7 +80,7 @@ describe('S3-R1 B1 binding integrity', () => {
     const res = buildProfileAwarePlan({ target: caller, readerResult: rr, sources: minimalSources() });
     assert.equal(res.ok, false, 'forged entry name must block, got ' + JSON.stringify(res).slice(0, 500));
   });
-  it('Changed bound classification/home/overlay/attestation cannot return READY', () => {
+  it('Changed bound classification/dsh-home/overlay/attestation cannot return READY', () => {
     const base = readerStubValid();
     const cases = [];
     const c1 = structuredClone(base.target); c1.classification = c1.classification === 'SCRATCH' ? 'PRODUCTION' : 'SCRATCH'; cases.push(c1);

@@ -24,3 +24,19 @@ dsh/client.js text eol=lf
 dsh/host.mjs text eol=lf
 dsh/lifecycle.mjs text eol=lf
 ui.mjs text eol=lf
+
+# v1.4.6-rc5 byte-pinned profile sources (contract v1.4.6-rc5 §5 Q3): T18 S1/S2
+# and T19 accepted-S1 hash the working-tree bytes, so checkout must preserve
+# the audited LF bytes on every platform (Windows runners check out CRLF
+# without this; CI run 38363626182). Narrow pinned-file rules only.
+profile/target-resolver.mjs text eol=lf
+profile/config-reader.mjs text eol=lf
+profile/surgical-render.mjs text eol=lf
+profile/plan-builder.mjs text eol=lf
+profile/commit.mjs text eol=lf
+profile/live-attestation.mjs text eol=lf
+profile/preview-session.mjs text eol=lf
+tests/profile-target/helpers.mjs text eol=lf
+tests/profile-target/target-admission.test.mjs text eol=lf
+tests/profile-target/boundary.test.mjs text eol=lf
+tests/profile-acceptance/env02-native.test.mjs text eol=lf

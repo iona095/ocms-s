@@ -4,6 +4,26 @@ All notable project-level changes are summarized here.
 
 This file is intentionally concise. The authoritative behavioral specification remains the current contract.
 
+## v1.4.6-rc5
+
+**Release candidate: S5 profile suites pass on GitHub's runner (contract v1.4.6-rc5).**
+
+### Q7 note: rc4 on CI
+
+- Tag v1.4.6-rc4's `profile suites (real DSH)` job failed on CI (449 tests / 429 pass / 13 fail / 7 skipped) while all local runs were green. Causes, all in test setup: absolute developer-DSH paths read as ENOENT on the runner, a hard-coded developer repo root, and a CRLF checkout breaking byte pins and working-tree-EOL assumptions. No product bug; the rc4 tag stays as published and is not moved.
+
+### Fixed
+
+- Every DSH install path in the profile tests is derived at run time from the dsh executable on PATH (same scope the composition readers admit); guest STAGED overrides unchanged. The t19 repo root is derived from import.meta.url. Pinned files check out LF-exact on every platform via .gitattributes eol=lf rules. The staging tamper census runs over owned mixed-LF/CRLF fixtures in temp with byte-exact assertions unchanged. A new npm-test guard fails on any absolute machine path under tests/.
+
+### Changed
+
+- Version 1.4.6-rc4 → 1.4.6-rc5 (metadata only).
+
+### Unchanged (explicit)
+
+- No product behaviour change: sync.mjs, ui.mjs, ui/index.html and profile/* are byte-identical to v1.4.6-rc4; all RC2/RC3/RC4 pins stay green. No pinned hash was updated to a CI-observed value.
+
 ## v1.4.6-rc4
 
 **Release candidate: S5 profile suites in CI (contract v1.4.6-rc4).**

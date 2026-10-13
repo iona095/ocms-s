@@ -5,11 +5,13 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { resolveRealScope } from "../profile-reader/helpers.mjs";
 const GUEST = process.env.ENV02_GUEST === "1";
 const STAGED = process.env.ENV02_STAGED || "";
 function guestAnchor() {
   if (GUEST && STAGED) return path.join(STAGED, "dsh", "node_modules", "@deepseek-ai");
-  return "C:/Users/GNV/AppData/Roaming/npm/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai";
+  // Q1: run-time scope from the dsh executable on PATH (was a hard-coded install path).
+  return resolveRealScope();
 }
 function stagedVersions(scope) {
   const v = {}; const pkgs = ["dsh-atomic-write", "dsh-app-boot", "cordis-plugin-include", "cordis-plugin-loader", "dsh-llm-pi-ai", "dsh-config-editor"];

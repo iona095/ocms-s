@@ -13,9 +13,10 @@ import { makeTempHome, sandboxDshHome, buildReadyPlan, readPatchBytes, backupNam
 import { readManagedConfig } from "../../profile/config-reader.mjs";
 import { buildProfileAwarePlan } from "../../profile/plan-builder.mjs";
 import { ProfileAwareCommit } from "../../profile/commit.mjs";
+import { resolveRealScope } from "../profile-reader/helpers.mjs";
 const NATIVE_ENTRY = {
   editorPkg: "@deepseek-ai/dsh-config-editor", editorVersion: "0.2.1-alpha.2",
-  editorFile: "C:/Users/GNV/AppData/Roaming/npm/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-config-editor/lib/index.js",
+  editorFile: "dsh-config-editor/lib/index.js", // Q1: joined onto the run-time scope at use
   loaderPkg: "@deepseek-ai/cordis-plugin-loader", loaderVersion: "1.0.6-alpha.1",
   schemaPkg: "@deepseek-ai/dsh-llm-pi-ai", schemaVersion: "0.2.1-alpha.2",
   method: "ConfigEditor.edit via waterfall internal/config + resolveConfig",
@@ -34,7 +35,7 @@ describe("G3 loader native (S6-R3 F1)", () => {
   it("native entrypoint recorded read-only; TS declarations distinguished", async () => {
     assert.equal(NATIVE_ENTRY.editorVersion, "0.2.1-alpha.2");
     assert.equal(NATIVE_ENTRY.loaderVersion, "1.0.6-alpha.1");
-    const text = fs.readFileSync(NATIVE_ENTRY.editorFile, "utf8");
+    const text = fs.readFileSync(path.join(resolveRealScope(), NATIVE_ENTRY.editorFile), "utf8");
     assert.ok(text.includes("async edit(entry, change)"));
     assert.ok(text.includes('withFileLock(join(this.ownerContext.profileContext.dir, "package.json")'));
     assert.ok(text.includes("fiber.ctx.waterfall"));

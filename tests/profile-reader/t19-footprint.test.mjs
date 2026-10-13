@@ -9,9 +9,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { assert } from './helpers.mjs';
 
-const REPO = 'C:\\Users\\GNV\\.dsh\\tools\\ocms-s';
+// Q2: run-time checkout root (was a hard-coded developer path), so git status
+// and hash reads run against the actual checkout, including a fresh clone.
+const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 // Tracked files frozen for S2 (P1-A §11 + ticket frozen list).
 const FROZEN_TRACKED = [

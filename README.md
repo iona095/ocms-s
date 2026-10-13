@@ -4,13 +4,13 @@ A small, manual Node.js utility that synchronizes **OpenCode Go** and **OpenCode
 
 OCMS-S is deliberately narrow. It is **not** a daemon, scheduler, account checker, quota monitor, or model-probing system. v1.4 adds one optional DSH integration: a `Models` conversation-view tab that owns OCMS server lifecycle (status/Start/Stop) and iframe hosting only. All synchronization authority stays in the released engine and Web UX.
 
-Current project version: **v1.4.6-rc4** (release candidate)
+Current project version: **v1.4.6-rc5** (release candidate)
 
 Current authoritative specification:
 
-`OpenCode Model Sync — Simple Script Contract v1.4.6-rc4.md`
+`OpenCode Model Sync — Simple Script Contract v1.4.6-rc5.md`
 
-v1.4.6-rc4 amends v1.4.6-rc3 (S5 profile suites in CI only); earlier contracts remain binding wherever v1.4.6-rc4 is silent. Profile-aware synchronization (S5) is specified in `SPEC_DSH_PROFILE_AWARE_SYNC.md`.
+v1.4.6-rc5 amends v1.4.6-rc4 (S5 suites pass on the runner: run-time paths/roots, LF-exact checkouts, machine-path guard); earlier contracts remain binding wherever v1.4.6-rc5 is silent. Profile-aware synchronization (S5) is specified in `SPEC_DSH_PROFILE_AWARE_SYNC.md`.
 
 ---
 
@@ -320,7 +320,7 @@ Verified on Windows with Node 22.23.3 and Node 24.15.0: `npm test` 363 tests (36
 npm test
 ```
 
-`npm test` runs the complete release suite with explicit cross-platform test paths (no wildcard expansion, so Windows/Node 20 behaves identically): 373 tests total — 70 legacy/v1.2 regression tests, 84 v1.3 engine/server/UI contract tests, 96 v1.4 DSH-integration tests (embed-origin, client view, lifecycle, ownership retention, compat including the two rc2 pins, disposal-race, host/client compatibility, HMR sequencing), 14 v1.4.1 unsupported-protocol tests, 14 v1.4.6-rc1 gateway-base tests, 6 v1.4.6-rc2 blocked-reasons tests, 1 v1.4.6-rc3 freeze test, 1 v1.4.6-rc4 freeze test, and 87 developer-tooling tests (368 pass, 0 fail, 5 authorized pin skips: the two v1.3 byte-identity pins superseded by contract v1.4.1 §14 and the S5-R4 `sync.mjs` pin, RC1 `sync.mjs` pin and S5-R4 `ui/index.html` pin superseded by contract v1.4.6-rc2 §9; the Typert-registry admission test additionally skips with "capability missing" where no DSH runtime is installed). `tests/support/clean-env-run.mjs` runs the same suite under a scrubbed home with no DSH on PATH and asserts no `.dsh` was created there.
+`npm test` runs the complete release suite with explicit cross-platform test paths (no wildcard expansion, so Windows/Node 20 behaves identically): 376 tests total — 70 legacy/v1.2 regression tests, 84 v1.3 engine/server/UI contract tests, 96 v1.4 DSH-integration tests (embed-origin, client view, lifecycle, ownership retention, compat including the two rc2 pins, disposal-race, host/client compatibility, HMR sequencing), 14 v1.4.1 unsupported-protocol tests, 14 v1.4.6-rc1 gateway-base tests, 6 v1.4.6-rc2 blocked-reasons tests, 1 v1.4.6-rc3 freeze test, 1 v1.4.6-rc4 freeze test, 1 v1.4.6-rc4 amendment freeze test, 1 v1.4.6-rc5 freeze test, 1 no-machine-paths guard test, and 87 developer-tooling tests (371 pass, 0 fail, 5 authorized pin skips: the two v1.3 byte-identity pins superseded by contract v1.4.1 §14 and the S5-R4 `sync.mjs` pin, RC1 `sync.mjs` pin and S5-R4 `ui/index.html` pin superseded by contract v1.4.6-rc2 §9; the Typert-registry admission test additionally skips with "capability missing" where no DSH runtime is installed). `tests/support/clean-env-run.mjs` runs the same suite under a scrubbed home with no DSH on PATH and asserts no `.dsh` was created there.
 
 The S5 profile suites (`tests/profile-*/`) run via `npm run test:profile` (every profile file by explicit path, no globs; includes the v1.4.6-rc4 stub/real parity test) and in the `profile suites (real DSH)` CI job on windows-latest Node 22, where the pinned `@deepseek-ai/dsh@0.2.1-alpha.2` is installed into a job-local prefix and verified with `dsh --version` before the run. They are not part of `npm test`, which stays hermetic with no dsh on PATH.
 
