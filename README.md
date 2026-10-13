@@ -12,7 +12,7 @@ Current authoritative specification:
 
 v1.4.7-rc3 restyles the Local Web UX PixelCrafts-inspired (visual only) plus two display fixes over v1.4.7-rc2 (profile Preview shows its plan; Apply never offered blind); earlier contracts remain binding wherever v1.4.7-rc3 is silent. Profile-aware synchronization (S5) is specified in `SPEC_DSH_PROFILE_AWARE_SYNC.md`.
 
-Status: v1.4.7-rc3 is a release candidate (PixelCrafts look with fail-closed Apply gating unchanged). CI on tag v1.4.6 (run 38368970261) was green on all four jobs. No open gates beyond this one.
+Status: v1.4.7-rc3 is a release candidate (PixelCrafts look with fail-closed Apply gating unchanged), tag `v1.4.7-rc3` at commit `78c14cb`. CI is green on that commit on all four jobs (run 38469173666 for the `main` push, run 38469459522 for the tag push). No gate is open; the next steps are listed in the v1.4.7 backlog below.
 
 ---
 
@@ -197,6 +197,20 @@ node ui.mjs --profile=<name> [--live-state=<not-running|overlays:<paths>>] [--sc
 
 With `--profile`, the Web UX Previews and Applies against that DSH profile (S5): the target identity and live-state attestation are shown, bound to the Preview, and re-displayed at Apply confirmation; the acknowledgment control is never pre-checked. A blocked profile Preview whose refusal carries planning reasons shows BLOCKED with those reasons (same notice format as the legacy path); any other refusal shows ERROR.
 
+Since v1.4.7-rc2 a profile Preview shows the full plan, as legacy mode does: counters, every detail group (Added, Removed, Moved, Metadata changed, Preserved unresolved, Skipped unresolved, Skipped unsupported protocol, Free counterpart fallback, Routes), the five upstream sources, and a per-route scale of current → desired entries. A route that would lose more than half its entries gets a warning naming the route and both counts. Apply is offered only when every detail group was reported; otherwise the page says the details were not reported and Apply stays disabled.
+
+Since v1.4.7-rc3 the page uses a dark, offline look (system font, no network assets) in which colour always comes with text:
+
+```text
+lime    ready / ok              cyan    information / added
+violet  moved / metadata        orange  warnings / skipped / unsupported
+pink    removed / destructive / errors
+```
+
+The Removed counter and the per-route loss warnings are the most prominent elements when non-zero. Sources that report only `{ ok: true }` show "OK"; `{ ok: false }` shows "unavailable". In profile mode the legacy Settings-target panel says "Settings target is not used in profile mode."
+
+Apply Sync is enabled (pink) whenever a READY Preview is retained, including on a PRODUCTION profile whose live state is still UNATTESTED. The client does not grey it out; the server refuses that Apply with `LIVE_OVERLAY_UNKNOWN`. The attestation panel says so, and the confirmation dialog shows the attestation state again before anything is sent. Declare and acknowledge the live state before applying to a production profile.
+
 Behavior:
 
 ```text
@@ -322,7 +336,7 @@ Verified on Windows with Node 22.23.3 and Node 24.15.0: `npm test` 363 tests (36
 npm test
 ```
 
-`npm test` runs the complete release suite with explicit cross-platform test paths (no wildcard expansion, so Windows/Node 20 behaves identically): 406 tests total — 70 legacy/v1.2 regression tests, 84 v1.3 engine/server/UI contract tests, 102 v1.4 DSH-integration tests (embed-origin, client view, lifecycle, ownership retention, compat including the current identity pins plus the Amendment B sync successor and plan-builder pins, disposal-race, host/client compatibility, HMR sequencing), 14 v1.4.1 unsupported-protocol tests, 14 v1.4.6-rc1 gateway-base tests, 8 v1.4.7-rc1 gateway-go tests, 6 v1.4.6-rc2 blocked-reasons tests, 1 v1.4.6-rc3 freeze test, 1 v1.4.6-rc4 freeze test, 1 v1.4.6-rc4 amendment freeze test, 1 v1.4.6-rc5 freeze test, 1 v1.4.6-rc5 amendment freeze test, 1 no-machine-paths guard test, 1 v1.4.6 freeze test, 1 v1.4.7-rc1 freeze test, 1 v1.4.7-rc1 amendment freeze test, 1 v1.4.7-rc2 freeze test, 1 v1.4.7-rc2 amendment freeze test, 9 profile Preview reviewable-content and removed-row tests, 1 v1.4.7-rc2 Amendment B freeze test, and 87 developer-tooling tests (397 pass, 0 fail, 9 authorized pin-skip supersessions from v1.3 through v1.4.7-rc2 Amendment B (the rc2 sync pin now skips); the Typert-registry admission test additionally skips with "capability missing" where no DSH runtime is installed). `tests/support/clean-env-run.mjs` runs the same suite under a scrubbed home with no DSH on PATH and asserts no `.dsh` was created there.
+`npm test` runs the complete release suite with explicit cross-platform test paths (no wildcard expansion, so Windows/Node 20 behaves identically): 421 tests total — 70 legacy/v1.2 regression tests, 84 v1.3 engine/server/UI contract tests, 103 v1.4 DSH-integration tests (embed-origin, client view, lifecycle, ownership retention, compat including the current identity pins plus the Amendment B sync successor and plan-builder pins, disposal-race, host/client compatibility, HMR sequencing), 14 v1.4.1 unsupported-protocol tests, 14 v1.4.6-rc1 gateway-base tests, 8 v1.4.7-rc1 gateway-go tests, 6 v1.4.6-rc2 blocked-reasons tests, 1 v1.4.6-rc3 freeze test, 1 v1.4.6-rc4 freeze test, 1 v1.4.6-rc4 amendment freeze test, 1 v1.4.6-rc5 freeze test, 1 v1.4.6-rc5 amendment freeze test, 1 no-machine-paths guard test, 1 v1.4.6 freeze test, 1 v1.4.7-rc1 freeze test, 1 v1.4.7-rc1 amendment freeze test, 1 v1.4.7-rc2 freeze test, 1 v1.4.7-rc2 amendment freeze test, 9 profile Preview reviewable-content and removed-row tests, 1 v1.4.7-rc2 Amendment B freeze test, 1 v1.4.7-rc3 freeze test, 1 v1.4.7-rc3 amendment freeze test, 12 v1.4.7-rc3 visual tests (tokens, no network URLs, contrast, ids, `__PURE` bodies, source status display), and 87 developer-tooling tests (411 pass, 0 fail, 10 authorized pin-skip supersessions from v1.3 through v1.4.7-rc3 (the rc2 `ui/index.html` pin now skips); the Typert-registry admission test additionally skips with "capability missing" where no DSH runtime is installed, so the clean-environment run reports 410 pass and 11 skipped). `tests/support/clean-env-run.mjs` runs the same suite under a scrubbed home with no DSH on PATH and asserts no `.dsh` was created there.
 
 The S5 profile suites (`tests/profile-*/`) run via `npm run test:profile` (every profile file by explicit path, no globs; includes the v1.4.6-rc4 stub/real parity test) and in the `profile suites (real DSH)` CI job on windows-latest Node 22, where the pinned `@deepseek-ai/dsh@0.2.1-alpha.2` is installed into a job-local prefix and verified with `dsh --version` before the run. They are not part of `npm test`, which stays hermetic with no dsh on PATH.
 
@@ -346,6 +360,14 @@ node --test tests/sync.test.mjs
 - rename RC4_ALLOWED in t19-footprint.
 - embed-origin Date-header second-boundary flake.
 - dev-tools assumption that the repo folder name contains ocms-s.
+- disable Apply in the page on a PRODUCTION profile until the live state is attested and acknowledged (today only the server refuses; needs a named amendment).
+- render the per-route loss warnings as one item per route instead of one paragraph.
+- a blocking guard for mass removal, beyond the rc2 warning.
+- same-route duplicate copies still hide one removal each in diffDesired.
+- tests must clean up spawned ui.mjs children; an orphan on port 18751 broke http-security I1/I7 after an interrupted run.
+- port-collision flakes in ui-contract and preview-contract.
+- optionally vendor Plus Jakarta Sans (OFL) as a local file (needs an amendment; today the page falls back to Segoe UI).
+- promote to v1.4.7.
 - optionally switch the Zen model list to /inference/v1/models.
 - authenticated check that /zen/v1 still serves chat (close it if the maintainer confirms daily Zen use works).
 - recorded closed with evidence: the model-list endpoints (/inference/v1/models, /zen/v1/models, /zen/go/v1/models) answered 200 without a key or session header on 2026-10-13, and /zen/v1/models and /inference/v1/models served identical model lists (84 IDs).
@@ -863,9 +885,21 @@ OpenCode Model Sync — Simple Script Contract v1.4.1.md
 OpenCode Model Sync — Simple Script Contract v1.4.6-rc1.md
 OpenCode Model Sync — Simple Script Contract v1.4.6-rc2.md
 OpenCode Model Sync — Simple Script Contract v1.4.6-rc3.md
+OpenCode Model Sync — Simple Script Contract v1.4.6-rc4.md
+OpenCode Model Sync — Simple Script Contract v1.4.6-rc4 Amendment A.md
+OpenCode Model Sync — Simple Script Contract v1.4.6-rc5.md
+OpenCode Model Sync — Simple Script Contract v1.4.6-rc5 Amendment A.md
+OpenCode Model Sync — Simple Script Contract v1.4.6.md
+OpenCode Model Sync — Simple Script Contract v1.4.7-rc1.md
+OpenCode Model Sync — Simple Script Contract v1.4.7-rc1 Amendment A.md
+OpenCode Model Sync — Simple Script Contract v1.4.7-rc2.md
+OpenCode Model Sync — Simple Script Contract v1.4.7-rc2 Amendment A.md
+OpenCode Model Sync — Simple Script Contract v1.4.7-rc2 Amendment B.md
+OpenCode Model Sync — Simple Script Contract v1.4.7-rc3.md
+OpenCode Model Sync — Simple Script Contract v1.4.7-rc3 Amendment A.md
 ```
 
-**v1.4.6-rc3 is the current authoritative contract** (test hermeticity only; v1.0–v1.4.6-rc2 unchanged).
+**v1.4.7-rc3 with its Amendment A is the current authoritative contract** (Local Web UX look and two display fixes only); earlier contracts remain binding wherever it is silent.
 
 v1.4 identities (immutable): contract SHA-256 `3a4461d099e8994c773c98cfe3d001b9fb872fc182c64d31eddf8e46d4f27831` (171 lines); `dsh/lifecycle.mjs` `36f65604cd95322ba643d6ba7baa225d459270113ef75298ad9839e8d79a0c47`; `tests/v1.4/disposal-race.test.mjs` `3edbb9a76cb8dc9cb653efb2006f4810177258060f5885223ae40f826e6cb6d9`; v1.3 baseline `sync.mjs` `9211544a0bba60e3e19a78a8d089d84f9eacedb6105631489ebe377285188c07` and `ui/index.html` `6610e7354f64eb1edbd4827df65fa120c1410ba9121e33fcab87637d96deddf8` unchanged; lineage `HEAD`/`v1.3.0` `50968d968ede3c0c847c6d127e1ff8059f790185`.
 
@@ -878,6 +912,25 @@ v1.4.6-rc1 identities: contract SHA-256 `f041e7540875e53419243316289cd9b98ef5260
 v1.4.6-rc2 identities: contract SHA-256 `00204930eb1a12a4250a9eaeecd2828ac1fb83b17ffba8b2772c6d81dd56484a` (227 lines); `sync.mjs` `765a56ee26c165be05ab50b2d25ef7cd38b1e53355d328a0228ad6daf5e512f4`; `ui/index.html` `5979979d8d13d556a5dada32814fe6fb22e39810a27b39fdadb2ff0235ca3321`; baseline tag `v1.4.6-rc1`.
 
 v1.4.6-rc3 identities: contract SHA-256 `d31553f23681bb8372ff01a7fefc999d9ea4f4e74a2ac327551a98d4c42399cb` (238 lines); product bytes identical to v1.4.6-rc2 (`sync.mjs` `765a56ee26c165be05ab50b2d25ef7cd38b1e53355d328a0228ad6daf5e512f4`, `ui/index.html` `5979979d8d13d556a5dada32814fe6fb22e39810a27b39fdadb2ff0235ca3321`); baseline tag `v1.4.6-rc2`.
+
+Contract identities from v1.4.6-rc4 on (SHA-256, line count; release commit = tag):
+
+```text
+v1.4.6-rc4             bdf79b620f5b69fe575c6abb2206a13191488cb1112a7ffd7609f42613ad2c63  245  515fda2
+v1.4.6-rc4 Amendment A 38706d72f5a8b2e2e73cd2908a5fcad7bf300346a546a65b379dfe734b77c2b7   66
+v1.4.6-rc5             ea05bda17a85bf1ade98d8655b59ba733f03d0d235352d19da8e91c20556de69  255  42b9dd8
+v1.4.6-rc5 Amendment A acc840231bda004bf3abd2e61a3da8c859f447f75a0431aa1660f501e26ec5cf   59
+v1.4.6                 2b99068b8980cd2a52419e8533afe4bd16ca7153376df1817a4de2e53fab82b3  153  bb8c240
+v1.4.7-rc1             ea1d3481dba5fc190f0694ef9da6b2bd2a48feb504708b53cf36755d06c4a856  140  e8d1c67
+v1.4.7-rc1 Amendment A d7f700bbea4dd7ffa3eea351cab9f6ce746f1068ad49bf3c62bac807fb820e50   79
+v1.4.7-rc2             fd4d2e186afd721f280ad974f934028377f6802ce1a8620ac1c9968066f760aa  142  3fd5361
+v1.4.7-rc2 Amendment A 22a44036180c86b4ec663b288ec3334afcd918a35ec6952f3cfa1f9ec1a2d5f5   75
+v1.4.7-rc2 Amendment B d91f74aa2c1b34b97cbb7fa1a7a1cc3f3fd1ae417275bb4405519c091a93f9b9   88
+v1.4.7-rc3             c007671724cb82a984f313fd2b199aa43917c84cfd70ab7ec4f17a421cb89d2d  189  78c14cb
+v1.4.7-rc3 Amendment A db6619acb79fb837b8991f5000e8de271bfa65cff42445f676f21f2127480bb8   61
+```
+
+v1.4.7-rc3 product bytes: `ui/index.html` `39f0a36151c1ce37a2551b2fd18d1cc293c9a529b2ab407fbf3a461ed569a5cc` (the only product file changed); `sync.mjs`, `ui.mjs` and `profile/*` are byte-identical to v1.4.7-rc2.
 
 v1.0 and v1.1 are historical artifacts.
 
@@ -908,6 +961,10 @@ OCMS-S v1.4.6-rc2 shows why a profile Preview is blocked: planning reasons alrea
 
 OCMS-S v1.4.6-rc3 makes `npm test` hermetic with zero product changes: every suite passes on a clean machine (no `~/.dsh`, no `DSH_HOME`, no `dsh` on PATH) via explicit temp homes, stubbed dsh discovery, a test-only composition stub anchor for the rc2 blocked-reasons tests, and bounded barrier waits; the CI test job proves the clean condition and carries a 15-minute timeout. Verified test-first (clean-env RED→GREEN): full suite 372 tests (367 pass, 0 fail, 5 authorized pin skips) identically in the normal and clean-environment runs on Windows Node 24 (v24.15.0), and green on Node 22 (v22.23.3); acceptance smoke PASS (13 steps) on both; S5 profile suites unchanged at 448 tests (438 pass, 5 pre-existing snapshot failures, 5 skipped) before and after. Future gates: a parity check that the stub anchor and the real DSH composition produce the same result for the rc2 fixtures; running the S5 profile suites in CI against pinned DSH packages installed outside package.json.
 
+OCMS-S v1.4.6-rc4 and v1.4.6-rc5 run the S5 profile suites in CI against the pinned real DSH 0.2.1-alpha.2. Tag v1.4.6-rc4's profile job was red on CI while every local run was green, because the tests depended on this developer machine (absolute DSH paths, a hard-coded repo root, CRLF checkouts breaking byte pins); v1.4.6-rc5 made the suites portable with no product change. v1.4.6 promoted rc5 unchanged.
+
+OCMS-S v1.4.7-rc1 follows OpenCode's move of the Go docs to `/inference/go/v1/`: that base is recognized, an endpoint documented under any unlisted base now blocks planning (`ENDPOINT_BASE_UNKNOWN`) instead of being skipped, and an emptied managed list renders valid YAML. OCMS-S v1.4.7-rc2 makes the profile Preview show its full plan with observed per-route current → desired counts and a loss warning, and offers Apply only over complete details; its Amendment B reports every removed copy across routes. OCMS-S v1.4.7-rc3 restyles the Local Web UX (visual only, offline, contrast-checked) and adds two display fixes. CI was green on all four jobs for every v1.4.7 release candidate (rc1 run 38391569968, rc2 run 38433479577, rc3 runs 38469173666 and 38469459522).
+
 Future changes should remain narrow and contract-driven.
 
 A change to model authority, placement semantics, transaction behavior, or preservation rules should be specified and tested before production use.
@@ -931,7 +988,7 @@ ocms-s/
 ├── OpenCode Model Sync — Simple Script Contract v1.3.md
 ├── OpenCode Model Sync — Simple Script Contract v1.4.md
 ├── OpenCode Model Sync — Simple Script Contract v1.4.1.md
-├── OpenCode Model Sync — Simple Script Contract v1.4.6-rc1.md
+├── OpenCode Model Sync — Simple Script Contract v1.4.6-rc1.md … v1.4.7-rc3 Amendment A.md
 ├── P1_IMPLEMENTATION_READINESS.md
 ├── README.md
 ├── SPEC.md
@@ -981,6 +1038,9 @@ ocms-s/
     │   ├── helpers.mjs
     │   ├── gateway-base.test.mjs
     │   └── fixtures/      # captured 2026-10-12 Go/Zen docs pages
+    ├── v1.4.6-rc2/ … v1.4.7-rc3/   # one folder per gate: freeze anchors and gate tests
+    ├── support/
+    │   └── clean-env-run.mjs   # runs npm test under a scrubbed home with no dsh on PATH
     ├── dev-tools.test.mjs
     └── profile-*/         # S5 suites: acceptance, cli-ui, commit, reader, render, target
 ```

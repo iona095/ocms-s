@@ -19,6 +19,14 @@ This file is intentionally concise. The authoritative behavioral specification r
 
 - No behaviour, safety-rule, planning, render, commit, attestation, or client-bundle-logic change; every element id, the DETAIL_GROUPS logic, the U2 completeness gate, the A2 pure functions, and all rc2 vm suites stay green unmodified. `ui.mjs`, `sync.mjs`, `profile/*` and `cordis.patch.yml` are byte-identical.
 
+### Verification
+
+- npm test 421 tests (411 pass, 0 fail, 10 authorized pin skips); clean-environment run 410 pass, 0 fail, 11 skipped; S5 profile suites 451 tests (444 pass, 0 fail, 7 skipped) against real DSH 0.2.1-alpha.2; all on Windows, Node 24.15.0. CI green on all four jobs at commit 78c14cb (run 38469173666 for the main push, run 38469459522 for tag v1.4.7-rc3).
+
+### Known limitation
+
+- Apply Sync stays enabled (pink) on a READY PRODUCTION Preview while the live state is UNATTESTED; this is the frozen rc2 client rule, and the server refuses that Apply with LIVE_OVERLAY_UNKNOWN. Disabling it in the page is in the backlog.
+
 ## v1.4.7-rc2
 
 **Release candidate: profile Preview shows its plan (contract v1.4.7-rc2, Amendment A).**
@@ -97,6 +105,14 @@ This file is intentionally concise. The authoritative behavioral specification r
 - rename RC4_ALLOWED in t19-footprint.
 - embed-origin Date-header second-boundary flake.
 - dev-tools assumption that the repo folder name contains ocms-s.
+- disable Apply in the page on a PRODUCTION profile until the live state is attested and acknowledged (needs a named amendment).
+- render the per-route loss warnings as one item per route instead of one paragraph.
+- a blocking guard for mass removal, beyond the rc2 warning.
+- same-route duplicate copies still hide one removal each in diffDesired.
+- tests must clean up spawned ui.mjs children (an orphan on port 18751 broke http-security I1/I7).
+- port-collision flakes in ui-contract and preview-contract.
+- optionally vendor Plus Jakarta Sans (OFL) as a local file (needs an amendment).
+- promote to v1.4.7.
 - optionally switch the Zen model list to /inference/v1/models.
 - authenticated check that /zen/v1 still serves chat (close it if the maintainer confirms daily Zen use works).
 - recorded closed with evidence: the model-list endpoints (/inference/v1/models, /zen/v1/models, /zen/go/v1/models) answered 200 without a key or session header on 2026-10-13, and /zen/v1/models and /inference/v1/models served identical model lists (84 IDs).
