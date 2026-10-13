@@ -47,14 +47,15 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
     // re-pinned by v1.4.7-rc1 G5 for the G1/G2 product change with named reason):
     // exact pins to the current reviewed bytes (sync value equals the Amendment B
     // reviewed bytes with named reason: per-copy removed rows; ui values equal the
-    // v1.4.7-rc2 reviewed bytes with named reason: reviewable content plus
-    // Amendment B stored-list counts without derivation). All other
+    // v1.4.7-rc3 reviewed bytes with named reason: PixelCrafts look plus V5
+    // display fixes. Amendment A contrast clarification adds --control-border
+    // and the pink-fill Apply pair with no reference token change). All other
     // forbidden files stay binding; no wildcards, no directory exemptions
     // beyond the §10-authorized version-bump files below.
     const CURRENT_PINS = new Map([
       ['sync.mjs', 'b686f64b47007d3f0046f70520e594afc08d217bc87d36dfd9bf6bc357fb4026'],
       ['ui.mjs', '3d0c656e48f628d0fc1624d7309f5369850693575f5c0fded949fe95d970d93e'],
-      ['ui/index.html', '1836648bcf546fc09393481649899262a22bc0d13da4ddcd8b15541e81d46807'],
+      ['ui/index.html', '39f0a36151c1ce37a2551b2fd18d1cc293c9a529b2ab407fbf3a461ed569a5cc'],
     ]);
     for (const [rel, hex] of CURRENT_PINS) {
       assert.equal(shaFile(rel), hex, `CURRENT surface drift: ${rel}`);

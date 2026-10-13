@@ -4,15 +4,15 @@ A small, manual Node.js utility that synchronizes **OpenCode Go** and **OpenCode
 
 OCMS-S is deliberately narrow. It is **not** a daemon, scheduler, account checker, quota monitor, or model-probing system. v1.4 adds one optional DSH integration: a `Models` conversation-view tab that owns OCMS server lifecycle (status/Start/Stop) and iframe hosting only. All synchronization authority stays in the released engine and Web UX.
 
-Current project version: **v1.4.7-rc2** (release candidate)
+Current project version: **v1.4.7-rc3** (release candidate)
 
 Current authoritative specification:
 
-`OpenCode Model Sync — Simple Script Contract v1.4.7-rc2.md`
+`OpenCode Model Sync — Simple Script Contract v1.4.7-rc3.md`
 
-v1.4.7-rc2 amends v1.4.7-rc1 (profile Preview shows its plan; Apply never offered blind); earlier contracts remain binding wherever v1.4.7-rc2 is silent. Profile-aware synchronization (S5) is specified in `SPEC_DSH_PROFILE_AWARE_SYNC.md`.
+v1.4.7-rc3 restyles the Local Web UX PixelCrafts-inspired (visual only) plus two display fixes over v1.4.7-rc2 (profile Preview shows its plan; Apply never offered blind); earlier contracts remain binding wherever v1.4.7-rc3 is silent. Profile-aware synchronization (S5) is specified in `SPEC_DSH_PROFILE_AWARE_SYNC.md`.
 
-Status: v1.4.7-rc2 is a release candidate (profile Preview reviewable content with fail-closed Apply gating). CI on tag v1.4.6 (run 38368970261) was green on all four jobs. No open gates beyond this one.
+Status: v1.4.7-rc3 is a release candidate (PixelCrafts look with fail-closed Apply gating unchanged). CI on tag v1.4.6 (run 38368970261) was green on all four jobs. No open gates beyond this one.
 
 ---
 

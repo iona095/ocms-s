@@ -4,6 +4,21 @@ All notable project-level changes are summarized here.
 
 This file is intentionally concise. The authoritative behavioral specification remains the current contract.
 
+## v1.4.7-rc3
+
+**Release candidate: PixelCrafts-inspired Local Web UX (contract v1.4.7-rc3, Amendment A).**
+
+### Changed
+
+- The Local Web UX (`ui/index.html`, only product file) adopts the PixelCrafts look: reference tokens on `:root`, 2x2 pixel logo, Model-light/Sync-heavy display heading, lime lede, static inline-SVG constellation (decoration only), flat panels with hairline dividers, and fixed accent roles (lime ready/ok, cyan info/added, violet moved/metadata, orange warnings/skipped/unsupported, pink removed/destructive/errors) that never carry meaning by colour alone. Removed count and per-route loss warning are most prominent when non-zero; enabled Apply Sync is destructive-primary (pink fill, `--base` label), disabled is inert.
+- Two display fixes, no server change: sources `{ ok: true }` with no count show "OK" (lime), `{ ok: false }` shows "unavailable" (pink), via a new small pure function; the legacy Settings-target panel is labelled "not used in profile mode" in profile mode.
+- Amendment A: decorative hairlines keep `--border` (exempt per WCAG 1.4.11); interactive control boundaries use `--control-border` and the focus ring uses lime, both >= 3:1; every text pair >= 4.5:1, checked from token hex values in tests.
+- Version 1.4.7-rc2 → 1.4.7-rc3 (metadata only, plus the look and display fixes above with re-pinned bytes).
+
+### Unchanged (explicit)
+
+- No behaviour, safety-rule, planning, render, commit, attestation, or client-bundle-logic change; every element id, the DETAIL_GROUPS logic, the U2 completeness gate, the A2 pure functions, and all rc2 vm suites stay green unmodified. `ui.mjs`, `sync.mjs`, `profile/*` and `cordis.patch.yml` are byte-identical.
+
 ## v1.4.7-rc2
 
 **Release candidate: profile Preview shows its plan (contract v1.4.7-rc2, Amendment A).**
