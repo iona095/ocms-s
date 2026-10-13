@@ -31,8 +31,20 @@ describe("G2 isolation boundary (S6-R3 F5)", () => {
         const inv = inventoryScratchGraph(home, "iso");
         console.log("ISOLATION_GRAPH files=" + inv.files.join(","));
         const sr = fs.realpathSync(path.resolve(home));
-        const hr = fs.realpathSync(path.resolve(os.homedir() + "/.dsh"));
-        assert.ok(sr !== hr && !sr.startsWith(hr + path.sep), "no traversal into real home");
+        // Amendment A A1: resolve the real ~/.dsh only if it exists. On a clean
+        // runner it is absent, so realpathSync would throw before the check runs.
+        const liveDotDsh = path.resolve(os.homedir() + "/.dsh");
+        let hr = null;
+        try {
+          hr = fs.realpathSync(liveDotDsh);
+        } catch {
+          hr = null;
+        }
+        if (hr !== null) {
+          assert.ok(sr !== hr && !sr.startsWith(hr + path.sep), "no traversal into real home");
+        } else {
+          assert.ok(sr !== liveDotDsh && !sr.startsWith(liveDotDsh + path.sep), "no traversal into real home");
+        }
         const guardText = fs.readFileSync(path.resolve("tests/profile-acceptance/net-guard.mjs"), "utf8");
         assert.ok(guardText.includes("S6_NET_DENIED"));
         const cont = checkContainment();

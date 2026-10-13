@@ -52,6 +52,52 @@ jobs:
         env:
           npm_config_script_shell: bash
 
+  profile-suites:
+    # S5 profile suites against a real, pinned DSH (contract v1.4.6-rc4 P2).
+    # The pinned DSH is installed into a job-local prefix — never package.json
+    # or package-lock.json (the frozen dependency-surface tests require
+    # devDependencies to stay empty) — and that prefix bin is put on PATH for
+    # this job only. The hermetic test job above keeps its clean-machine guard
+    # unchanged and never sees a PATH dsh.
+    name: profile suites (real DSH)
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Install pinned real DSH into a job-local prefix
+        shell: pwsh
+        run: |
+          $prefix = Join-Path $env:RUNNER_TEMP 'dsh-real'
+          npm install -g --prefix $prefix @deepseek-ai/dsh@0.2.1-alpha.2
+          # On Windows the npm global shims (dsh.cmd) live directly in the
+          # prefix; keep the POSIX bin layout too so the step stays correct.
+          Add-Content -Path $env:GITHUB_PATH -Value $prefix
+          Add-Content -Path $env:GITHUB_PATH -Value (Join-Path $prefix 'bin')
+
+      - name: Verify pinned DSH
+        shell: pwsh
+        run: |
+          dsh --version
+          $v = (dsh --version | Out-String).Trim()
+          if ($v -ne '0.2.1-alpha.2') { throw "pinned DSH mismatch: got '$v', want '0.2.1-alpha.2'" }
+
+      - name: Run profile suites
+        run: npm run test:profile
+        env:
+          npm_config_script_shell: bash
+
   acceptance-smoke:
     # Real-runtime acceptance: the committed plugin through a real Cordis
     # runtime, a real ui.mjs child, and OS-level child-liveness observation,

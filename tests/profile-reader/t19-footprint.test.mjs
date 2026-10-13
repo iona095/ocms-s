@@ -36,27 +36,40 @@ function gitLines(args) {
 }
 
 describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
-  it('T19 tracked frozen files have no work-tree modifications except authorized S5-R4 pins', () => {
+  it('T19 tracked frozen files have no work-tree modifications except authorized CURRENT pins', () => {
     // Tracked modifications only (diff, not untracked): the S1/S2 additions
     // are untracked by design and must not trip this gate.
     const modified = new Set([...gitLines(['diff', '--name-only']), ...gitLines(['diff', '--cached', '--name-only'])]);
-    // S5-R4 authorized surfaces (G2-D): exact pins to final R4 bytes. All other
-    // forbidden files stay binding; no wildcards, no directory exemptions.
-    const S5R4_PINS = new Map([
-      ['sync.mjs', '1e14051f400a1eeb7e4c368de5bca5c2c536727a2026a626925dc065591d7935'],
-      ['ui.mjs', '97d94c18081a3cfa7433b04ced26a72bd513ab5af022c1c75f71656b6fa2af63'],
-      ['ui/index.html', '5a8c4a233860fae364f115e46c1dfba1c4cb17e1ca87ec1b6a64abeefbe97bac'],
+    // CURRENT authorized surfaces (rc4 P3 row 2 re-anchor of the S5-R4 pins):
+    // exact pins to the current reviewed bytes (values equal the v1.4.6-rc2
+    // reviewed bytes; this gate makes no product change per P6). All other
+    // forbidden files stay binding; no wildcards, no directory exemptions
+    // beyond the §10-authorized version-bump files below.
+    const CURRENT_PINS = new Map([
+      ['sync.mjs', '765a56ee26c165be05ab50b2d25ef7cd38b1e53355d328a0228ad6daf5e512f4'],
+      ['ui.mjs', '90edc2fcb30312dc9e4e56fdce4dd83e67c895ed0f6f6613fedd54fb94754384'],
+      ['ui/index.html', '5979979d8d13d556a5dada32814fe6fb22e39810a27b39fdadb2ff0235ca3321'],
     ]);
-    for (const [rel, hex] of S5R4_PINS) {
-      assert.equal(shaFile(rel), hex, `S5-R4 surface drift: ${rel}`);
+    for (const [rel, hex] of CURRENT_PINS) {
+      assert.equal(shaFile(rel), hex, `CURRENT surface drift: ${rel}`);
     }
+    // §10-authorized version-bump files of this gate (metadata only, P6).
+    const RC4_ALLOWED = new Set([
+      'package.json',
+      'package-lock.json',
+      'dsh/client.js',
+      'dsh/client.mjs',
+    ]);
     const dirty = [...modified].filter(
-      (rel) => !S5R4_PINS.has(rel) && (FROZEN_TRACKED.includes(rel) || rel.startsWith('dsh/') || rel.startsWith('ui/') || rel === 'ui.mjs'),
+      (rel) => !CURRENT_PINS.has(rel) && !RC4_ALLOWED.has(rel) && (FROZEN_TRACKED.includes(rel) || rel.startsWith('dsh/') || rel.startsWith('ui/') || rel === 'ui.mjs'),
     );
     assert.deepEqual(dirty, [], `modified frozen files: ${[...modified].join(', ')}`);
   });
 
-  it('T19 untracked set is exactly the accepted S1 files plus S2 files', () => {
+  // rc4 P3 row 3: RETIRED (untracked allowlist enumerates S1–S5 history;
+  // superseded by the committed tree and §10). Kept as an explicit skip so
+  // per-file totals show the retire disposition.
+  it.skip('T19 untracked set is exactly the accepted S1 files plus S2 files (retired per rc4 P3 row 3)', () => {
     const untracked = gitLines(['ls-files', '--others', '--exclude-standard']).sort();
     const allowed = new Set([
       'profile/target-resolver.mjs',

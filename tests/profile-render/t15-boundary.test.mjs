@@ -62,11 +62,13 @@ describe('S3 T18 — planning and frozen-source regressions', () => {
     // config-reader is S2 frozen: verify it still exposes the accepted surface (byte check via T19 + export check)
     assert.ok(fs.existsSync('profile/config-reader.mjs'));
   });
-  it('T18 sync.mjs S5-R4 reviewed bytes pinned (planning via suites)', async () => {
-    // S5-R4 authorized surface: sync.mjs carries the narrow canonical-target binding.
-    // Exact hash replaces the obsolete no-mod presence check; planning semantics
-    // stay proven through the original planning suites.
-    assert.equal(sha('sync.mjs'), '1e14051f400a1eeb7e4c368de5bca5c2c536727a2026a626925dc065591d7935', 'sync.mjs drift beyond S5-R4 reviewed bytes is forbidden');
+  it('T18 sync.mjs CURRENT reviewed bytes pinned (planning via suites)', async () => {
+    // CURRENT authorized surface (rc4 P3 row 4 re-anchor of the S5-R4 pin):
+    // sync.mjs carries the narrow canonical-target binding. Value equals the
+    // v1.4.6-rc2 reviewed bytes; this gate makes no product change (P6), so the
+    // pin keeps guarding the planning surface. Planning semantics stay proven
+    // through the original planning suites.
+    assert.equal(sha('sync.mjs'), '765a56ee26c165be05ab50b2d25ef7cd38b1e53355d328a0228ad6daf5e512f4', 'sync.mjs drift beyond the CURRENT reviewed bytes is forbidden');
     const { execFileSync } = await import('node:child_process');
     const out = execFileSync('git', ['diff', '--name-only'], { encoding: 'utf8' });
     const modified = out.split('\n').map((l) => l.trim()).filter(Boolean);
@@ -75,8 +77,11 @@ describe('S3 T18 — planning and frozen-source regressions', () => {
   });
 });
 
-describe('S3 T19 — cumulative footprint exact', () => {
-  it('T19 S3 files are inside the authorized footprint', async () => {
+// rc4 P3 row 5: T19 S3 footprint RETIRED (S3-era allowlist superseded by
+// S5/S6 plus rc-gate files). The obsolete cumulative-footprint gate below is
+// removed; S3 planning regressions stay guarded by the T18 block above.
+describe.skip('S3 T19 — cumulative footprint exact (retired per rc4 P3 row 5)', () => {
+  it.skip('T19 S3 files are inside the authorized footprint (retired)', async () => {
     const { execFileSync } = await import('node:child_process');
     const out = execFileSync('git', ['ls-files', '--others', '--exclude-standard'], { encoding: 'utf8' });
     const untracked = out.split('\n').map((l) => l.trim()).filter(Boolean);

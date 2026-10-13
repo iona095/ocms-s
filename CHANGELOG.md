@@ -4,6 +4,22 @@ All notable project-level changes are summarized here.
 
 This file is intentionally concise. The authoritative behavioral specification remains the current contract.
 
+## v1.4.6-rc4
+
+**Release candidate: S5 profile suites in CI (contract v1.4.6-rc4).**
+
+### Fixed
+
+- The S5 profile suites (`tests/profile-*/`, 63 files including the new stub/real parity test) run in CI: a new `profile suites (real DSH)` job on windows-latest Node 22 installs `@deepseek-ai/dsh@0.2.1-alpha.2` into a job-local prefix (never package.json; devDependencies stays empty), verifies `dsh --version`, then runs the new `npm run test:profile` script that lists every profile file by explicit path with no globs. The 5 stale S5-gate snapshot checks are retired or re-anchored per contract §10 P3 (historical HEAD pin, S1–S5 untracked allowlist and S3 footprint retired; product-byte pins re-anchored to the current reviewed bytes, values unchanged). A new parity test proves the rc2 test-only stub anchor and the real DSH composition give the same reader status and managed config for the rc2 fixtures. The hermetic `npm test` job keeps its clean-machine guard unchanged.
+
+### Changed
+
+- Version 1.4.6-rc3 → 1.4.6-rc4 (metadata only).
+
+### Unchanged (explicit)
+
+- No product behaviour change: sync.mjs, ui.mjs, ui/index.html and profile/* are byte-identical to v1.4.6-rc3; all RC2/RC3 pins stay green. Fail-closed home/anchor admission is deliberate and untouched.
+
 ## v1.4.6-rc3
 
 **Release candidate: hermetic npm test (contract v1.4.6-rc3).**
