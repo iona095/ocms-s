@@ -4,6 +4,25 @@ All notable project-level changes are summarized here.
 
 This file is intentionally concise. The authoritative behavioral specification remains the current contract.
 
+## v1.4.7-rc2
+
+**Release candidate: profile Preview shows its plan (contract v1.4.7-rc2, Amendment A).**
+
+### Fixed
+
+- The profile Preview response carries the same reviewable content as legacy mode: changes, preserved/skipped/unsupported/fallback rows, drift, a five-source summary, and per-route desired plus stored current counts, all from the retained plan with no extra fetch.
+- Amendment B: diffDesired reports every removed copy per route (moved only for single-copy route changes; desired/digest/decisions unchanged), per-route current counts are read from stored lists via plan.currentRouteCounts, and the r2-browser stub carries complete detail groups (assertions unchanged).
+- Apply is enabled and the Review notice shown only over complete detail groups; otherwise the page reports Preview details not reported by server with Apply disabled. Per-route scale renders with a >50% loss warning naming route and counts (display only). The CLI preview text prints per-route current turning into desired lines.
+- Pure page decision functions run under node:vm in tests, so the browser rules cannot go stale unnoticed.
+
+### Changed
+
+- Version 1.4.7-rc1 → 1.4.7-rc2 (metadata only, plus the U1–U4 product changes above with re-pinned bytes).
+
+### Unchanged (explicit)
+
+- No planning, render, commit, attestation, or client-bundle change; all RC1 pins stay green.
+
 ## v1.4.7-rc1
 
 **Release candidate: Go docs move, fail-closed unknown base, empty-list render (contract v1.4.7-rc1).**

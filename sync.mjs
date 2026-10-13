@@ -1046,21 +1046,46 @@ export function diffDesired(desired, priors) {
   const removed = [];
   const moved = [];
   const metadataChanged = [];
+  // Contract v1.4.7-rc2 Amendment B B1: report per (gateway/id, route) copy
+  // using prior.records, not only prior.route. Every stored copy not kept at
+  // its route is listed in removed; moved stays for a model whose only stored
+  // copy changes route. Desired arrays are untouched: report-only.
+  const copiesOf = (prior) => {
+    if (prior && Array.isArray(prior.records)) return prior.records;
+    if (prior && typeof prior.route === 'string') return [{ route: prior.route }];
+    return [];
+  };
   for (const [key, value] of desiredIndex) {
     const prior = priors.get(key);
     if (!prior) {
       added.push({ key, route: value.route });
       continue;
     }
-    if (prior.route !== value.route) moved.push({ key, from: prior.route, to: value.route });
+    const copies = copiesOf(prior);
+    const keptHere = copies.some((entry) => entry && entry.route === value.route);
+    if (!keptHere) {
+      if (copies.length === 1) {
+        const from = copies[0].route;
+        if (from !== value.route) moved.push({ key, from, to: value.route });
+      } else {
+        added.push({ key, route: value.route });
+      }
+    }
     if (!deepEqual(ownedOf(prior.record), ownedOf(value.record))) {
       metadataChanged.push({ key, route: value.route });
     }
   }
   for (const [key, prior] of priors) {
-    if (!desiredIndex.has(key)) removed.push({ key, route: prior.route });
+    const copies = copiesOf(prior);
+    const wanted = desiredIndex.get(key);
+    for (const entry of copies) {
+      if (!entry || typeof entry.route !== 'string') continue;
+      if (wanted && wanted.route === entry.route) continue;
+      if (wanted && copies.length === 1) continue;
+      removed.push({ key, route: entry.route });
+    }
   }
-  const byKey = (a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+  const byKey = (a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : (a.route < b.route ? -1 : a.route > b.route ? 1 : 0));
   added.sort(byKey);
   removed.sort(byKey);
   moved.sort(byKey);
@@ -1253,6 +1278,18 @@ function formatProfilePreviewText(preview) {
     const c = preview.plan.changes;
     const n = (k) => (Array.isArray(c[k]) ? c[k].length : 0);
     lines.push("changes: added=" + n("added") + " removed=" + n("removed") + " moved=" + n("moved") + " metadata=" + n("metadataChanged"));
+  }
+  // Contract v1.4.7-rc2 U4 with Amendment B B2: one per-route current turning
+  // into desired line per managed route, read from the stored managed lists
+  // (plan.currentRouteCounts). The derivation is removed.
+  if (preview.plan && preview.plan.desired && preview.plan.currentRouteCounts) {
+    const desired = preview.plan.desired;
+    const stored = preview.plan.currentRouteCounts;
+    for (const route of MANAGED_ROUTE_KEYS) {
+      const want = Array.isArray(desired[route]) ? desired[route].length : 0;
+      const got = Number(stored[route]);
+      lines.push(route + ": current " + (Number.isFinite(got) ? got : 0) + " -> desired " + want);
+    }
   }
   return lines.join("\n");
 }

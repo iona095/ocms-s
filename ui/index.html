@@ -366,6 +366,15 @@
       <summary>Free counterpart fallback</summary>
       <ul class="items" id="list-fallback"><li class="empty">no preview yet</li></ul>
     </details>
+    <details id="details-routes">
+      <summary>Routes</summary>
+      <ul class="items" id="list-routes"><li class="empty">no preview yet</li></ul>
+    </details>
+  </section>
+
+  <section class="panel" aria-labelledby="routes-heading">
+    <h2 id="routes-heading">Per-route scale</h2>
+    <div id="route-loss-warning" class="warning-banner" hidden></div>
   </section>
 
 </main>
@@ -677,6 +686,62 @@
     },
   ];
 
+  // __PURE:previewDetailsComplete:START
+  function previewDetailsComplete(response) {
+    if (!response || typeof response !== 'object') return false;
+    const changes = response.changes;
+    if (!changes || typeof changes !== 'object') return false;
+    for (const key of ['added', 'removed', 'moved', 'metadataChanged']) {
+      if (!Array.isArray(changes[key])) return false;
+    }
+    for (const key of ['preservedUnresolved', 'skippedUnresolved', 'unsupportedSkipped', 'fallbackResolved', 'endpointBaseDrift']) {
+      if (!Array.isArray(response[key])) return false;
+    }
+    if (!response.sources || typeof response.sources !== 'object') return false;
+    return true;
+  }
+  // __PURE:previewDetailsComplete:END
+  // __PURE:routeLossWarnings:START
+  function routeLossWarnings(perRoute) {
+    const out = [];
+    const routes = perRoute && typeof perRoute === 'object' ? Object.keys(perRoute) : [];
+    for (const route of routes) {
+      const entry = perRoute[route] || {};
+      const current = Number(entry.current);
+      const desired = Number(entry.desired);
+      if (!(current > 0)) continue;
+      if (!Number.isFinite(desired)) continue;
+      if ((current - desired) / current > 1 / 2) out.push({ route: route, current: current, desired: desired });
+    }
+    return out;
+  }
+  // __PURE:routeLossWarnings:END
+  function renderRouteCounts(routeCounts) {
+    const listEl = $('list-routes');
+    const warnEl = $('route-loss-warning');
+    const reported = routeCounts && typeof routeCounts === 'object' ? routeCounts : null;
+    if (listEl) {
+      clearNode(listEl);
+      if (!reported) {
+        textItem(listEl, 'not reported by server', 'empty');
+      } else {
+        for (const route of Object.keys(reported)) {
+          const entry = reported[route] || {};
+          textItem(listEl, route + ': current ' + entry.current + ' -> desired ' + entry.desired);
+        }
+      }
+    }
+    if (warnEl) {
+      const warnings = routeLossWarnings(reported);
+      if (warnings.length === 0) {
+        warnEl.hidden = true;
+        warnEl.textContent = '';
+      } else {
+        warnEl.hidden = false;
+        warnEl.textContent = warnings.map((w) => 'Warning: ' + w.route + ' would lose more than half of its entries (current ' + w.current + ' -> desired ' + w.desired + ').').join(' ');
+      }
+    }
+  }
   function renderPreview(preview) {
     for (const group of DETAIL_GROUPS) {
       const items = group.pick(preview);
@@ -699,12 +764,17 @@
     }
     if (preview && preview.target) renderTarget(preview.target);
     renderSources(preview && preview.sources);
+    renderRouteCounts(preview && preview.routeCounts);
     renderProfilePreview(preview);
   }
 
   function clearPreview() {
     previewId = null;
     lastPreview = null;
+    const routesEl = $('list-routes');
+    if (routesEl) { clearNode(routesEl); textItem(routesEl, 'no preview yet', 'empty'); }
+    const warnEl = $('route-loss-warning');
+    if (warnEl) { warnEl.hidden = true; warnEl.textContent = ''; }
     for (const group of DETAIL_GROUPS) {
       $(group.countId).textContent = '\u2014';
       const listEl = $(group.listId);
@@ -918,8 +988,14 @@
       renderPreview(data);
       const serverState = data && typeof data.state === 'string' ? data.state : '';
       if (serverState === 'READY') {
-        setState('READY');
-        setNotice('Preview is READY. Review the details, then Apply if intended.', 'info');
+        if (!previewDetailsComplete(data)) {
+          previewId = null;
+          setState('ERROR');
+          setNotice('Preview details not reported by server', 'error');
+        } else {
+          setState('READY');
+          setNotice('Preview is READY. Review the details, then Apply if intended.', 'info');
+        }
       } else if (serverState === 'NO_CHANGE') {
         setState('NO_CHANGE');
         setNotice('No managed changes are required.', 'ok');

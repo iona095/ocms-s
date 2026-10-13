@@ -214,6 +214,20 @@ export function buildProfileAwarePlan(input) {
   let changes = null;
   try { changes = diffDesired(plan.desired, plan.priors); }
   catch (e) { return refusal('VERIFY_FAILED', 'Diff failed.', String((e && e.message) || e)); }
+  // Contract v1.4.7-rc2 Amendment B B2: observed per-route stored counts for
+  // response and CLI text. Counted from plan.priors records (stored managed
+  // lists), never derived from desired plus changes. Additive passthrough.
+  let currentRouteCounts = null;
+  try {
+    currentRouteCounts = {};
+    for (const route of MANAGED_ROUTE_KEYS) currentRouteCounts[route] = 0;
+    for (const prior of plan.priors.values()) {
+      const copies = prior && Array.isArray(prior.records) ? prior.records : [];
+      for (const entry of copies) {
+        if (entry && typeof entry.route === 'string' && Object.hasOwn(currentRouteCounts, entry.route)) currentRouteCounts[entry.route] += 1;
+      }
+    }
+  } catch (e) { return refusal('VERIFY_FAILED', 'Stored count failed.', String((e && e.message) || e)); }
   // Object-level semantics check via buildNewConfig (verbatim reuse): apply to synthetic settings shape and assert round-trip.
   try {
     const candidateObj = buildNewConfig(current, plan.desired);
@@ -238,11 +252,11 @@ export function buildProfileAwarePlan(input) {
   } catch { try { combinedWarnings = clone(render.warnings || []); } catch { combinedWarnings = []; } }
   if (render.status === 'NO_CHANGE') {
     try {
-      return { ok: true, status: 'NO_CHANGE', desired: clone(desired), footprint: clone(render.footprint), changes: clone(changes), dispositions: clone(dispositions), patchDigest: actualDigest, sourceSnapshotDigest, generatedAt, target: clone(targetSnapshot), warnings: clone(combinedWarnings), verification: clone(render.verification || {}), readerStatus, effectiveDigest: effectiveDigestSnap };
+      return { ok: true, status: 'NO_CHANGE', desired: clone(desired), footprint: clone(render.footprint), changes: clone(changes), dispositions: clone(dispositions), currentRouteCounts: clone(currentRouteCounts), patchDigest: actualDigest, sourceSnapshotDigest, generatedAt, target: clone(targetSnapshot), warnings: clone(combinedWarnings), verification: clone(render.verification || {}), readerStatus, effectiveDigest: effectiveDigestSnap };
     } catch (e) { return refusal('VERIFY_FAILED', 'Result assembly failed.', String((e && e.message) || e)); }
   }
   try {
-    return { ok: true, status: 'READY', desired: clone(desired), footprint: clone(render.footprint), changes: clone(changes), dispositions: clone(dispositions), patchDigest: actualDigest, sourceSnapshotDigest, generatedAt, target: clone(targetSnapshot), warnings: clone(combinedWarnings), candidateBytes: Buffer.from(render.candidateBytes), candidateText: render.candidateText, candidateDigest: render.candidateDigest, originalSpans: clone(render.originalSpans || []), candidateSpans: clone(render.candidateSpans || []), verification: clone(render.verification || {}), readerStatus, effectiveDigest: effectiveDigestSnap };
+    return { ok: true, status: 'READY', desired: clone(desired), footprint: clone(render.footprint), changes: clone(changes), dispositions: clone(dispositions), currentRouteCounts: clone(currentRouteCounts), patchDigest: actualDigest, sourceSnapshotDigest, generatedAt, target: clone(targetSnapshot), warnings: clone(combinedWarnings), candidateBytes: Buffer.from(render.candidateBytes), candidateText: render.candidateText, candidateDigest: render.candidateDigest, originalSpans: clone(render.originalSpans || []), candidateSpans: clone(render.candidateSpans || []), verification: clone(render.verification || {}), readerStatus, effectiveDigest: effectiveDigestSnap };
   } catch (e) { return refusal('VERIFY_FAILED', 'Result assembly failed.', String((e && e.message) || e)); }
 }
 

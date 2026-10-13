@@ -10,7 +10,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
-import { buildPlan, commitPlan, fetchSources, defaultSettingsPath, classifySettingsPath, resolveLegacyBinding, legacyBindingsEqual } from './sync.mjs';
+import { buildPlan, commitPlan, fetchSources, endpointBaseDrift, defaultSettingsPath, classifySettingsPath, resolveLegacyBinding, legacyBindingsEqual } from './sync.mjs';
 import { isDeepStrictEqual } from 'node:util';
 import { buildProfilePreview } from './profile/preview-session.mjs';
 import { ProfileAwareCommit } from './profile/commit.mjs';
@@ -407,11 +407,41 @@ export async function startServer(options = {}) {
     return { ok: true };
   }
 
-  function profilePreviewPayload(preview) {
+  // Contract v1.4.7-rc2 Amendment B B2: per-route desired counts plus per-route
+  // current counts read from the stored managed lists (plan.currentRouteCounts),
+  // never derived. The derivation is removed.
+  function profileRouteCounts(plan) {
+    const desired = (plan && plan.desired) || {};
+    const stored = (plan && plan.currentRouteCounts) || {};
+    const out = {};
+    for (const route of ['opencode-go', 'opencode-go-messages', 'opencode-go-responses', 'opencode-completions', 'opencode-messages', 'opencode']) {
+      const want = Array.isArray(desired[route]) ? desired[route].length : 0;
+      const got = Number(stored[route]);
+      out[route] = { current: Number.isFinite(got) ? got : 0, desired: want };
+    }
+    return out;
+  }
+
+  function profilePreviewPayload(preview, extra) {
+    const plan = (preview && preview.plan) || {};
+    const hold = extra || {};
+    const rows = Array.isArray(plan.dispositions) ? plan.dispositions : [];
+    const preserved = sortByGatewayId(rows.filter((e) => e && e.disposition === 'PRESERVED_UNRESOLVED').map((e) => ({ gateway: e.gateway, id: e.id, reason: e.reason, route: e.route })));
+    const skipped = sortByGatewayId(rows.filter((e) => e && e.disposition === 'SKIPPED_UNRESOLVED').map((e) => ({ gateway: e.gateway, id: e.id, reason: e.reason })));
+    const unsupported = sortByGatewayId(rows.filter((e) => e && e.disposition === 'SKIPPED_UNSUPPORTED_PROTOCOL').map((e) => ({ gateway: e.gateway, id: e.id, reason: e.reason, endpoint: e.endpoint })));
+    const fallback = sortByGatewayId(rows.filter((e) => e && e.provenance === 'FREE_COUNTERPART_FALLBACK').map((e) => ({ gateway: e.gateway, id: e.id, counterpart: e.counterpart, route: e.route, provenance: e.provenance })));
     return {
       ok: true,
       state: preview.status,
       profile: true,
+      changes: translateChanges(plan.changes),
+      preservedUnresolved: preserved,
+      skippedUnresolved: skipped,
+      unsupportedSkipped: unsupported,
+      fallbackResolved: fallback,
+      endpointBaseDrift: Array.isArray(hold.drift) ? hold.drift.map((e) => ({ ...e })) : [],
+      sources: hold.sourcesSummary !== undefined ? hold.sourcesSummary : { goRoster: { ok: false, count: 0 }, zenRoster: { ok: false, count: 0 }, catalog: { ok: false }, goDocs: { ok: false }, zenDocs: { ok: false } },
+      routeCounts: profileRouteCounts(plan),
       target: {
         profileName: preview.target.profileName,
         profileDirReal: preview.target.profileDirReal,
@@ -527,6 +557,19 @@ export async function startServer(options = {}) {
         return;
       }
       const preview = built.preview;
+      const profileSourcesSummary = {
+        goRoster: { ok: true, count: Array.isArray(sources.rosters.go) ? sources.rosters.go.length : 0 },
+        zenRoster: { ok: true, count: Array.isArray(sources.rosters.zen) ? sources.rosters.zen.length : 0 },
+        catalog: { ok: true },
+        goDocs: { ok: true },
+        zenDocs: { ok: true },
+      };
+      let profileDrift = [];
+      try {
+        profileDrift = endpointBaseDrift({ rosters: sources.rosters, docs: sources.docs });
+      } catch {
+        profileDrift = [];
+      }
       activePreview = {
         kind: 'profile',
         previewId: preview.previewId,
@@ -536,8 +579,10 @@ export async function startServer(options = {}) {
         generatedAt: preview.generatedAt,
         preview,
         plan: preview.plan,
+        sourcesSummary: profileSourcesSummary,
+        endpointBaseDrift: profileDrift,
       };
-      sendJson(res, 200, profilePreviewPayload(preview));
+      sendJson(res, 200, profilePreviewPayload(preview, { sourcesSummary: profileSourcesSummary, drift: profileDrift }));
       return;
     } finally {
       previewBusy = false;

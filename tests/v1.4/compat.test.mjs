@@ -94,17 +94,17 @@ test('package peers target DSH 0.2.1-alpha.2 exactly (old runtime dropped)', () 
   for (const [k, v] of Object.entries(pkg.peerDependencies)) {
     assert.doesNotMatch(String(v), /[\^~*]|>=|<=|x/, 'peer ' + k + ' must be exact (got ' + v + ')');
   }
-  assert.equal(pkg.version, '1.4.7-rc1', 'release metadata per contract v1.4.7-rc1 \u00a78');
+  assert.equal(pkg.version, '1.4.7-rc2', 'release metadata per contract v1.4.7-rc2 \u00a78');
   assert.equal(pkg.engines?.dsh, '0.2.1-alpha.2', 'engines.dsh declares the exact supported DSH target');
 });
 
-test('lockfile root peers mirror package.json and root version is 1.4.7-rc1', () => {
+test('lockfile root peers mirror package.json and root version is 1.4.7-rc2', () => {
   const lock = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package-lock.json'), 'utf8'));
   assert.equal(lock.name, 'ocms-s', 'lock root name');
-  assert.equal(lock.version, '1.4.7-rc1', 'lock root version must equal package version 1.4.7-rc1');
+  assert.equal(lock.version, '1.4.7-rc2', 'lock root version must equal package version 1.4.7-rc2');
   const rootPkg = lock.packages?.[''];
   assert.ok(rootPkg, 'lockfileVersion 3 root package entry must exist');
-  assert.equal(rootPkg.version, '1.4.7-rc1', 'lock root package version must equal package version 1.4.7-rc1');
+  assert.equal(rootPkg.version, '1.4.7-rc2', 'lock root package version must equal package version 1.4.7-rc2');
   assert.deepEqual(rootPkg.peerDependencies, { ...DSH_TARGET_PEERS }, 'lock root peers must mirror package.json peers');
 });
 
@@ -201,9 +201,24 @@ test('v1.4.6-rc2 identity: sync.mjs pinned to the rc2 bytes', { skip: 'supersede
   assert.equal(sha, RC2_SYNC_SHA, 'sync.mjs drift beyond the v1.4.6-rc2 implementation is forbidden');
 });
 
-test('v1.4.7-rc1 identity: sync.mjs pinned to the rc1 bytes', () => {
+test('v1.4.7-rc1 identity: sync.mjs pinned to the rc1 bytes', { skip: 'superseded by contract v1.4.7-rc2 Amendment A A1 (see rc2 pin below)' }, () => {
   const sha = sha256Hex(fs.readFileSync(path.join(REPO_ROOT, 'sync.mjs')));
   assert.equal(sha, RC1GATE_SYNC_SHA, 'sync.mjs drift beyond the v1.4.7-rc1 implementation is forbidden');
+});
+
+test('v1.4.7-rc2 identity: sync.mjs pinned to the rc2 bytes', { skip: 'superseded by contract v1.4.7-rc2 Amendment B B4 (see B pin below)' }, () => {
+  const sha = sha256Hex(fs.readFileSync(path.join(REPO_ROOT, 'sync.mjs')));
+  assert.equal(sha, '200b2b6d6952d96d2d2b19c474fa9ab57f74c100afd41e85f19c2ee0aa932284', 'sync.mjs drift beyond the v1.4.7-rc2 implementation is forbidden');
+});
+
+test('v1.4.7-rc2 Amendment B identity: sync.mjs pinned to the B bytes', () => {
+  const sha = sha256Hex(fs.readFileSync(path.join(REPO_ROOT, 'sync.mjs')));
+  assert.equal(sha, 'b686f64b47007d3f0046f70520e594afc08d217bc87d36dfd9bf6bc357fb4026', 'sync.mjs drift beyond the v1.4.7-rc2 Amendment B implementation is forbidden');
+});
+
+test('v1.4.7-rc2 Amendment B identity: plan-builder pinned to the B bytes', () => {
+  const sha = sha256Hex(fs.readFileSync(path.join(REPO_ROOT, 'profile', 'plan-builder.mjs')));
+  assert.equal(sha, '0bd80eca74a5e967cfd6e8fd1430ff9eef6c723b7ed380834f88685b83c53198', 'plan-builder drift beyond the v1.4.7-rc2 Amendment B implementation is forbidden');
 });
 
 test('v1.4.7-rc1 Amendment A identity: surgical-render pinned to the rc1 bytes', () => {
@@ -211,9 +226,14 @@ test('v1.4.7-rc1 Amendment A identity: surgical-render pinned to the rc1 bytes',
   assert.equal(sha, RC1GATE_RENDER_SHA, 'surgical-render drift beyond the v1.4.7-rc1 implementation is forbidden');
 });
 
-test('v1.4.6-rc2 identity: ui/index.html pinned to the rc2 bytes', () => {
+test('v1.4.6-rc2 identity: ui/index.html pinned to the rc2 bytes', { skip: 'superseded by contract v1.4.7-rc2 U5 (see rc2 pin below)' }, () => {
   const sha = sha256Hex(fs.readFileSync(path.join(REPO_ROOT, 'ui', 'index.html'), 'utf8'));
   assert.equal(sha, RC2_UI_HTML_SHA, 'ui/index.html drift beyond the v1.4.6-rc2 implementation is forbidden');
+});
+
+test('v1.4.7-rc2 identity: ui/index.html pinned to the rc2 bytes', () => {
+  const sha = sha256Hex(fs.readFileSync(path.join(REPO_ROOT, 'ui', 'index.html'), 'utf8'));
+  assert.equal(sha, '1836648bcf546fc09393481649899262a22bc0d13da4ddcd8b15541e81d46807', 'ui/index.html drift beyond the v1.4.7-rc2 implementation is forbidden');
 });
 
 test('built client bundle carries the __ModuleLoader__ convention and no second React (§119/§121)', { skip: !fs.existsSync(CLIENT_BUNDLE_PATH) ? 'capability missing: dsh/client.js not built yet' : false }, () => {
@@ -224,7 +244,7 @@ test('built client bundle carries the __ModuleLoader__ convention and no second 
   assert.ok(!/react-development|react-dom[^/]*\.min\.js/.test(text), 'no vendored react runtime copy');
 });
 
-test('root package version is 1.4.7-rc1 at release candidate', () => {
+test('root package version is 1.4.7-rc2 at release candidate', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8'));
-  assert.equal(pkg.version, '1.4.7-rc1');
+  assert.equal(pkg.version, '1.4.7-rc2');
 });

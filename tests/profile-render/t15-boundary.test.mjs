@@ -64,12 +64,12 @@ describe('S3 T18 — planning and frozen-source regressions', () => {
   });
   it('T18 sync.mjs CURRENT reviewed bytes pinned (planning via suites)', async () => {
     // CURRENT authorized surface (rc4 P3 row 4 re-anchor of the S5-R4 pin,
-    // re-pinned by v1.4.7-rc1 G5 for the G1/G2 product change with named reason):
-    // sync.mjs carries the narrow canonical-target binding. Value equals the
-    // v1.4.7-rc1 reviewed bytes, so the
+    // re-pinned by v1.4.7-rc1 G5, v1.4.7-rc2 Amendment A A1 and Amendment B B4,
+    // all with named reasons): sync.mjs carries the narrow canonical-target
+    // binding. Value equals the Amendment B reviewed bytes, so the
     // pin keeps guarding the planning surface. Planning semantics stay proven
     // through the original planning suites.
-    assert.equal(sha('sync.mjs'), '99e4f9dc78bbaf31a26692fd045f319509d9565bfd20f7419cbe5681a4b34b75', 'sync.mjs drift beyond the CURRENT reviewed bytes is forbidden');
+    assert.equal(sha('sync.mjs'), 'b686f64b47007d3f0046f70520e594afc08d217bc87d36dfd9bf6bc357fb4026', 'sync.mjs drift beyond the CURRENT reviewed bytes is forbidden');
     const { execFileSync } = await import('node:child_process');
     const out = execFileSync('git', ['diff', '--name-only'], { encoding: 'utf8' });
     const modified = out.split('\n').map((l) => l.trim()).filter(Boolean);

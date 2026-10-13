@@ -54,6 +54,11 @@ function profilePreview(id) {
     ok: true, profile: true, state: "READY", previewId: id,
     target: { profileName: "web", profileDirReal: "C:/h/profiles/web", patchPathReal: "C:/h/profiles/web/cordis.patch.yml", pluginEntryName: "llm-pi-ai", classification: "SCRATCH" },
     attestation: null, attestationText: "UNATTESTED",
+    changes: { added: [], removed: [], moved: [], metadataChanged: [] },
+    preservedUnresolved: [], skippedUnresolved: [], unsupportedSkipped: [], fallbackResolved: [],
+    endpointBaseDrift: [],
+    sources: { goRoster: { ok: true, count: 0 }, zenRoster: { ok: true, count: 0 }, catalog: { ok: true }, goDocs: { ok: true }, zenDocs: { ok: true } },
+    routeCounts: {},
   };
 }
 describe("R2 B5 browser invalidation", () => {

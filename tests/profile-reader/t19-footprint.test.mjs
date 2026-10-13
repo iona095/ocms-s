@@ -45,14 +45,16 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
     const modified = new Set([...gitLines(['diff', '--name-only']), ...gitLines(['diff', '--cached', '--name-only'])]);
     // CURRENT authorized surfaces (rc4 P3 row 2 re-anchor of the S5-R4 pins,
     // re-pinned by v1.4.7-rc1 G5 for the G1/G2 product change with named reason):
-    // exact pins to the current reviewed bytes (sync value equals the v1.4.7-rc1
-    // reviewed bytes; ui values unchanged). All other
+    // exact pins to the current reviewed bytes (sync value equals the Amendment B
+    // reviewed bytes with named reason: per-copy removed rows; ui values equal the
+    // v1.4.7-rc2 reviewed bytes with named reason: reviewable content plus
+    // Amendment B stored-list counts without derivation). All other
     // forbidden files stay binding; no wildcards, no directory exemptions
     // beyond the §10-authorized version-bump files below.
     const CURRENT_PINS = new Map([
-      ['sync.mjs', '99e4f9dc78bbaf31a26692fd045f319509d9565bfd20f7419cbe5681a4b34b75'],
-      ['ui.mjs', '90edc2fcb30312dc9e4e56fdce4dd83e67c895ed0f6f6613fedd54fb94754384'],
-      ['ui/index.html', '5979979d8d13d556a5dada32814fe6fb22e39810a27b39fdadb2ff0235ca3321'],
+      ['sync.mjs', 'b686f64b47007d3f0046f70520e594afc08d217bc87d36dfd9bf6bc357fb4026'],
+      ['ui.mjs', '3d0c656e48f628d0fc1624d7309f5369850693575f5c0fded949fe95d970d93e'],
+      ['ui/index.html', '1836648bcf546fc09393481649899262a22bc0d13da4ddcd8b15541e81d46807'],
     ]);
     for (const [rel, hex] of CURRENT_PINS) {
       assert.equal(shaFile(rel), hex, `CURRENT surface drift: ${rel}`);
