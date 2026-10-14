@@ -4,15 +4,15 @@ A small, manual Node.js utility that synchronizes **OpenCode Go** and **OpenCode
 
 OCMS-S is deliberately narrow. It is **not** a daemon, scheduler, account checker, quota monitor, or model-probing system. v1.4 adds one optional DSH integration: a `Models` conversation-view tab that owns OCMS server lifecycle (status/Start/Stop) and iframe hosting only. All synchronization authority stays in the released engine and Web UX.
 
-Current project version: **v1.4.7-rc4** (release candidate)
+Current project version: **v1.4.7-rc5** (release candidate)
 
 Current authoritative specification:
 
-`OpenCode Model Sync — Simple Script Contract v1.4.7-rc4.md`
+`OpenCode Model Sync — Simple Script Contract v1.4.7-rc5.md`
 
-v1.4.7-rc4 lays out the Local Web UX work-first and remembers the last previewed profile (best-effort) over v1.4.7-rc3; earlier contracts remain binding wherever v1.4.7-rc4 is silent. Profile-aware synchronization (S5) is specified in `SPEC_DSH_PROFILE_AWARE_SYNC.md`.
+v1.4.7-rc5 converts withdrawn-docs multi-copy blocks into reviewable DOCS_WITHDRAWN removals over v1.4.7-rc4; earlier contracts remain binding wherever v1.4.7-rc5 is silent. Profile-aware synchronization (S5) is specified in `SPEC_DSH_PROFILE_AWARE_SYNC.md`.
 
-Status: v1.4.7-rc4 is a release candidate (work-first layout with fail-closed Apply gating unchanged), built over tag `v1.4.7-rc3` at commit `78c14cb`. CI is green on that commit on all four jobs (run 38469173666 for the `main` push, run 38469459522 for the tag push). No gate is open; the next steps are listed in the v1.4.7 backlog below.
+Status: v1.4.7-rc5 is a release candidate (withdrawn-docs removals with fail-closed refusals unchanged), built over tag `v1.4.7-rc4` at commit `edd43c6`. CI is green on that commit on all four jobs (run 38491094235 for the `main` push, run 38491756333 for the tag push). No gate is open; the next steps are listed in the v1.4.7 backlog below.
 
 ---
 
@@ -336,7 +336,7 @@ Verified on Windows with Node 22.23.3 and Node 24.15.0: `npm test` 363 tests (36
 npm test
 ```
 
-`npm test` runs the complete release suite with explicit cross-platform test paths (no wildcard expansion, so Windows/Node 20 behaves identically): 421 tests total — 70 legacy/v1.2 regression tests, 84 v1.3 engine/server/UI contract tests, 103 v1.4 DSH-integration tests (embed-origin, client view, lifecycle, ownership retention, compat including the current identity pins plus the Amendment B sync successor and plan-builder pins, disposal-race, host/client compatibility, HMR sequencing), 14 v1.4.1 unsupported-protocol tests, 14 v1.4.6-rc1 gateway-base tests, 8 v1.4.7-rc1 gateway-go tests, 6 v1.4.6-rc2 blocked-reasons tests, 1 v1.4.6-rc3 freeze test, 1 v1.4.6-rc4 freeze test, 1 v1.4.6-rc4 amendment freeze test, 1 v1.4.6-rc5 freeze test, 1 v1.4.6-rc5 amendment freeze test, 1 no-machine-paths guard test, 1 v1.4.6 freeze test, 1 v1.4.7-rc1 freeze test, 1 v1.4.7-rc1 amendment freeze test, 1 v1.4.7-rc2 freeze test, 1 v1.4.7-rc2 amendment freeze test, 9 profile Preview reviewable-content and removed-row tests, 1 v1.4.7-rc2 Amendment B freeze test, 1 v1.4.7-rc3 freeze test, 1 v1.4.7-rc3 amendment freeze test, 12 v1.4.7-rc3 visual tests (tokens, no network URLs, contrast, ids, `__PURE` bodies, source status display), and 87 developer-tooling tests (411 pass, 0 fail, 10 authorized pin-skip supersessions from v1.3 through v1.4.7-rc3 (the rc2 `ui/index.html` pin now skips); the Typert-registry admission test additionally skips with "capability missing" where no DSH runtime is installed, so the clean-environment run reports 410 pass and 11 skipped). `tests/support/clean-env-run.mjs` runs the same suite under a scrubbed home with no DSH on PATH and asserts no `.dsh` was created there.
+`npm test` runs the complete release suite with explicit cross-platform test paths (no wildcard expansion, so Windows/Node 20 behaves identically): 459 tests total — 70 legacy/v1.2 regression tests, 84 v1.3 engine/server/UI contract tests, 106 v1.4 DSH-integration tests (embed-origin, client view, lifecycle, ownership retention, compat including the current identity pins plus the Amendment B sync successor and plan-builder pins and the rc4/rc5 successor pins, disposal-race, host/client compatibility, HMR sequencing), 14 v1.4.1 unsupported-protocol tests, 14 v1.4.6-rc1 gateway-base tests, 8 v1.4.7-rc1 gateway-go tests, 6 v1.4.6-rc2 blocked-reasons tests, 1 v1.4.6-rc3 freeze test, 1 v1.4.6-rc4 freeze test, 1 v1.4.6-rc4 amendment freeze test, 1 v1.4.6-rc5 freeze test, 1 v1.4.6-rc5 amendment freeze test, 1 no-machine-paths guard test, 1 v1.4.6 freeze test, 1 v1.4.7-rc1 freeze test, 1 v1.4.7-rc1 amendment freeze test, 1 v1.4.7-rc2 freeze test, 1 v1.4.7-rc2 amendment freeze test, 9 profile Preview reviewable-content and removed-row tests, 1 v1.4.7-rc2 Amendment B freeze test, 1 v1.4.7-rc3 freeze test, 1 v1.4.7-rc3 amendment freeze test, 12 v1.4.7-rc3 visual tests (tokens, no network URLs, contrast, ids, `__PURE` bodies, source status display), 1 v1.4.7-rc4 freeze test, 5 v1.4.7-rc4 layout tests, 7 v1.4.7-rc4 remembered-profile tests, 3 v1.4.7-rc4 Amendment A tests, 5 v1.4.7-rc4 Amendment B tests, 3 v1.4.7-rc4 Amendment C tests, 1 v1.4.7-rc5 freeze test, 9 v1.4.7-rc5 withdrawn-docs tests, 1 v1.4.7-rc5 Amendment A freeze test, and 87 developer-tooling tests (445 pass, 0 fail, 14 authorized skips from v1.3 through v1.4.7-rc5; the Typert-registry admission test additionally skips with "capability missing" where no DSH runtime is installed, so the clean-environment run reports 444 pass and 15 skipped). `tests/support/clean-env-run.mjs` runs the same suite under a scrubbed home with no DSH on PATH and asserts no `.dsh` was created there.
 
 The S5 profile suites (`tests/profile-*/`) run via `npm run test:profile` (every profile file by explicit path, no globs; includes the v1.4.6-rc4 stub/real parity test) and in the `profile suites (real DSH)` CI job on windows-latest Node 22, where the pinned `@deepseek-ai/dsh@0.2.1-alpha.2` is installed into a job-local prefix and verified with `dsh --version` before the run. They are not part of `npm test`, which stays hermetic with no dsh on PATH.
 
@@ -928,9 +928,17 @@ v1.4.7-rc2 Amendment A 22a44036180c86b4ec663b288ec3334afcd918a35ec6952f3cfa1f9ec
 v1.4.7-rc2 Amendment B d91f74aa2c1b34b97cbb7fa1a7a1cc3f3fd1ae417275bb4405519c091a93f9b9   88
 v1.4.7-rc3             c007671724cb82a984f313fd2b199aa43917c84cfd70ab7ec4f17a421cb89d2d  189  78c14cb
 v1.4.7-rc3 Amendment A db6619acb79fb837b8991f5000e8de271bfa65cff42445f676f21f2127480bb8   61
+v1.4.7-rc4             988466ebe3e80588bf2075e6874f4fcb2c6f2f9abf3037c49b48a2fafc0c8a43  181  edd43c6
+v1.4.7-rc4 Amendment A 86f1b174f25e80b0c21f38adff7916a506bf93fbad9644727e259fa20da71dd4   84
+v1.4.7-rc4 Amendment B f322dc956fba3d1c8030826773fe92720020e13c60e875078a01eec66b571060  111
+v1.4.7-rc4 Amendment C 60b1181968b5cfa957a81f2c03e397360e011b46b7b40794dfaa7be41de9c83d   56
+v1.4.7-rc5             66f11fdcbfafd2445642ed1a9652771a699a4d98f1b8930b44fe85381d0245c1  130
+v1.4.7-rc5 Amendment A 3c2e143bfaa0e2cb0f4f90dee33700015efb172e92b86900fda2a9c7b18d3208   46
 ```
 
 v1.4.7-rc3 product bytes: `ui/index.html` `39f0a36151c1ce37a2551b2fd18d1cc293c9a529b2ab407fbf3a461ed569a5cc` (the only product file changed); `sync.mjs`, `ui.mjs` and `profile/*` are byte-identical to v1.4.7-rc2.
+
+v1.4.7-rc5 product bytes: `sync.mjs` `efc81a712988a5ccda7189714731bb8456144a95941a3253d93d7f3fb589520b`, `ui.mjs` `bb136172e3c319e144b770f41c8bc16be6069fcbab0ecc8022888421d3fc9f4e`, `ui/index.html` `4e8491022f5c0f1b4cc5493434a32d56a7f46abd1f752c6905114e129b8fc2c0` (withdrawn-docs removals).
 
 v1.0 and v1.1 are historical artifacts.
 

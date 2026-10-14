@@ -523,6 +523,17 @@ function selectCompat(prior, desiredRoute) {
   return choose(records.filter(({ route }) => route !== desiredRoute));
 }
 
+// True when any gateway docs map holds a row for this model ID (used by the
+// W1 truncation guard: a model still documented anywhere keeps blocking).
+function hasDocsRowAnywhere(docs, id) {
+  if (!docs || typeof docs !== 'object') return false;
+  for (const gateway of ['go', 'zen']) {
+    const docsMap = docs[gateway];
+    if (docsMap && typeof docsMap === 'object' && Object.hasOwn(docsMap, id)) return true;
+  }
+  return false;
+}
+
 // Decide the managed route for one (gateway, id):
 // 1. exact docs row for this model ID (docs win over provider.npm);
 // 2. otherwise the exact model catalog hint catalog[gateway].models[id].provider.npm.
@@ -729,7 +740,7 @@ export function resolveFreeCounterpartRoute({ gateway, id, rosters, catalog, doc
 // when docs move it between routes in the same gateway. All other rebuilt
 // model metadata is replaced by the newly generated metadata; an opaque
 // CATALOG_MISSING preservation keeps its sole existing record unchanged.
-export function planDesired({ rosters, catalog, docs, current }) {
+export function planDesired({ rosters, catalog, docs, current, allSourcesOk = true }) {
   const priors = indexPriors(current);
   const desired = {};
   for (const route of MANAGED_ROUTE_KEYS) desired[route] = [];
@@ -845,6 +856,12 @@ export function planDesired({ rosters, catalog, docs, current }) {
             dispositions.push({ gateway, id, disposition: 'PRESERVED_UNRESOLVED', reason: 'PLACEMENT_UNRESOLVED', route: finalRoute });
           } else if (routes.length === 0) {
             dispositions.push({ gateway, id, disposition: 'SKIPPED_UNRESOLVED', reason: 'PLACEMENT_UNRESOLVED' });
+          } else if (allSourcesOk !== false && !hasDocsRowAnywhere(docs, id)) {
+            const copies = prior && Array.isArray(prior.records) ? prior.records : [];
+            for (const entry of copies) {
+              if (!entry || typeof entry.route !== 'string') continue;
+              dispositions.push({ gateway, id, disposition: 'SKIPPED_UNRESOLVED', reason: 'DOCS_WITHDRAWN', route: entry.route });
+            }
           } else {
             blocking.push({ gateway, id, reason: 'PLACEMENT_AMBIGUOUS: ' + key + ' has multiple existing routes' });
           }
@@ -1032,6 +1049,25 @@ function validateSourceBundle(sources) {
       throw unresolved('SOURCE_INVALID: docs ' + gateway + ' map is missing');
     }
   }
+}
+
+// Attach withdrawn-docs reasons to removed rows from per-copy dispositions.
+// Report-only join: rows without a matching disposition keep their shape.
+function attachWithdrawnReasons(changes, dispositions) {
+  if (!changes || !Array.isArray(changes.removed) || !Array.isArray(dispositions)) return changes;
+  const reasonOf = new Map();
+  for (const entry of dispositions) {
+    if (entry && entry.reason === 'DOCS_WITHDRAWN' && typeof entry.route === 'string') {
+      reasonOf.set(entry.gateway + '/' + entry.id + ' ' + entry.route, entry.reason);
+    }
+  }
+  for (const row of changes.removed) {
+    if (row && row.reason === undefined) {
+      const found = reasonOf.get(row.key + ' ' + row.route);
+      if (found !== undefined) row.reason = found;
+    }
+  }
+  return changes;
 }
 
 // Diff the desired plan against current priors for the section 13 report.
@@ -1637,7 +1673,7 @@ export function buildPlan({ settingsPath, sources }) {
       .filter((entry) => entry.disposition === 'PRESERVED_UNRESOLVED')
       .map(({ gateway, id, reason, route }) => ({ gateway, id, reason, route }));
     const skippedUnresolved = dispositions
-      .filter((entry) => entry.disposition === 'SKIPPED_UNRESOLVED')
+      .filter((entry) => entry.disposition === 'SKIPPED_UNRESOLVED' && entry.reason !== 'DOCS_WITHDRAWN')
       .map(({ gateway, id, reason }) => ({ gateway, id, reason }));
     const unsupportedSkipped = dispositions
       .filter((entry) => entry.disposition === 'SKIPPED_UNSUPPORTED_PROTOCOL')
@@ -1654,7 +1690,7 @@ export function buildPlan({ settingsPath, sources }) {
       throw unresolved('GENERATED_SETTINGS_INVALID: YAML root must be a mapping');
     }
     assertGeneratedManagedArrays(generated, plan.desired);
-    const changes = diffDesired(plan.desired, plan.priors);
+    const changes = attachWithdrawnReasons(diffDesired(plan.desired, plan.priors), dispositions);
     const changed = !managedArraysMatch(current, plan.desired);
     return {
       state: changed ? 'READY' : 'NO_CHANGE',
@@ -1867,7 +1903,7 @@ export function formatReport({ result, added = [], removed = [], moved = [], met
     else for (const item of items.slice().sort()) lines.push('  ' + render(item));
   };
   show('added', added.map((x) => x.key + ' -> ' + x.route), (x) => x);
-  show('removed', removed.map((x) => x.key + ' was ' + x.route), (x) => x);
+  show('removed', removed.map((x) => x.key + ' was ' + x.route + (typeof x.reason === 'string' ? ' ' + x.reason : '')), (x) => x);
   show(
     'moved',
     moved.map((x) => x.key + ': ' + x.from + ' -> ' + x.to),

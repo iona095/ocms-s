@@ -1223,20 +1223,24 @@ describe('20. v1.2 model-local unresolved dispositions', () => {
     assert.equal(fs.readFileSync(file, 'utf8').includes('new-stuck'), false);
   });
 
-  it('refuses placement-unresolved models duplicated across routes', () => {
+  it('withdrawn multi-copy models plan per-copy removals instead of blocking (v1.4.7-rc5 W1 supersedes the old refusal)', () => {
     const current = { 'llm-pi-ai': { providers: {
       'opencode-go': { models: [{ id: 'dup', name: 'Dup' }] },
       'opencode-go-messages': { models: [{ id: 'dup', name: 'Dup' }] },
     } } };
     const file = writeTempSettings(current);
-    const before = fs.readFileSync(file);
     const sources = stuckSources({ goIds: ['dup', 'fresh'] });
     sources.catalog.go.models.dup = catRecord({ id: 'dup', name: 'Dup' });
     delete sources.catalog.go.models.stuck;
     const outcome = syncFromSources({ settingsPath: file, sources });
-    assert.equal(outcome.result, 'NOT WRITTEN');
-    assert.match(outcome.unresolved[0].reason, /PLACEMENT_AMBIGUOUS/);
-    assert.deepEqual(fs.readFileSync(file), before);
+    assert.equal(outcome.result, 'UPDATED');
+    assert.deepEqual(outcome.removed, [
+      { key: 'go/dup', route: 'opencode-go', reason: 'DOCS_WITHDRAWN' },
+      { key: 'go/dup', route: 'opencode-go-messages', reason: 'DOCS_WITHDRAWN' },
+    ]);
+    const after = fs.readFileSync(file, 'utf8');
+    assert.ok(!after.includes('dup'), 'withdrawn copies leave the file');
+    assert.ok(after.includes('fresh'), 'placed models still land');
   });
 
   it('preserves a catalog-missing record byte-identically without compat migration', () => {

@@ -47,17 +47,17 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
     // re-pinned by v1.4.7-rc1 G5 for the G1/G2 product change with named reason):
     // exact pins to the current reviewed bytes (sync value equals the Amendment B
     // reviewed bytes with named reason: per-copy removed rows; ui values equal the
-    // v1.4.7-rc4 reviewed bytes with named reason: work-first layout plus
+    // v1.4.7-rc5 reviewed bytes with named reason: withdrawn-docs removals (W1 rescue plus DOCS_WITHDRAWN plumbing). Prior rc4 reasons (work-first layout plus
     // remembered profile (P1 grammar equals the server validator) plus density
     // Amendment B (one-row header, full-width grid) plus Amendment C counters
-    // and lede (base 4-across, lime lede).
+    // and lede (base 4-across, lime lede)).
     // SPEC text unchanged. All other
     // forbidden files stay binding; no wildcards, no directory exemptions
     // beyond the §10-authorized version-bump files below.
     const CURRENT_PINS = new Map([
-      ['sync.mjs', 'b686f64b47007d3f0046f70520e594afc08d217bc87d36dfd9bf6bc357fb4026'],
-      ['ui.mjs', '3d0c656e48f628d0fc1624d7309f5369850693575f5c0fded949fe95d970d93e'],
-      ['ui/index.html', 'ae3c0aff69f5a90367bdc23f44ca93bf8fcbf0be6fe24d24f441f745a43ffab9'],
+      ['sync.mjs', 'efc81a712988a5ccda7189714731bb8456144a95941a3253d93d7f3fb589520b'],
+      ['ui.mjs', 'bb136172e3c319e144b770f41c8bc16be6069fcbab0ecc8022888421d3fc9f4e'],
+      ['ui/index.html', '4e8491022f5c0f1b4cc5493434a32d56a7f46abd1f752c6905114e129b8fc2c0'],
     ]);
     for (const [rel, hex] of CURRENT_PINS) {
       assert.equal(shaFile(rel), hex, `CURRENT surface drift: ${rel}`);

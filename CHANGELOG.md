@@ -4,6 +4,19 @@ All notable project-level changes are summarized here.
 
 This file is intentionally concise. The authoritative behavioral specification remains the current contract.
 
+## v1.4.7-rc5
+
+**Release candidate: withdrawn-docs removals (contract v1.4.7-rc5).**
+
+### Changed
+
+- When every source is OK and a roster model has no docs row on any gateway and no catalog npm hint, stored copies in more than one route no longer block the sync: each copy is listed under Removed with reason DOCS_WITHDRAWN (gateway/id/route), the Preview is READY for review, and the mass-removal warning still applies. One-route copies stay preserved, missing ones stay skipped, and not-OK sources, malformed docs identities and compat clashes still block. The web Removed rows and CLI lines render the reason; legacy and profile modes share the rule.
+- Version 1.4.7-rc4 → 1.4.7-rc5 (metadata only, plus the W1 rule with re-pinned bytes).
+
+### Unchanged (explicit)
+
+- No other planning, render, commit, attestation, Apply-flow or client-bundle-logic change; desired bytes for all other fixtures are identical. `profile/*`, `dsh/host.mjs`, `dsh/lifecycle.mjs` and `cordis.patch.yml` are byte-identical.
+
 ## v1.4.7-rc4
 
 **Release candidate: work-first Local Web UX layout plus remembered profile (contract v1.4.7-rc4).**

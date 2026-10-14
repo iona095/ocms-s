@@ -84,15 +84,23 @@ function splitKey(key) {
   return { gateway: s.slice(0, i), id: s.slice(i + 1) };
 }
 
-function translateChanges(changes) {
+export function translateChanges(changes, dispositions) {
   const src = changes || {};
+  const withdrawnReason = (gateway, id, route) => {
+    if (!Array.isArray(dispositions)) return undefined;
+    const found = dispositions.find((d) => d && d.reason === 'DOCS_WITHDRAWN' && d.gateway === gateway && d.id === id && d.route === route);
+    return found && typeof found.reason === 'string' ? found.reason : undefined;
+  };
   const added = Array.isArray(src.added) ? src.added.map((e) => {
     const { gateway, id } = splitKey(e.key);
     return { gateway, id, route: e.route };
   }) : [];
   const removed = Array.isArray(src.removed) ? src.removed.map((e) => {
     const { gateway, id } = splitKey(e.key);
-    return { gateway, id, route: e.route };
+    const out = { gateway, id, route: e.route };
+    const reason = typeof e.reason === 'string' ? e.reason : withdrawnReason(gateway, id, e.route);
+    if (reason !== undefined) out.reason = reason;
+    return out;
   }) : [];
   const moved = Array.isArray(src.moved) ? src.moved.map((e) => {
     const { gateway, id } = splitKey(e.key);
@@ -427,14 +435,14 @@ export async function startServer(options = {}) {
     const hold = extra || {};
     const rows = Array.isArray(plan.dispositions) ? plan.dispositions : [];
     const preserved = sortByGatewayId(rows.filter((e) => e && e.disposition === 'PRESERVED_UNRESOLVED').map((e) => ({ gateway: e.gateway, id: e.id, reason: e.reason, route: e.route })));
-    const skipped = sortByGatewayId(rows.filter((e) => e && e.disposition === 'SKIPPED_UNRESOLVED').map((e) => ({ gateway: e.gateway, id: e.id, reason: e.reason })));
+    const skipped = sortByGatewayId(rows.filter((e) => e && e.disposition === 'SKIPPED_UNRESOLVED' && e.reason !== 'DOCS_WITHDRAWN').map((e) => ({ gateway: e.gateway, id: e.id, reason: e.reason })));
     const unsupported = sortByGatewayId(rows.filter((e) => e && e.disposition === 'SKIPPED_UNSUPPORTED_PROTOCOL').map((e) => ({ gateway: e.gateway, id: e.id, reason: e.reason, endpoint: e.endpoint })));
     const fallback = sortByGatewayId(rows.filter((e) => e && e.provenance === 'FREE_COUNTERPART_FALLBACK').map((e) => ({ gateway: e.gateway, id: e.id, counterpart: e.counterpart, route: e.route, provenance: e.provenance })));
     return {
       ok: true,
       state: preview.status,
       profile: true,
-      changes: translateChanges(plan.changes),
+      changes: translateChanges(plan.changes, plan.dispositions),
       preservedUnresolved: preserved,
       skippedUnresolved: skipped,
       unsupportedSkipped: unsupported,
@@ -463,7 +471,7 @@ export async function startServer(options = {}) {
 
   function previewResponsePayload(retained) {
     const plan = retained.plan;
-    const changes = translateChanges(plan.changes);
+    const changes = translateChanges(plan.changes, plan.dispositions);
     const preserved = sortByGatewayId(Array.isArray(plan.preservedUnresolved) ? plan.preservedUnresolved.map((e) => ({ ...e })) : []);
     const skipped = sortByGatewayId(Array.isArray(plan.skippedUnresolved) ? plan.skippedUnresolved.map((e) => ({ ...e })) : []);
     const unsupported = sortByGatewayId(Array.isArray(plan.unsupportedSkipped) ? plan.unsupportedSkipped.map((e) => ({ ...e })) : []);

@@ -774,6 +774,7 @@
       row: (item) => itemText([
         idOf(item),
         fieldOf(item, ['route']) !== undefined ? '(was ' + fieldOf(item, ['route']) + ')' : '',
+        fieldOf(item, ['reason']) !== undefined ? fieldOf(item, ['reason']) : '',
       ]),
     },
     {
