@@ -26,7 +26,7 @@
   body {
     margin: 0;
     font-family: "Plus Jakarta Sans", "Segoe UI", system-ui, sans-serif;
-    font-size: 16px;
+    font-size: 14px;
     line-height: 1.55;
     background: var(--base);
     color: var(--fg);
@@ -39,8 +39,8 @@
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 24px;
-    padding: 36px 40px 28px;
+    gap: 8px 16px;
+    padding: 10px 16px;
     border-bottom: 1px solid var(--border);
     background: var(--panel);
     flex-wrap: wrap;
@@ -59,19 +59,18 @@
   .pixel-logo .px-c { background: var(--violet); }
   .pixel-logo .px-d { background: var(--pink); }
   .app-name { font-size: 15px; font-weight: 800; letter-spacing: 0.1em; }
-  .hero { flex: 1 1 420px; min-width: 0; }
-  .display { margin: 0; font-size: 44px; line-height: 1.1; letter-spacing: -0.01em; }
+  .brand-row { display: flex; align-items: center; gap: 18px; flex: 1 1 auto; min-width: 0; flex-wrap: wrap; order: 1; }
+  .display { margin: 0; font-size: 22px; line-height: 1.1; letter-spacing: -0.01em; white-space: nowrap; }
   .display .light { font-weight: 200; }
   .display .heavy { font-weight: 800; }
-  .lede { margin: 8px 0 0; font-size: 16px; color: var(--lime); }
-  .sub { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
-  .constellation { margin-top: 14px; display: block; max-width: 100%; }
+  .lede { margin: 0; font-size: 13px; color: var(--lime); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
+  .constellation { display: block; max-width: 100%; flex: none; }
   .constellation .wires line { stroke: var(--border); stroke-width: 1; }
   .constellation .nodes rect { fill: var(--cyan); }
   .constellation .nodes rect:nth-child(2) { fill: var(--lime); }
   .constellation .nodes rect:nth-child(3) { fill: var(--violet); }
   .constellation .nodes rect:nth-child(5) { fill: var(--pink); }
-  .header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex: none; }
+  .header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex: none; order: 2; }
   .version { color: var(--muted); font-size: 13px; }
 
   .state-badge {
@@ -95,19 +94,39 @@
   main {
     flex: 1;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
-    gap: 16px;
-    padding: 24px 40px 40px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    padding: 16px 16px 64px;
     align-items: start;
     width: 100%;
-    max-width: 1200px;
+    max-width: none;
     margin: 0 auto;
+  }
+  @media (min-width: 1024px) and (max-width: 1399px) {
+    main { grid-template-columns: minmax(0,3fr) minmax(0,2fr); grid-template-rows: auto 1fr; }
+    section[aria-labelledby="profile-heading"] { grid-column: 1; grid-row: 1 / span 2; }
+    section[aria-labelledby="actions-heading"] { grid-column: 2; grid-row: 1; }
+    section[aria-labelledby="sources-heading"] { grid-column: 2; grid-row: 2; }
+    section[aria-labelledby="target-heading"],
+    section[aria-labelledby="preview-heading"],
+    section[aria-labelledby="routes-heading"],
+    section[aria-labelledby="details-heading"] { grid-column: 1 / -1; }
+  }
+  @media (min-width: 1400px) {
+    main { grid-template-columns: minmax(0,1.5fr) minmax(0,1fr) minmax(0,0.9fr); grid-template-rows: auto 1fr; }
+    section[aria-labelledby="profile-heading"] { grid-column: 1; grid-row: 1 / span 2; }
+    section[aria-labelledby="preview-heading"] { grid-column: 2; grid-row: 1; }
+    section[aria-labelledby="routes-heading"] { grid-column: 2; grid-row: 2; }
+    section[aria-labelledby="actions-heading"] { grid-column: 3; grid-row: 1; }
+    section[aria-labelledby="sources-heading"] { grid-column: 3; grid-row: 2; }
+    section[aria-labelledby="target-heading"],
+    section[aria-labelledby="details-heading"] { grid-column: 1 / -1; }
   }
   .panel {
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 6px;
-    padding: 20px 22px;
+    padding: 12px 14px;
     min-width: 0;
   }
   .panel h2 {
@@ -119,6 +138,10 @@
     color: var(--muted);
   }
   .panel.wide { grid-column: 1 / -1; }
+  section[aria-labelledby="target-heading"].settings-single .target-row { display: none; }
+  section[aria-labelledby="target-heading"].settings-single h2,
+  section[aria-labelledby="target-heading"].settings-single .legacy-note { display: inline; font-size: 13px; margin: 0; }
+  section[aria-labelledby="target-heading"].settings-single { padding-top: 14px; padding-bottom: 14px; }
 
   .target-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
   .legacy-note { margin: 10px 0 0; font-size: 13px; color: var(--muted); }
@@ -206,9 +229,15 @@
 
   .counters {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 8px;
     margin: 0;
+  }
+  @media (min-width: 1100px) {
+    .counters { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+  }
+  @media (min-width: 1400px) {
+    .counters { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   }
   .counters .counter {
     background: var(--raised);
@@ -278,6 +307,8 @@
     font-size: 17px;
   }
   .warning-banner[hidden] { display: none; }
+  .warning-banner .loss-item { padding: 2px 0; }
+  .warning-banner .loss-item + .loss-item { border-top: 1px dotted var(--border); }
 
   dialog {
     background: var(--panel);
@@ -313,10 +344,14 @@
   @media (max-width: 1024px) {
     main { padding: 16px; }
     .app-header { padding: 24px 20px; }
-    .display { font-size: 34px; }
+    .display { font-size: 28px; }
   }
+  .sources li > * { min-width: 0; }
   @media (max-width: 720px) {
     main { grid-template-columns: 1fr; padding: 10px; }
+    section[aria-labelledby="profile-heading"],
+    section[aria-labelledby="actions-heading"],
+    section[aria-labelledby="sources-heading"] { grid-column: auto; grid-row: auto; }
     .panel.wide { grid-column: auto; }
     .app-header { padding: 16px 12px; }
     .display { font-size: 28px; }
@@ -329,14 +364,12 @@
 <body data-state="IDLE">
 
 <header class="app-header">
-  <div class="brand">
+  <div class="brand-row">
+    <span class="brand">
     <span class="pixel-logo" aria-hidden="true"><span class="px px-a"></span><span class="px px-b"></span><span class="px px-c"></span><span class="px px-d"></span></span>
     <span class="app-name">OCMS-S</span>
-  </div>
-  <div class="hero">
+    </span>
     <h1 class="display"><span class="light">Model</span><span class="heavy">Sync</span></h1>
-    <p class="lede">Review every change before it lands.</p>
-    <p class="sub">Local Web UX</p>
     <svg class="constellation" aria-hidden="true" width="132" height="40" viewBox="0 0 132 40" focusable="false">
       <g class="wires">
         <line x1="8" y1="28" x2="34" y2="12" />
@@ -354,27 +387,19 @@
         <rect x="114" y="20" width="8" height="8" />
       </g>
     </svg>
+    <span class="lede">Review every change before it lands.</span>
   </div>
   <div class="header-right">
-    <span id="version" class="version"></span>
+    <span id="version" class="version" title="Local Web UX"></span>
     <span id="state-badge" class="state-badge" data-state="IDLE">IDLE</span>
   </div>
 </header>
 
 <main id="main">
 
-  <section class="panel" aria-labelledby="target-heading">
-    <h2 id="target-heading">Settings Target</h2>
-    <div class="target-row">
-      <span id="target-classification" class="badge">UNKNOWN</span>
-      <code id="target-path" class="path">waiting for server information</code>
-    </div>
-    <p id="legacy-note" class="legacy-note" hidden></p>
-  </section>
-
   <section class="panel" aria-labelledby="profile-heading">
     <h2 id="profile-heading">DSH Profile Target</h2>
-    <label for="profile-picker">Profile (explicit; no default, no fallback)</label>
+    <label for="profile-picker">Profile &mdash; remembered from your last successful Preview; confirm with Refresh Preview (explicit; no default, no fallback)</label>
     <input id="profile-picker" data-testid="profile-picker" name="profile" type="text" placeholder="e.g. web" autocomplete="off" spellcheck="false">
     <label for="overlays-input">Declared overlays (comma-separated absolute paths; mode B only)</label>
     <input id="overlays-input" name="overlays" type="text" placeholder="exact launch overlay files, in order" autocomplete="off" spellcheck="false">
@@ -393,6 +418,14 @@
     <p id="attestation-display" class="path">UNATTESTED</p>
   </section>
 
+  <section class="panel" aria-labelledby="actions-heading">
+    <h2 id="actions-heading">Actions</h2>
+    <div class="buttons">
+      <button id="refresh-btn" type="button" disabled>Refresh Preview</button>
+      <button id="apply-btn" type="button" disabled>Apply Sync</button>
+    </div>
+  </section>
+
   <section class="panel" aria-labelledby="sources-heading">
     <h2 id="sources-heading">Upstream Sources</h2>
     <ul id="sources-list" class="sources">
@@ -402,14 +435,6 @@
       <li><span class="src-label">Go docs</span><span class="src-value" id="src-go-docs">&mdash;</span></li>
       <li><span class="src-label">Zen docs</span><span class="src-value" id="src-zen-docs">&mdash;</span></li>
     </ul>
-  </section>
-
-  <section class="panel" aria-labelledby="actions-heading">
-    <h2 id="actions-heading">Actions</h2>
-    <div class="buttons">
-      <button id="refresh-btn" type="button" disabled>Refresh Preview</button>
-      <button id="apply-btn" type="button" disabled>Apply Sync</button>
-    </div>
   </section>
 
   <section class="panel" aria-labelledby="preview-heading">
@@ -424,6 +449,20 @@
       <div class="counter warn"><dt>Unsupported protocol</dt><dd id="count-unsupported">&mdash;</dd></div>
       <div class="counter" data-accent="fallback"><dt>Fallback</dt><dd id="count-fallback">&mdash;</dd></div>
     </dl>
+  </section>
+
+  <section class="panel" aria-labelledby="routes-heading">
+    <h2 id="routes-heading">Per-route scale</h2>
+    <div id="route-loss-warning" class="warning-banner" hidden></div>
+  </section>
+
+  <section class="panel" id="settings-panel" aria-labelledby="target-heading">
+    <h2 id="target-heading">Settings Target</h2>
+    <div class="target-row">
+      <span id="target-classification" class="badge">UNKNOWN</span>
+      <code id="target-path" class="path">waiting for server information</code>
+    </div>
+    <p id="legacy-note" class="legacy-note" hidden></p>
   </section>
 
   <section class="panel wide" aria-labelledby="details-heading">
@@ -464,11 +503,6 @@
       <summary>Routes</summary>
       <ul class="items" id="list-routes"><li class="empty">no preview yet</li></ul>
     </details>
-  </section>
-
-  <section class="panel" aria-labelledby="routes-heading">
-    <h2 id="routes-heading">Per-route scale</h2>
-    <div id="route-loss-warning" class="warning-banner" hidden></div>
   </section>
 
 </main>
@@ -657,6 +691,40 @@
     return { text: '\u2014', tone: '' };
   }
   // __PURE:sourceStatusText:END
+  // __PURE:resolveRememberedProfile:START
+  function resolveRememberedProfile(stored, current) {
+    if (typeof current === 'string' && current.trim() !== '') return '';
+    if (typeof stored !== 'string' || stored === '') return '';
+    if (stored.length > 128) return '';
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(stored)) return '';
+    if (stored.indexOf('/') !== -1 || stored.indexOf('\\') !== -1 || stored.indexOf('\0') !== -1) return '';
+    if (stored === '.' || stored === '..' || stored.toLowerCase() === 'node_modules') return '';
+    if (stored.charAt(0) === '-' || stored.charAt(stored.length - 1) === '.' || stored.charAt(stored.length - 1) === ' ') return '';
+    if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(stored.replace(/\.[^.]*$/, ''))) return '';
+    return stored;
+  }
+  // __PURE:resolveRememberedProfile:END
+
+  // Remembered profile (P1): browser-local convenience only. Every access
+  // is guarded so partitioned, ephemeral or absent storage leaves the page
+  // exactly as before. Never triggers Preview, attestation or acknowledgment.
+  function rememberedStore(mode, value) {
+    try {
+      const box = localStorage;
+      if (mode === 'read') {
+        const raw = box.getItem('ocms-s.lastProfile');
+        return typeof raw === 'string' ? raw : '';
+      }
+      if (mode === 'write' && typeof value === 'string' && value !== '') box.setItem('ocms-s.lastProfile', value);
+    } catch {}
+    return '';
+  }
+  function prefillRememberedProfile() {
+    const picker = $('profile-picker');
+    if (!picker) return;
+    const name = resolveRememberedProfile(rememberedStore('read'), picker.value);
+    if (name !== '') picker.value = name;
+  }
 
   function renderSources(sources) {
     const reported = sources && typeof sources === 'object' ? sources : null;
@@ -843,7 +911,13 @@
         warnEl.textContent = '';
       } else {
         warnEl.hidden = false;
-        warnEl.textContent = warnings.map((w) => 'Warning: ' + w.route + ' would lose more than half of its entries (current ' + w.current + ' -> desired ' + w.desired + ').').join(' ');
+        clearNode(warnEl);
+        for (const w of warnings) {
+          const line = document.createElement('div');
+          line.className = 'loss-item';
+          line.textContent = 'Warning: ' + w.route + ' would lose more than half of its entries (current ' + w.current + ' -> desired ' + w.desired + ').';
+          warnEl.append(line);
+        }
       }
     }
   }
@@ -984,6 +1058,8 @@
       if (stateEl) stateEl.textContent = 'UNATTESTED';
       const legacyNoteInit = $('legacy-note');
       if (legacyNoteInit) { legacyNoteInit.hidden = true; legacyNoteInit.textContent = ''; }
+      const settingsInit = $('settings-panel');
+      if (settingsInit) settingsInit.classList.toggle('settings-single', false);
       return;
     }
     const target = preview.target;
@@ -999,8 +1075,10 @@
     const legacyNote = $('legacy-note');
     if (legacyNote) {
       legacyNote.hidden = false;
-      legacyNote.textContent = 'Settings target is not used in profile mode.';
+      legacyNote.textContent = 'Settings target: not used in profile mode.';
     }
+    const settingsPanel = $('settings-panel');
+    if (settingsPanel) settingsPanel.classList.toggle('settings-single', true);
   }
 
   // S5-R2 B5: any edit to the operator selection after Preview invalidates
@@ -1107,6 +1185,9 @@
         } else {
           setState('READY');
           setNotice('Preview is READY. Review the details, then Apply if intended.', 'info');
+          if (data && data.profile === true && previewBody && typeof previewBody.profileName === 'string') {
+            rememberedStore('write', previewBody.profileName.trim());
+          }
         }
       } else if (serverState === 'NO_CHANGE') {
         setState('NO_CHANGE');
@@ -1250,6 +1331,7 @@
   });
 
   versionEl.textContent = APP_VERSION;
+  prefillRememberedProfile();
   boot();
 })();
 </script>

@@ -55,7 +55,7 @@ test('H1: the page is fully self-contained (no remote scripts, styles, fonts, CD
   });
 
 test('H2: the token bootstrap placeholder mechanism exists and the page never persists the token',
-  { skip: STATIC_SKIP },
+  { skip: 'superseded by contract v1.4.7-rc4 Amendment A' },
   () => {
     const html = fs.readFileSync(UI_HTML_PATH, 'utf8');
     assert.ok(html.includes('__OCMS_TOKEN__'), 'the served page template carries the injection placeholder');

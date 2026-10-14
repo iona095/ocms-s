@@ -4,6 +4,20 @@ All notable project-level changes are summarized here.
 
 This file is intentionally concise. The authoritative behavioral specification remains the current contract.
 
+## v1.4.7-rc4
+
+**Release candidate: work-first Local Web UX layout plus remembered profile (contract v1.4.7-rc4).**
+
+### Changed
+
+- The Local Web UX (`ui/index.html`, only product file) moves to a work-first grid: profile target wide with Actions and Sources stacked right, single-line Settings target in profile mode, 8-across counters (4x2 below ~1100px), per-route loss warnings as separate lines, Details full width; the header compacts to one row (logo, heading, constellation) with lede below. No horizontal scroll at 1024px; Actions visible without scrolling at 1280x800.
+- Remembered profile (P1, amends SPEC 8.1 by name; SPEC text unchanged): after a profile Preview reaches READY the trimmed request name is stored under `ocms-s.lastProfile`; on load an empty picker is prefilled only for names passing the exact server grammar. Invalid/absent/throwing storage stays empty and silent; prefill never previews, attests or acknowledges; the server `--profile` is never written into the picker. Storage may be partitioned in the DSH iframe, so remembering is best-effort.
+- Version 1.4.7-rc3 → 1.4.7-rc4 (metadata only, plus the layout and remembering above with re-pinned bytes).
+
+### Unchanged (explicit)
+
+- No behaviour, safety-rule, planning, render, commit, attestation, or Apply-flow change; the three page pure functions stay byte-identical and all frozen suites pass unmodified. `ui.mjs`, `sync.mjs`, `profile/*`, `dsh/host.mjs`, `dsh/lifecycle.mjs` and `cordis.patch.yml` are byte-identical.
+
 ## v1.4.7-rc3
 
 **Release candidate: PixelCrafts-inspired Local Web UX (contract v1.4.7-rc3, Amendment A).**

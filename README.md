@@ -4,15 +4,15 @@ A small, manual Node.js utility that synchronizes **OpenCode Go** and **OpenCode
 
 OCMS-S is deliberately narrow. It is **not** a daemon, scheduler, account checker, quota monitor, or model-probing system. v1.4 adds one optional DSH integration: a `Models` conversation-view tab that owns OCMS server lifecycle (status/Start/Stop) and iframe hosting only. All synchronization authority stays in the released engine and Web UX.
 
-Current project version: **v1.4.7-rc3** (release candidate)
+Current project version: **v1.4.7-rc4** (release candidate)
 
 Current authoritative specification:
 
-`OpenCode Model Sync — Simple Script Contract v1.4.7-rc3.md`
+`OpenCode Model Sync — Simple Script Contract v1.4.7-rc4.md`
 
-v1.4.7-rc3 restyles the Local Web UX PixelCrafts-inspired (visual only) plus two display fixes over v1.4.7-rc2 (profile Preview shows its plan; Apply never offered blind); earlier contracts remain binding wherever v1.4.7-rc3 is silent. Profile-aware synchronization (S5) is specified in `SPEC_DSH_PROFILE_AWARE_SYNC.md`.
+v1.4.7-rc4 lays out the Local Web UX work-first and remembers the last previewed profile (best-effort) over v1.4.7-rc3; earlier contracts remain binding wherever v1.4.7-rc4 is silent. Profile-aware synchronization (S5) is specified in `SPEC_DSH_PROFILE_AWARE_SYNC.md`.
 
-Status: v1.4.7-rc3 is a release candidate (PixelCrafts look with fail-closed Apply gating unchanged), tag `v1.4.7-rc3` at commit `78c14cb`. CI is green on that commit on all four jobs (run 38469173666 for the `main` push, run 38469459522 for the tag push). No gate is open; the next steps are listed in the v1.4.7 backlog below.
+Status: v1.4.7-rc4 is a release candidate (work-first layout with fail-closed Apply gating unchanged), built over tag `v1.4.7-rc3` at commit `78c14cb`. CI is green on that commit on all four jobs (run 38469173666 for the `main` push, run 38469459522 for the tag push). No gate is open; the next steps are listed in the v1.4.7 backlog below.
 
 ---
 
