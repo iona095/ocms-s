@@ -409,7 +409,7 @@ async function resolveCompositionUtils(target, { installAnchorDir, pathEnv, prof
     for (const [pkg, want] of Object.entries(need)) {
       const base = pkg === 'dsh' ? dshDir : path.join(scopeDir, pkg);
       const read = readManifestVersion(path.join(base, 'package.json'));
-      if (!read.ok || read.version !== want) return null;
+      if (!read.ok || !want.has(read.version)) return null;
       versions[pkg] = read.version;
     }
     return versions;
@@ -428,17 +428,18 @@ async function resolveCompositionUtils(target, { installAnchorDir, pathEnv, prof
     let satisfied = true;
     for (const [pkg, want] of Object.entries({ 'dsh-app-boot': need['dsh-app-boot'], 'cordis-plugin-include': need['cordis-plugin-include'] })) {
       const read = readManifestVersion(path.join(real, pkg, 'package.json'));
-      if (!read.ok || read.version !== want) satisfied = false;
+      if (!read.ok || !want.has(read.version)) satisfied = false;
       else utilVersions[pkg] = read.version;
     }
     // DSH baseline beside the scope (S1 explicit convention) or, for the
     // operative nested install layout, the owning package two levels up —
     // exact versions either way, first match wins, documented order.
     dshDir = null;
+    let dshObserved = null;
     const dshCandidates = [path.join(real, 'dsh'), path.join(real, '..', '..')];
     for (const candidate of dshCandidates) {
       const read = readManifestVersion(path.join(candidate, 'package.json'));
-      if (!read.ok || read.version !== need.dsh) continue;
+      if (!read.ok || !need.dsh.has(read.version)) continue;
       let nameOk = false;
       try {
         nameOk = JSON.parse(fs.readFileSync(path.join(candidate, 'package.json'), 'utf8')).name === '@deepseek-ai/dsh';
@@ -447,13 +448,15 @@ async function resolveCompositionUtils(target, { installAnchorDir, pathEnv, prof
       }
       if (nameOk) {
         dshDir = candidate;
+        dshObserved = read.version;
         break;
       }
     }
     if (!satisfied || dshDir === null) {
       return refusal('INCOMPATIBLE_DSH', 'The explicit composition anchor does not satisfy the pinned combination.', 'explicit-anchor-unsatisfied');
     }
-    versions = { ...utilVersions, dsh: need.dsh };
+    // Recorded evidence is what the manifests said, never the expected value.
+    versions = { ...utilVersions, dsh: dshObserved };
     scopeDir = real;
     anchorKind = 'explicit';
   } else if (target.dependencyEvidence && isPlainObject(target.dependencyEvidence)) {
@@ -477,9 +480,11 @@ async function resolveCompositionUtils(target, { installAnchorDir, pathEnv, prof
     dshDir = admitted.evidence.dsh.path;
     anchorKind = admitted.evidence.anchorKind;
     versions = {
-      'dsh-app-boot': EXPECTED_VERSIONS['dsh-app-boot'],
-      'cordis-plugin-include': EXPECTED_VERSIONS['cordis-plugin-include'],
-      dsh: EXPECTED_VERSIONS.dsh,
+      // Observed versions, read from the manifests the admission just
+      // verified — never the expected constants (v1.4.7-rc6 §5(b)).
+      'dsh-app-boot': admitted.evidence.versions['dsh-app-boot'],
+      'cordis-plugin-include': admitted.evidence.versions['cordis-plugin-include'],
+      dsh: admitted.evidence.dshVersion,
     };
   }
 

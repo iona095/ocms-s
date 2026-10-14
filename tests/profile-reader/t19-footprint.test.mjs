@@ -162,8 +162,13 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
   it('T19 accepted S1 files match their recorded bytes', () => {
     // Hashes recorded at S2 implementation start (S2 entry gate); any
     // S2-span edit of an S1 file breaks this tripwire.
+    //
+    // profile/target-resolver.mjs re-pinned by v1.4.7-rc6 §5 with the named
+    // reason "version-skew reproducibility (v1.4.7-rc6 §5)": EXPECTED_VERSIONS
+    // became exact-membership sets so cordis-plugin-include admits exactly
+    // {1.0.10-alpha.1, 1.0.10-alpha.2}. No other behaviour changed.
     const recorded = new Map([
-      ['profile/target-resolver.mjs', '1d72e8169fac2c89b9bcc9196c7e019a729eaa81204aa3ecee1e50db63ca06b1'],
+      ['profile/target-resolver.mjs', '565d1356edf2030f03d7760a846644657482fa955145f00125eb522d711b90f5'],
       ['tests/profile-target/helpers.mjs', '535be36cad699d729c0eb5e9afde0aaf5ad9517b67b052eb7c2026a560c42c6f'],
       ['tests/profile-target/target-admission.test.mjs', 'c1d4cc56ddd7e2ed01844895b678d82921de9f49dd79c1fc36dc1a2d48db94a8'],
       ['tests/profile-target/boundary.test.mjs', 'b4b0638a77ade1deee4c8033c62225541e596745dd5de60c52b4e7439ed717ea'],

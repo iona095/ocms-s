@@ -11,7 +11,11 @@ import assert from 'node:assert/strict';
 import { stringify as stringifyYaml } from 'yaml';
 import { findDshExecutable, resolveProfileTarget } from '../../profile/target-resolver.mjs';
 export { assert };
-export const EXPECTED = { atomicWrite: '0.2.1-alpha.2', appBoot: '0.2.1-alpha.2', include: '1.0.10-alpha.1', dsh: '0.2.1-alpha.2' };
+// Pinned dependency versions. `include` is the fixture baseline every synthetic
+// anchor writes (still admitted); `includeAdmitted` is the exact-membership set
+// the real install may resolve to after v1.4.7-rc6 §5(a) — exactly
+// 1.0.10-alpha.1 or 1.0.10-alpha.2, no ranges, no prefix or semver matching.
+export const EXPECTED = { atomicWrite: '0.2.1-alpha.2', appBoot: '0.2.1-alpha.2', include: '1.0.10-alpha.1', includeAdmitted: ['1.0.10-alpha.1', '1.0.10-alpha.2'], dsh: '0.2.1-alpha.2' };
 export const FIXTURE_LLM_NAME = '@fixture/dsh-llm-fixture';
 export const SECRET_MARKERS = ['SYNTHETIC_FAKE_KEY_alpha bravo 001','SYNTHETIC_FAKE_TOKEN_charlie delta 002','SYNTHETIC_FAKE_SECRET_echo foxtrot 003'];
 let counter = 0;
@@ -68,10 +72,10 @@ export function resolveRealScope({ pathEnv = process.env.PATH ?? '' } = {}) {
   const problems = [];
   for (const scope of candidates) {
     let usable = true;
-    for (const [pkg, want] of Object.entries({ 'dsh-app-boot': EXPECTED.appBoot, 'cordis-plugin-include': EXPECTED.include, 'dsh-atomic-write': EXPECTED.atomicWrite })) {
+    for (const [pkg, want] of Object.entries({ 'dsh-app-boot': [EXPECTED.appBoot], 'cordis-plugin-include': EXPECTED.includeAdmitted, 'dsh-atomic-write': [EXPECTED.atomicWrite] })) {
       try {
         const m = JSON.parse(fs.readFileSync(path.join(scope, pkg, 'package.json'), 'utf8'));
-        if (m.version !== want) { usable = false; problems.push(scope + ': ' + pkg + ' is ' + m.version); }
+        if (!want.includes(m.version)) { usable = false; problems.push(scope + ': ' + pkg + ' is ' + m.version); }
       } catch (err) { usable = false; problems.push(scope + ': ' + pkg + ' unreadable'); }
     }
     if (usable) return scope;

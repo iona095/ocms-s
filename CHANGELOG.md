@@ -4,6 +4,22 @@ All notable project-level changes are summarized here.
 
 This file is intentionally concise. The authoritative behavioral specification remains the current contract.
 
+## v1.4.7-rc6
+
+**Release candidate: reproducible profile CI plus the alpha.2 admission (contract v1.4.7-rc6).**
+
+### Changed
+
+- The dependency version gate now holds every checked package version as an exact-membership set in one place (`EXPECTED_VERSIONS` in `profile/target-resolver.mjs`, read by the admission, commit and composition paths alike), and `cordis-plugin-include` admits exactly `1.0.10-alpha.1` and `1.0.10-alpha.2`. No ranges, no prefix or semver matching: `1.0.10-alpha.3`, `~1.0.10-alpha.1` and `1.0.10-alpha.2x` still refuse with `INCOMPATIBLE_DSH` naming the observed version. `dsh`, `dsh-app-boot` and `dsh-atomic-write` keep their single admitted version; the checked package set is unchanged.
+- Composition evidence (`composition.versions`) reports the versions actually read from the manifests, never the expected constant, on every path (explicit anchor, binding evidence and fresh admission).
+- CI: the real-DSH job runs two matrix entries. `tree: verified` installs the full verified alpha.1 tree with `npm install -g --prefix <prefix> --before=2026-10-14T11:40:00Z @deepseek-ai/dsh@0.2.1-alpha.2`; `tree: alpha2` installs the unpinned tree every new user resolves today. Each entry prints and asserts its own eleven resolved versions (read from both Windows resolver scopes, plus the DSH-nested scope for `node-addon-require-builtin`) and throws on drift before any profile suite runs. `timeout-minutes` and `fail-fast: false` are kept.
+- Version 1.4.7-rc5 → 1.4.7-rc6 (metadata only, plus the two rules above with re-pinned bytes).
+
+### Unchanged (explicit)
+
+- No planning, render, commit, attestation, Apply-flow or Local Web UX change. `sync.mjs`, `ui.mjs`, `ui/index.html`, `dsh/host.mjs`, `dsh/lifecycle.mjs` and `cordis.patch.yml` are byte-identical; SPEC files and every earlier frozen contract are unchanged.
+- The byte pins of `profile/target-resolver.mjs`, `profile/commit.mjs` and `profile/config-reader.mjs` are re-pinned with the named reason "version-skew reproducibility (v1.4.7-rc6 §5)". The old "profile/* must not be modified" work-tree tripwire is replaced by those pins, not dropped.
+
 ## v1.4.7-rc5
 
 **Release candidate: withdrawn-docs removals (contract v1.4.7-rc5).**

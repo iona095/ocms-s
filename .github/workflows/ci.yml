@@ -53,15 +53,28 @@ jobs:
           npm_config_script_shell: bash
 
   profile-suites:
-    # S5 profile suites against a real, pinned DSH (contract v1.4.6-rc4 P2).
-    # The pinned DSH is installed into a job-local prefix — never package.json
-    # or package-lock.json (the frozen dependency-surface tests require
+    # S5 profile suites against a real DSH (contract v1.4.6-rc4 P2).
+    #
+    # Two matrix entries (v1.4.7-rc6 §2, §3):
+    #   tree: verified  the full verified alpha.1 tree, selected by
+    #                     --before=2026-10-14T11:40:00Z, so the eleven
+    #                     resolved versions below cannot drift;
+    #   tree: alpha2    the unpinned fresh install every new user gets today
+    #                     (the coordinated 2026-10-14 alpha.2 release),
+    #                     asserted as a whole tree.
+    # DSH is installed into a job-local prefix — never package.json or
+    # package-lock.json (the frozen dependency-surface tests require
     # devDependencies to stay empty) — and that prefix bin is put on PATH for
     # this job only. The hermetic test job above keeps its clean-machine guard
     # unchanged and never sees a PATH dsh.
-    name: profile suites (real DSH)
+    name: profile suites (real DSH, tree ${{ matrix.tree }})
     runs-on: windows-latest
     timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        tree: [verified, alpha2]
 
     steps:
       - name: Checkout
@@ -76,13 +89,25 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
-      - name: Install pinned real DSH into a job-local prefix
+      # --- pinned install: this entry only -----------------------------------
+      - name: Install verified DSH tree (--before 11:40Z selects the alpha.1 publications)
+        if: matrix.tree == 'verified'
+        shell: pwsh
+        run: |
+          $prefix = Join-Path $env:RUNNER_TEMP 'dsh-real'
+          npm install -g --prefix $prefix --before=2026-10-14T11:40:00Z @deepseek-ai/dsh@0.2.1-alpha.2
+          # On Windows the npm global shims (dsh.cmd) live directly in the
+          # prefix; keep the POSIX bin layout too so the step stays correct.
+          Add-Content -Path $env:GITHUB_PATH -Value $prefix
+          Add-Content -Path $env:GITHUB_PATH -Value (Join-Path $prefix 'bin')
+
+      # --- unpinned install: this entry only ---------------------------------
+      - name: Install alpha2 DSH tree (unpinned, what new users resolve today)
+        if: matrix.tree == 'alpha2'
         shell: pwsh
         run: |
           $prefix = Join-Path $env:RUNNER_TEMP 'dsh-real'
           npm install -g --prefix $prefix @deepseek-ai/dsh@0.2.1-alpha.2
-          # On Windows the npm global shims (dsh.cmd) live directly in the
-          # prefix; keep the POSIX bin layout too so the step stays correct.
           Add-Content -Path $env:GITHUB_PATH -Value $prefix
           Add-Content -Path $env:GITHUB_PATH -Value (Join-Path $prefix 'bin')
 
@@ -92,6 +117,66 @@ jobs:
           dsh --version
           $v = (dsh --version | Out-String).Trim()
           if ($v -ne '0.2.1-alpha.2') { throw "pinned DSH mismatch: got '$v', want '0.2.1-alpha.2'" }
+
+      # --- print and assert the resolved tree: verified entry only -----------
+      - name: Assert resolved versions (verified alpha.1 tree)
+        if: matrix.tree == 'verified'
+        shell: pwsh
+        run: |
+          $prefix = Join-Path $env:RUNNER_TEMP 'dsh-real'
+          $top = Join-Path $prefix 'node_modules/@deepseek-ai'
+          $nested = Join-Path $prefix 'node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai'
+          $own = Join-Path $prefix 'node_modules/@deepseek-ai/dsh/node_modules'
+          function Assert-Version($pkg, $want) {
+            $manifest = Join-Path $nested "$pkg/package.json"
+            if (-not (Test-Path $manifest)) { $manifest = Join-Path $top "$pkg/package.json" }
+            if (-not (Test-Path $manifest)) { $manifest = Join-Path $own "$pkg/package.json" }
+            if (-not (Test-Path $manifest)) { throw "resolved $pkg is missing from $top, $nested and $own" }
+            $got = (Get-Content $manifest -Raw | ConvertFrom-Json).version
+            Write-Host "$pkg resolved $got expected $want"
+            if ($got -ne $want) { throw "resolved $pkg drift: got '$got', want '$want'" }
+          }
+          Assert-Version 'dsh' '0.2.1-alpha.2'
+          Assert-Version 'dsh-app-boot' '0.2.1-alpha.2'
+          Assert-Version 'dsh-atomic-write' '0.2.1-alpha.2'
+          Assert-Version 'cordis' '4.0.5-alpha.1'
+          Assert-Version 'cordis-plugin-group' '1.0.5-alpha.1'
+          Assert-Version 'cordis-plugin-include' '1.0.10-alpha.1'
+          Assert-Version 'cordis-plugin-loader' '1.0.6-alpha.1'
+          Assert-Version 'cordis-plugin-timer' '1.1.7-alpha.1'
+          Assert-Version 'cosmokit' '1.8.6-alpha.1'
+          Assert-Version 'schemastery' '3.18.5-alpha.1'
+          Assert-Version 'node-addon-require-builtin' '0.1.9'
+
+      # --- print and assert the resolved tree: alpha2 entry only -------------
+      - name: Assert resolved versions (alpha2 tree)
+        if: matrix.tree == 'alpha2'
+        shell: pwsh
+        run: |
+          $prefix = Join-Path $env:RUNNER_TEMP 'dsh-real'
+          $top = Join-Path $prefix 'node_modules/@deepseek-ai'
+          $nested = Join-Path $prefix 'node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai'
+          $own = Join-Path $prefix 'node_modules/@deepseek-ai/dsh/node_modules'
+          function Assert-Version($pkg, $want) {
+            $manifest = Join-Path $nested "$pkg/package.json"
+            if (-not (Test-Path $manifest)) { $manifest = Join-Path $top "$pkg/package.json" }
+            if (-not (Test-Path $manifest)) { $manifest = Join-Path $own "$pkg/package.json" }
+            if (-not (Test-Path $manifest)) { throw "resolved $pkg is missing from $top, $nested and $own" }
+            $got = (Get-Content $manifest -Raw | ConvertFrom-Json).version
+            Write-Host "$pkg resolved $got expected $want"
+            if ($got -ne $want) { throw "resolved $pkg drift: got '$got', want '$want'" }
+          }
+          Assert-Version 'dsh' '0.2.1-alpha.2'
+          Assert-Version 'dsh-app-boot' '0.2.1-alpha.2'
+          Assert-Version 'dsh-atomic-write' '0.2.1-alpha.2'
+          Assert-Version 'cordis' '4.0.5-alpha.2'
+          Assert-Version 'cordis-plugin-group' '1.0.5-alpha.2'
+          Assert-Version 'cordis-plugin-include' '1.0.10-alpha.2'
+          Assert-Version 'cordis-plugin-loader' '1.0.6-alpha.2'
+          Assert-Version 'cordis-plugin-timer' '1.1.7-alpha.2'
+          Assert-Version 'cosmokit' '1.8.6-alpha.2'
+          Assert-Version 'schemastery' '3.18.5-alpha.2'
+          Assert-Version 'node-addon-require-builtin' '0.1.9'
 
       - name: Run profile suites
         run: npm run test:profile

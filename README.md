@@ -4,15 +4,15 @@ A small, manual Node.js utility that synchronizes **OpenCode Go** and **OpenCode
 
 OCMS-S is deliberately narrow. It is **not** a daemon, scheduler, account checker, quota monitor, or model-probing system. v1.4 adds one optional DSH integration: a `Models` conversation-view tab that owns OCMS server lifecycle (status/Start/Stop) and iframe hosting only. All synchronization authority stays in the released engine and Web UX.
 
-Current project version: **v1.4.7-rc5** (release candidate)
+Current project version: **v1.4.7-rc6** (release candidate)
 
 Current authoritative specification:
 
-`OpenCode Model Sync — Simple Script Contract v1.4.7-rc5.md`
+`OpenCode Model Sync — Simple Script Contract v1.4.7-rc6.md`
 
-v1.4.7-rc5 converts withdrawn-docs multi-copy blocks into reviewable DOCS_WITHDRAWN removals over v1.4.7-rc4; earlier contracts remain binding wherever v1.4.7-rc5 is silent. Profile-aware synchronization (S5) is specified in `SPEC_DSH_PROFILE_AWARE_SYNC.md`.
+v1.4.7-rc6 makes the real-DSH CI reproducible and admits `cordis-plugin-include` 1.0.10-alpha.2 alongside 1.0.10-alpha.1; it is additive over v1.4.7-rc5, and earlier contracts remain binding wherever v1.4.7-rc6 is silent. Profile-aware synchronization (S5) is specified in `SPEC_DSH_PROFILE_AWARE_SYNC.md`.
 
-Status: v1.4.7-rc5 is a release candidate (withdrawn-docs removals with fail-closed refusals unchanged), built over tag `v1.4.7-rc4` at commit `edd43c6`. CI is green on that commit on all four jobs (run 38491094235 for the `main` push, run 38491756333 for the tag push). No gate is open; the next steps are listed in the v1.4.7 backlog below.
+Status: v1.4.7-rc6 is a release candidate (one dependency-admission change plus reproducible CI; every other refusal unchanged), built over v1.4.7-rc5 at commit `bf2ded1`. This gate is not committed or tagged yet and no CI run exists for it, so the release decision waits on the first green CI run on the exact commit; no gate is open, and the next steps are listed in the v1.4.7 backlog below.
 
 ---
 
@@ -897,9 +897,15 @@ OpenCode Model Sync — Simple Script Contract v1.4.7-rc2 Amendment A.md
 OpenCode Model Sync — Simple Script Contract v1.4.7-rc2 Amendment B.md
 OpenCode Model Sync — Simple Script Contract v1.4.7-rc3.md
 OpenCode Model Sync — Simple Script Contract v1.4.7-rc3 Amendment A.md
+OpenCode Model Sync — Simple Script Contract v1.4.7-rc6.md
+OpenCode Model Sync — Simple Script Contract v1.4.7-rc6 Amendment A.md
 ```
 
-**v1.4.7-rc3 with its Amendment A is the current authoritative contract** (Local Web UX look and two display fixes only); earlier contracts remain binding wherever it is silent.
+**v1.4.7-rc6 is the current authoritative contract** (reproducible profile CI plus the alpha.2 include admission; nothing else); earlier contracts remain binding wherever it is silent.
+
+### DSH version compatibility (v1.4.7-rc6)
+
+The version gate admits exactly two `cordis-plugin-include` versions: `1.0.10-alpha.1` (the verified tree) and `1.0.10-alpha.2` (the tree a fresh `npm install -g @deepseek-ai/dsh@0.2.1-alpha.2` resolves today). Both are exercised by CI: the `tree: verified` matrix entry pins the full alpha.1 tree with `--before=2026-10-14T11:40:00Z`, and the `tree: alpha2` entry installs the unpinned tree and asserts all eleven resolved versions. Any other version — including a range or a prefix such as `~1.0.10-alpha.1` or `1.0.10-alpha.2x` — refuses with `INCOMPATIBLE_DSH` naming the observed version; there is no warning-only path. `dsh`, `dsh-app-boot` and `dsh-atomic-write` keep exactly one admitted version each. The other six coordinated packages (`cordis`, `cordis-plugin-group`, `cordis-plugin-loader`, `cordis-plugin-timer`, `cosmokit`, `schemastery`) are indirect DSH dependencies and are asserted by CI, not by the product boundary.
 
 v1.4 identities (immutable): contract SHA-256 `3a4461d099e8994c773c98cfe3d001b9fb872fc182c64d31eddf8e46d4f27831` (171 lines); `dsh/lifecycle.mjs` `36f65604cd95322ba643d6ba7baa225d459270113ef75298ad9839e8d79a0c47`; `tests/v1.4/disposal-race.test.mjs` `3edbb9a76cb8dc9cb653efb2006f4810177258060f5885223ae40f826e6cb6d9`; v1.3 baseline `sync.mjs` `9211544a0bba60e3e19a78a8d089d84f9eacedb6105631489ebe377285188c07` and `ui/index.html` `6610e7354f64eb1edbd4827df65fa120c1410ba9121e33fcab87637d96deddf8` unchanged; lineage `HEAD`/`v1.3.0` `50968d968ede3c0c847c6d127e1ff8059f790185`.
 
@@ -934,11 +940,15 @@ v1.4.7-rc4 Amendment B f322dc956fba3d1c8030826773fe92720020e13c60e875078a01eec66
 v1.4.7-rc4 Amendment C 60b1181968b5cfa957a81f2c03e397360e011b46b7b40794dfaa7be41de9c83d   56
 v1.4.7-rc5             66f11fdcbfafd2445642ed1a9652771a699a4d98f1b8930b44fe85381d0245c1  130
 v1.4.7-rc5 Amendment A 3c2e143bfaa0e2cb0f4f90dee33700015efb172e92b86900fda2a9c7b18d3208   46
+v1.4.7-rc6             0d9244d8c89e452baaa5c1d6fdad72c67fefd718414691279b8da25a2dc7c634   97
+v1.4.7-rc6 Amendment A faed7acc2883209256f1ef91c13b131dccb90697afc1bfb005569b1d25cfc593   78
 ```
 
 v1.4.7-rc3 product bytes: `ui/index.html` `39f0a36151c1ce37a2551b2fd18d1cc293c9a529b2ab407fbf3a461ed569a5cc` (the only product file changed); `sync.mjs`, `ui.mjs` and `profile/*` are byte-identical to v1.4.7-rc2.
 
 v1.4.7-rc5 product bytes: `sync.mjs` `efc81a712988a5ccda7189714731bb8456144a95941a3253d93d7f3fb589520b`, `ui.mjs` `bb136172e3c319e144b770f41c8bc16be6069fcbab0ecc8022888421d3fc9f4e`, `ui/index.html` `4e8491022f5c0f1b4cc5493434a32d56a7f46abd1f752c6905114e129b8fc2c0` (withdrawn-docs removals).
+
+v1.4.7-rc6 product bytes: `sync.mjs`, `ui.mjs` and `ui/index.html` are byte-identical to v1.4.7-rc5; `dsh/host.mjs`, `dsh/lifecycle.mjs` and `cordis.patch.yml` are unchanged. The only product change is in `profile/`: `profile/target-resolver.mjs` `565d1356edf2030f03d7760a846644657482fa955145f00125eb522d711b90f5`, `profile/commit.mjs` `ba42ae5dc8516e04b7ca9154b689ab70102e500e5f000b27ee31474251f6d3b4`, `profile/config-reader.mjs` `846e34de8343c6a390bca41d487b9900d6fd7fb556db762635a447d8663ff7cf` (exact-membership dependency versions plus observed-version evidence; re-pinned with the named reason "version-skew reproducibility (v1.4.7-rc6 §5)").
 
 v1.0 and v1.1 are historical artifacts.
 

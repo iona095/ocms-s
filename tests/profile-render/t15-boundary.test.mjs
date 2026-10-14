@@ -52,8 +52,11 @@ describe('S3 T18 — planning and frozen-source regressions', () => {
     assert.equal(MANAGED_ROUTES['opencode'].api, 'openai-responses');
   });
   it('T18 S1/S2 implementation bytes unchanged', () => {
+    // profile/target-resolver.mjs re-pinned by v1.4.7-rc6 §5 with the named
+    // reason "version-skew reproducibility (v1.4.7-rc6 §5)": the shared
+    // exact-membership admission sets. No other behaviour changed.
     const recorded = new Map([
-      ['profile/target-resolver.mjs', '1d72e8169fac2c89b9bcc9196c7e019a729eaa81204aa3ecee1e50db63ca06b1'],
+      ['profile/target-resolver.mjs', '565d1356edf2030f03d7760a846644657482fa955145f00125eb522d711b90f5'],
       ['tests/profile-target/helpers.mjs', '535be36cad699d729c0eb5e9afde0aaf5ad9517b67b052eb7c2026a560c42c6f'],
       ['tests/profile-target/target-admission.test.mjs', 'c1d4cc56ddd7e2ed01844895b678d82921de9f49dd79c1fc36dc1a2d48db94a8'],
       ['tests/profile-target/boundary.test.mjs', 'b4b0638a77ade1deee4c8033c62225541e596745dd5de60c52b4e7439ed717ea'],
@@ -70,11 +73,25 @@ describe('S3 T18 — planning and frozen-source regressions', () => {
     // pin keeps guarding the planning surface. Planning semantics stay proven
     // through the original planning suites.
     assert.equal(sha('sync.mjs'), 'efc81a712988a5ccda7189714731bb8456144a95941a3253d93d7f3fb589520b', 'sync.mjs drift beyond the CURRENT reviewed bytes is forbidden');
+    // The old "no profile/* modification" tripwire is replaced, not dropped:
+    // the three files v1.4.7-rc6 §5 changed are now byte-pinned at their
+    // re-pinned values under the named reason "version-skew reproducibility
+    // (v1.4.7-rc6 §5)", so any LATER drift still trips here — and unlike the
+    // old work-tree check the pin keeps guarding after the change is
+    // committed. Commit and config-reader gain the tripwire they lacked.
+    const REPINNED = new Map([
+      ['profile/target-resolver.mjs', '565d1356edf2030f03d7760a846644657482fa955145f00125eb522d711b90f5'],
+      ['profile/commit.mjs', 'ba42ae5dc8516e04b7ca9154b689ab70102e500e5f000b27ee31474251f6d3b4'],
+      ['profile/config-reader.mjs', '846e34de8343c6a390bca41d487b9900d6fd7fb556db762635a447d8663ff7cf'],
+    ]);
+    for (const [rel, hex] of REPINNED) {
+      assert.equal(sha(rel), hex, 'version-skew reproducibility (v1.4.7-rc6 §5) re-pin drifted: ' + rel);
+    }
     const { execFileSync } = await import('node:child_process');
     const out = execFileSync('git', ['diff', '--name-only'], { encoding: 'utf8' });
     const modified = out.split('\n').map((l) => l.trim()).filter(Boolean);
-    assert.ok(!modified.includes('profile/config-reader.mjs'), 'config-reader must not be modified');
-    assert.ok(!modified.includes('profile/target-resolver.mjs'), 'target-resolver must not be modified');
+    assert.ok(!modified.includes('profile/plan-builder.mjs'), 'plan-builder must not be modified');
+    assert.ok(!modified.includes('profile/surgical-render.mjs'), 'surgical-render must not be modified');
   });
 });
 

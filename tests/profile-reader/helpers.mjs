@@ -18,10 +18,15 @@ import { findDshExecutable, resolveProfileTarget } from '../../profile/target-re
 
 export { assert };
 
+// Pinned versions. `include` is the baseline every synthetic anchor writes
+// (still admitted); `includeAdmitted` is the exact-membership set a real
+// install may resolve to since v1.4.7-rc6 §5(a) — exactly 1.0.10-alpha.1 or
+// 1.0.10-alpha.2, no ranges, no prefix or semver matching.
 export const EXPECTED = {
   atomicWrite: '0.2.1-alpha.2',
   appBoot: '0.2.1-alpha.2',
   include: '1.0.10-alpha.1',
+  includeAdmitted: ['1.0.10-alpha.1', '1.0.10-alpha.2'],
   dsh: '0.2.1-alpha.2',
 };
 
@@ -201,16 +206,16 @@ export function resolveRealScope({ pathEnv = process.env.PATH ?? '' } = {}) {
     const versions = {};
     let usable = true;
     for (const [pkg, want] of Object.entries({
-      'dsh-app-boot': EXPECTED.appBoot,
-      'cordis-plugin-include': EXPECTED.include,
-      'dsh-atomic-write': EXPECTED.atomicWrite,
+      'dsh-app-boot': [EXPECTED.appBoot],
+      'cordis-plugin-include': EXPECTED.includeAdmitted,
+      'dsh-atomic-write': [EXPECTED.atomicWrite],
     })) {
       try {
         const manifest = JSON.parse(fs.readFileSync(path.join(scope, pkg, 'package.json'), 'utf8'));
         versions[pkg] = manifest.version;
-        if (manifest.version !== want) {
+        if (!want.includes(manifest.version)) {
           usable = false;
-          problems.push(`${scope}: ${pkg} is ${manifest.version}, want ${want}`);
+          problems.push(`${scope}: ${pkg} is ${manifest.version}, want ${want.join(' or ')}`);
         }
       } catch (err) {
         usable = false;

@@ -36,7 +36,12 @@ describe("ENV02 native", () => {
     const scope = guestAnchor();
     const v = stagedVersions(scope);
     assert.equal(v["dsh-atomic-write"], "0.2.1-alpha.2"); assert.equal(v["dsh-app-boot"], "0.2.1-alpha.2");
-    assert.equal(v["cordis-plugin-include"], "1.0.10-alpha.1"); assert.equal(v["cordis-plugin-loader"], "1.0.6-alpha.1");
+    // v1.4.7-rc6 §5(a): include admits exactly 1.0.10-alpha.1 or 1.0.10-alpha.2
+    // (exact strings, no ranges). cordis-plugin-loader is not version-checked by
+    // OCMS-S but moves with the same coordinated release, so both alpha trees
+    // are acceptable evidence here.
+    assert.ok(["1.0.10-alpha.1", "1.0.10-alpha.2"].includes(v["cordis-plugin-include"]), "cordis-plugin-include must be an admitted version, got " + v["cordis-plugin-include"]);
+    assert.ok(["1.0.6-alpha.1", "1.0.6-alpha.2"].includes(v["cordis-plugin-loader"]), "cordis-plugin-loader must be a coordinated alpha version, got " + v["cordis-plugin-loader"]);
     assert.equal(v["dsh-llm-pi-ai"], "0.2.1-alpha.2"); assert.equal(v["dsh-config-editor"], "0.2.1-alpha.2"); assert.equal(v["dsh"], "0.2.1-alpha.2");
     console.log("ENV02_VERSIONS dsh=0.2.1-alpha.2 anchor=" + scope);
   });

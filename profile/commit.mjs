@@ -110,12 +110,12 @@ async function resolveCommitUtils(input) {
     const checks = [['dsh-app-boot', needBoot], ['cordis-plugin-include', needInclude], ['dsh-atomic-write', needAtomic]];
     for (const pair of checks) {
       const read = readManifestVersion(path.join(real, pair[0], 'package.json'));
-      if (!read.ok || read.version !== pair[1]) return refusal('INCOMPATIBLE_DSH', 'The explicit composition anchor does not satisfy the pinned combination.', 'explicit-anchor-unsatisfied');
+      if (!read.ok || !pair[1].has(read.version)) return refusal('INCOMPATIBLE_DSH', 'The explicit composition anchor does not satisfy the pinned combination.', 'explicit-anchor-unsatisfied');
     }
     const dshCandidates = [path.join(real, 'dsh'), path.join(real, '..', '..')];
     for (const cand of dshCandidates) {
       const read = readManifestVersion(path.join(cand, 'package.json'));
-      if (!read.ok || read.version !== needDsh) continue;
+      if (!read.ok || !needDsh.has(read.version)) continue;
       let nm = null;
       try { nm = JSON.parse(fs.readFileSync(path.join(cand, 'package.json'), 'utf8')).name; } catch { nm = null; }
       if (nm === '@deepseek-ai/dsh') { dshDir = cand; break; }

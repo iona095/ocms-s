@@ -23,12 +23,31 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { parseDocument } from 'yaml';
 
+// Pinned dependency versions, as EXACT-MEMBERSHIP SETS: one set per checked
+// package, consulted by exact string equality through Set#has. No ranges, no
+// prefix or semver matching, no coercion, no wildcard entry. This object is
+// the single shared version gate: profile/commit.mjs and
+// profile/config-reader.mjs read these same sets, so the three paths can never
+// drift apart.
+//
+// v1.4.7-rc6 §5(a): cordis-plugin-include is admitted at exactly two
+// enumerated strings, 1.0.10-alpha.1 (the verified tree) and 1.0.10-alpha.2
+// (the tree every new install resolves; metadata-only release, see contract
+// §3). Every other version of that package — and every other checked package —
+// still refuses INCOMPATIBLE_DSH. The checked package set is unchanged: dsh,
+// dsh-atomic-write, dsh-app-boot and cordis-plugin-include only.
 export const EXPECTED_VERSIONS = {
-  dsh: '0.2.1-alpha.2',
-  'dsh-atomic-write': '0.2.1-alpha.2',
-  'dsh-app-boot': '0.2.1-alpha.2',
-  'cordis-plugin-include': '1.0.10-alpha.1',
+  dsh: new Set(['0.2.1-alpha.2']),
+  'dsh-atomic-write': new Set(['0.2.1-alpha.2']),
+  'dsh-app-boot': new Set(['0.2.1-alpha.2']),
+  'cordis-plugin-include': new Set(['1.0.10-alpha.1', '1.0.10-alpha.2']),
 };
+
+// Refusal wording for a version outside a package's admitted set. The OBSERVED
+// version is always named by the caller; this only renders the admitted set.
+function admittedVersionsText(pkg) {
+  return [...EXPECTED_VERSIONS[pkg]].join(' or ');
+}
 
 export const REFUSAL_CODES = [
   'INVALID_PROFILE_NAME',
@@ -299,7 +318,7 @@ export function admitDependencyPackages({ profileDirReal, installAnchorDir = nul
       }
       anyPresent = true;
       if (typeof read.version !== 'string') malformed.push(pkg);
-      else if (read.version !== EXPECTED_VERSIONS[pkg]) skewed.push({ pkg, observed: read.version });
+      else if (!EXPECTED_VERSIONS[pkg].has(read.version)) skewed.push({ pkg, observed: read.version });
       else found[pkg] = { path: path.join(scopeDir, pkg), version: read.version };
     }
     if (!anyPresent) return { status: 'absent' };
@@ -309,7 +328,7 @@ export function admitDependencyPackages({ profileDirReal, installAnchorDir = nul
     if (skewed.length > 0) {
       return {
         status: 'refuse',
-        detail: skewed.map(({ pkg, observed }) => `version-skew: ${pkg} is ${observed}, expected ${EXPECTED_VERSIONS[pkg]}`).join('; '),
+        detail: skewed.map(({ pkg, observed }) => `version-skew: ${pkg} is ${observed}, expected ${admittedVersionsText(pkg)}`).join('; '),
       };
     }
     if (missing.length > 0) return { status: 'partial', missing };
@@ -411,11 +430,11 @@ export function admitDependencyPackages({ profileDirReal, installAnchorDir = nul
     ? path.join(installScope, 'dsh', 'package.json')
     : null;
   const dshRead = dshManifest !== null ? readManifestVersion(dshManifest) : { ok: false, error: 'anchor-unresolved' };
-  if (!dshRead.ok || dshRead.version !== EXPECTED_VERSIONS.dsh) {
+  if (!dshRead.ok || !EXPECTED_VERSIONS.dsh.has(dshRead.version)) {
     return refusal(
       'INCOMPATIBLE_DSH',
       'The installed dsh baseline version cannot be established exactly.',
-      !dshRead.ok ? 'dsh-version-unverifiable' : `version-skew: dsh is ${dshRead.version}, expected ${EXPECTED_VERSIONS.dsh}`,
+      !dshRead.ok ? 'dsh-version-unverifiable' : `version-skew: dsh is ${dshRead.version}, expected ${admittedVersionsText('dsh')}`,
     );
   }
 
