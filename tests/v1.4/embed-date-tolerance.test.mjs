@@ -31,23 +31,34 @@ describe('T1 — embed header comparison with a Date tolerance', () => {
   });
 
   it('TOLERANCE IS BOUNDED: a Date beyond the tolerance fails', () => {
+    // The matcher is deliberately specific to the tolerance message. A generic
+    // /date/i would also match the ordinary 'header date must not change...'
+    // mismatch, so this control would still pass if the whole tolerance branch
+    // were deleted (proved by mutation, not assumed).
     assert.throws(
       () => assertHeadersEquivalent(
         { date: dateAt(T0), 'content-length': '12' },
         { date: dateAt(T0 + 60000), 'content-length': '12' },
         { toleranceMs: 5000 },
       ),
-      /date/i,
+      /must agree within 5000ms/,
       'a Date a minute apart must fail a 5s tolerance',
     );
   });
 
   it('TOLERANCE IS BOUNDED: an unparsable Date fails', () => {
-    for (const bad of ['', 'not-a-date', '0']) {
+    // '0' is deliberately absent: Date.parse accepts it, so it is parseable and
+    // belongs to the tolerance case, not the unparsable one.
+    for (const bad of ['', 'not-a-date', 'Tue 99 Xxx']) {
       assert.throws(
         () => assertHeadersEquivalent({ date: bad }, { date: dateAt(T0) }, { toleranceMs: 5000 }),
-        /date/i,
+        /not a valid HTTP date on the first response/,
         JSON.stringify(bad) + ' is not a valid HTTP date and must fail',
+      );
+      assert.throws(
+        () => assertHeadersEquivalent({ date: dateAt(T0) }, { date: bad }, { toleranceMs: 5000 }),
+        /not a valid HTTP date on the second response/,
+        JSON.stringify(bad) + ' must fail on the second response too',
       );
     }
   });
@@ -88,7 +99,7 @@ describe('T1 — embed header comparison with a Date tolerance', () => {
   it('date is compared even when only one side carries it', () => {
     assert.throws(
       () => assertHeadersEquivalent({ date: dateAt(T0) }, {}, { toleranceMs: 5000 }),
-      /date/i,
+      /must appear on both responses/,
       'a Date on one side only is a difference',
     );
   });
