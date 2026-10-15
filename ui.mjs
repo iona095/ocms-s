@@ -755,16 +755,28 @@ export async function startServer(options = {}) {
       refusal(res, 409, 'PREVIEW_NOT_READY', 'Preview is not ready for Apply.');
       return;
     }
+    // C08/D02: capture the verified preview BEFORE any await. Every read after
+    // this point uses the captured slot, never the mutable activePreview, so a
+    // Preview that completes during verification can never become the plan this
+    // Apply commits.
+    const retained = activePreview;
     let binding = null;
     try {
-      binding = await verifyProfileApplySelection(activePreview, parsed.selection);
+      binding = await verifyProfileApplySelection(retained, parsed.selection);
     } catch {
       binding = null;
+    }
+    if (!applyBusy && activePreview !== retained) {
+      // A concurrent Preview replaced or cleared the retained slot while this
+      // Apply was verifying; the verified selection no longer describes the
+      // retained plan, so refuse without writing.
+      refusal(res, 409, 'STALE_PREVIEW', 'Preview changed while Apply was verifying; run Refresh Preview and Apply again.');
+      return;
     }
     if (!binding || binding.ok !== true) {
       const code = binding && typeof binding.code === 'string' ? binding.code : 'STALE_PREVIEW';
       if (code === 'STALE_PREVIEW') {
-        activePreview = null;
+        if (activePreview === retained) activePreview = null;
         refusal(res, 409, 'STALE_PREVIEW', 'Preview is stale. Run Refresh Preview to build a new one.');
         return;
       }
@@ -775,25 +787,25 @@ export async function startServer(options = {}) {
     try {
       let outcome;
       try {
-        outcome = await ProfileAwareCommit({ plan: activePreview.plan, waitMs: 15000 });
+        outcome = await ProfileAwareCommit({ plan: retained.plan, waitMs: 15000 });
       } catch (err) {
         refusal(res, 500, 'ERROR', 'Unexpected internal error.');
         return;
       }
       if (outcome && outcome.stale === true) {
-        activePreview = null;
+        if (activePreview === retained) activePreview = null;
         refusal(res, 409, 'STALE_PREVIEW', 'Preview is stale. Run Refresh Preview to build a new one.');
         return;
       }
       if (!outcome || outcome.ok !== true) {
         const code = outcome && typeof outcome.code === 'string' ? outcome.code : 'ERROR';
         const message = outcome && typeof outcome.message === 'string' ? outcome.message : 'Unexpected internal error.';
-        if (code === 'STALE_TARGET') activePreview = null;
+        if (code === 'STALE_TARGET' && activePreview === retained) activePreview = null;
         const status = code === 'ERROR' ? 500 : 409;
         sendJson(res, status, { ok: false, code, message });
         return;
       }
-      const target = outcome.target || activePreview.preview.target;
+      const target = outcome.target || retained.preview.target;
       const body = {
         ok: true,
         status: outcome.status,
@@ -816,9 +828,9 @@ export async function startServer(options = {}) {
         if (outcome.patchDigest !== undefined) body.patchDigest = outcome.patchDigest;
       }
       try {
-        body.attestationText = formatAttestationText(activePreview.preview.attestation);
+        body.attestationText = formatAttestationText(retained.preview.attestation);
       } catch {}
-      activePreview = null;
+      if (activePreview === retained) activePreview = null;
       sendJson(res, 200, body);
       return;
     } finally {

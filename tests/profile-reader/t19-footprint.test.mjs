@@ -56,7 +56,12 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
     // beyond the §10-authorized version-bump files below.
     const CURRENT_PINS = new Map([
       ['sync.mjs', '60a8412f2a4f083cf89f67d0105d36de5aa67186cb2a8db8e87a06046508d3b7'],
-      ['ui.mjs', 'bb136172e3c319e144b770f41c8bc16be6069fcbab0ecc8022888421d3fc9f4e'],
+      // Re-pinned by the C08/D02 defect fix (named reason: the profile Apply
+      // handler awaited verifyProfileApplySelection against the mutable
+      // activePreview slot and then committed activePreview.plan; it now captures
+      // the retained preview before the await, commits the captured plan and
+      // re-checks the slot). The pin keeps guarding the CURRENT reviewed bytes.
+      ['ui.mjs', '6935aaf2cea39e74a357ef24ad7a16c1d05ead2f5ae08013ad3cbc875583110b'],
       ['ui/index.html', '4e8491022f5c0f1b4cc5493434a32d56a7f46abd1f752c6905114e129b8fc2c0'],
     ]);
     for (const [rel, hex] of CURRENT_PINS) {
