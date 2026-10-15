@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { execSync, spawnSync, spawn } from "node:child_process";
 import { readFile, writeFile, mkdir, mkdtemp, rm, chmod, readdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, dirname, resolve } from "node:path";
+import { join, dirname, resolve, isAbsolute } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { EventEmitter } from "node:events";
 
@@ -314,7 +314,11 @@ describe("DX-2 explicit-profile local registration", () => {
       assert.equal(lines.length, 1, "exactly one DSH invocation");
       const argv = JSON.parse(lines[0]);
       assert.deepEqual(argv, ["plugin", "--profile", "dev-ocms", "add", ROOT], "exact frozen argv");
-      assert.ok(argv[4] !== "." && argv[4].includes("ocms-s"), "absolute repo root, not relative");
+      // The checkout directory name is not fixed (a fresh clone may live at any
+      // path), so assert the property that matters: an absolute path that is the
+      // repository root, never a relative ".".
+      assert.ok(argv[4] !== "." && isAbsolute(argv[4]), "absolute repo root, not relative");
+      assert.equal(resolve(argv[4]), resolve(ROOT), "the mutated path is exactly the repo root");
     } finally {
       await rm(home, { recursive: true, force: true });
       await rm(fake.bin, { recursive: true, force: true });
