@@ -917,6 +917,16 @@ export async function startServer(options = {}) {
         refusal(res, 409, 'STALE_PREVIEW', 'Preview is stale. Run Refresh Preview to build a new one.');
         return;
       }
+      if (outcome && outcome.result === 'NOT WRITTEN') {
+        // S4 [GLM L12]: a refused commit is a typed refusal that forwards the
+        // unresolved reasons. The Preview is not consumed (a failed transaction
+        // leaves it retained, as E7 requires).
+        const reasons = Array.isArray(outcome.unresolved)
+          ? outcome.unresolved.map((u) => String(u && typeof u === 'object' && 'reason' in u ? u.reason : u))
+          : [];
+        sendJson(res, 409, { ok: false, code: 'NOT_WRITTEN', message: 'The settings file was not written. Fix the cause and run Refresh Preview.', reasons });
+        return;
+      }
       if (!outcome || outcome.result !== 'UPDATED') {
         refusal(res, 500, 'ERROR', 'Unexpected internal error.');
         return;

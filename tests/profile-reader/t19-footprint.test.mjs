@@ -83,7 +83,8 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
       // Re-pinned by the 0d ephemeral-port seam (named reason: programmatic
       // startServer accepts loopback port 0 for OS-assigned test ports; CLI
       // --port=0 remains a usage error).
-      ['ui.mjs', 'ab89c3fac719f116200c06caeea892ff8f8a915bfbc2c08416cb7be0edcbe2ac'],
+      // Re-pinned by S4 legacy-apply-500 (named reason: a NOT WRITTEN legacy commit is now the typed 409 NOT_WRITTEN refusal with its reasons; 500 remains for unexpected throws). Superseded pin ab89c3fac719f116200c06caeea892ff8f8a915bfbc2c08416cb7be0edcbe2ac.
+      ['ui.mjs', '99cbd2fb30578fb50a9dc0e2a83f4908e9cbcc144dda1c562517fd6adf4719a4'],
 
       // Re-pinned by the C09/C10 refusal hardening (named reason: a JSON null body
       // reached Object.keys as a 500, and an EXACT_OVERLAYS attestation without an

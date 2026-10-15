@@ -147,8 +147,11 @@ test('E7: transaction failure preserves the original target and does not fabrica
     // v1.2 temp-write step fails after backup (contract v1.2 section 15).
     fs.mkdirSync(file + '.tmp');
     const failure = await postJson(started.port, '/api/apply', { previewId: preview.json.previewId }, authHeaders(started.token));
-    assert.equal(failure.status, 500, 'unexpected internal failure surfaces as ERROR');
-    assert.equal(failure.json.code, 'ERROR');
+    // S4 legacy-apply-500: a refused transaction is the typed NOT_WRITTEN refusal
+    // with its reasons; HTTP 500 is reserved for unexpected throws.
+    assert.equal(failure.status, 409, 'a refused transaction surfaces as NOT_WRITTEN');
+    assert.equal(failure.json.code, 'NOT_WRITTEN');
+    assert.ok(Array.isArray(failure.json.reasons) && failure.json.reasons.length > 0, 'the refusal forwards its reasons');
     assert.notEqual(failure.json.status, 'UPDATED', 'failure never fabricates UPDATED');
     assert.deepEqual(fs.readFileSync(file), originalBytes, 'original preserved');
     assert.equal(backupCount(dir), 1, 'backup was created before the failed replacement');
