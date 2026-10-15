@@ -906,7 +906,9 @@ export async function readManagedConfig(options = {}) {
   // 13. Outer-layer-only definitions are not profile-owned (S1 mirrors this
   // at admission for the home case; the reader establishes it generally).
   const suppliedBy = [];
-  let previous = prefixConfigs.length > 0 ? prefixConfigs[0] : undefined;
+  // P2-3: layer 0 is compared against no config, not against itself, so a
+  // first non-user layer that supplies the effective config is attributed.
+  let previous = undefined;
   const layerOf = (at) => {
     if (prefixes[at].kind === 'user') return null;
     return { layer: prefixes[at].kind, source: prefixes[at].source ?? prefixes[at].kind };
