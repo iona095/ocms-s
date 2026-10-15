@@ -589,6 +589,7 @@
   let previewId = null;       // in-memory only; never persisted, never restored
   let lastPreview = null;     // last successful preview envelope for display
   let busy = false;           // a request is in flight
+  let previewSeq = 0;         // P3-1: Preview request generation; a response from an older generation is dropped
   let applying = false;       // apply is in flight (double-submit guard)
   let serverInfoKnown = false;
 
@@ -1099,6 +1100,16 @@
     setNotice(reason || 'Selection changed; run Refresh Preview to build a new one.', 'warn');
   }
 
+  // P3-1: DOM-read selections compared by value; both sides are built by
+  // profilePreviewBody so key order is stable.
+  function sameSelection(a, b) {
+    try {
+      return JSON.stringify(a) === JSON.stringify(b);
+    } catch {
+      return false;
+    }
+  }
+
   function currentSelection() {
     const picker = $('profile-picker');
     const name = picker && typeof picker.value === 'string' ? picker.value.trim() : '';
@@ -1168,12 +1179,24 @@
       setNotice('Declared overlays contain an empty entry; remove it before Preview.', 'error');
       return;
     }
+    // P3-1: snapshot this request's generation and selection. An edit made
+    // while the request is in flight must not be papered over by its late
+    // response; the response is dropped with a notice instead.
+    const mySeq = ++previewSeq;
     busy = true;
     document.body.setAttribute('aria-busy', 'true');
     syncControls();
     setNotice('Fetching preview from upstream sources\u2026', 'busy');
     try {
       const data = await apiPost('/api/preview', previewBody);
+      if (mySeq !== previewSeq) {
+        setNotice('A newer Preview request started; dropping this stale response.', 'warn');
+        return;
+      }
+      if (!sameSelection(previewBody, profilePreviewBody())) {
+        setNotice('Selection changed while Preview was loading; stale response dropped. Run Refresh Preview again.', 'warn');
+        return;
+      }
       lastPreview = data;
       previewId = data && typeof data.previewId === 'string' && data.previewId ? data.previewId : null;
       renderPreview(data);
