@@ -14,6 +14,13 @@ import { stringify as stringifyYaml } from 'yaml';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 
 export { assert };
+import { installStubDshOnAmbientPath } from '../support/dsh-stub-tree.mjs';
+
+// A1: every suite imports this module first. A composition scope is made
+// discoverable on the AMBIENT PATH (a real installed DSH always wins; otherwise
+// the test-only stub prefix is appended), so suites that reach the product's
+// PATH fallback do not depend on a globally installed DSH.
+installStubDshOnAmbientPath();
 
 // ---------------------------------------------------------------------------
 // Capability anchors (contract v1.3 sections 5.5, 13, 19). These are the ONLY

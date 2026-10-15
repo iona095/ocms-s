@@ -14,6 +14,14 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 import { stringify as stringifyYaml } from 'yaml';
+import { installStubDshOnAmbientPath, realDshInstalledOnPath, stubDshTree, withStubDshPath } from '../support/dsh-stub-tree.mjs';
+
+// A1: make a composition scope discoverable on the AMBIENT PATH: some product
+// paths (ProfileAwareCommit, the UI server) fall back to process.env.PATH when no
+// explicit anchor is supplied, which made every commit/UI test depend on a
+// globally installed DSH. A real install always wins; otherwise the stub prefix
+// is appended so the suite runs on any machine.
+installStubDshOnAmbientPath();
 import { findDshExecutable, resolveProfileTarget } from '../../profile/target-resolver.mjs';
 
 export { assert };
@@ -193,7 +201,7 @@ export function makeAnchor(dir, { skew = null, drop = null, dshVersion = EXPECTE
 // prerequisite is absent; tests whose property genuinely NEEDS the installed
 // DSH call resolveRealScopeOrSkip(t) so a clean runner reports a declared skip
 // naming the missing capability instead of an uncaught prerequisite error.
-export function resolveRealScope({ pathEnv = process.env.PATH ?? '' } = {}) {
+export function resolveInstalledScope({ pathEnv = process.env.PATH ?? '' } = {}) {
   const exePath = findDshExecutable({ pathEnv });
   if (exePath === null) {
     throw new Error('S2 fixture prerequisite missing: no dsh executable on PATH; cannot derive the install anchor.');
@@ -241,6 +249,27 @@ export function resolveRealScopeOrSkip(t, label = 'pinned DSH 0.2.1-alpha.2 inst
   }
 }
 
+// A1: the profile suites need a composition install scope. CI has the pinned DSH
+// installed and this resolves to it. With no dsh executable on PATH the suite
+// falls back to the test-only stub tree (tests/support/dsh-stub-tree.mjs) so the
+// test exercises its own property instead of failing on the environment. An
+// INSTALLED but version-skewed tree still throws loudly: skew is a real signal.
+export function resolveRealScope(options = {}) {
+  const pathEnv = options.pathEnv !== undefined ? options.pathEnv : (process.env.PATH ?? '');
+  try {
+    return resolveInstalledScope({ pathEnv });
+  } catch (err) {
+    if (!/no dsh executable on PATH/.test(String((err && err.message) || err))) throw err;
+    return stubInstallScope();
+  }
+}
+
+// The stub scope directory used by the fallback above.
+export function stubInstallScope() {
+  const { scope } = stubDshTree();
+  return scope;
+}
+
 export function realDshPackageDir(scope = resolveRealScope()) {
   return path.join(scope, 'dsh');
 }
@@ -250,8 +279,25 @@ export function realDshPackageDir(scope = resolveRealScope()) {
 // binding's dependency evidence then points at real, importable library
 // code (exact versions asserted). Requires the pinned DSH on PATH — an
 // environment prerequisite; failures are loud, never silent.
+// A1: binds over the ambient PATH (the real installed DSH is preferred). With no
+// installed dsh the stub prefix is appended, so admission still resolves an
+// exact-version composition scope and the test's own property is exercised.
+// The stub scope for this process (memoised through the shared helper).
+export function resolvedStubScope() {
+  return stubDshTree();
+}
+
 export function bindReal(home, name, extra = {}) {
-  const r = resolveProfileTarget({ profileName: name, dshHome: home, pathEnv: process.env.PATH ?? '', ...extra });
+  // With a real installed DSH the ambient PATH resolves it. With none, bind
+  // against the stub scope explicitly so the binding's dependency evidence and
+  // every later re-resolution (reader, plan-builder, commit) are deterministic
+  // and machine-independent.
+  const stub = resolvedStubScope();
+  const anchored = Object.hasOwn(extra, 'installAnchorDir') || realDshInstalledOnPath()
+    ? extra
+    : { ...extra, installAnchorDir: stub.scope };
+  const pathEnv = withStubDshPath(process.env.PATH ?? '');
+  const r = resolveProfileTarget({ profileName: name, dshHome: home, pathEnv, ...anchored });
   assert.equal(r.ok, true, `S1 real-PATH bind failed: ${JSON.stringify(r)}`);
   return r.target;
 }

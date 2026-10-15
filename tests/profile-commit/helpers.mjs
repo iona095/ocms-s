@@ -10,6 +10,14 @@ import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 import { stringify as stringifyYaml } from 'yaml';
 import { findDshExecutable, resolveProfileTarget } from '../../profile/target-resolver.mjs';
+import { installStubDshOnAmbientPath, realDshInstalledOnPath, stubDshTree, withStubDshPath } from '../support/dsh-stub-tree.mjs';
+
+// A1: make a composition scope discoverable on the AMBIENT PATH: some product
+// paths (ProfileAwareCommit, the UI server) fall back to process.env.PATH when no
+// explicit anchor is supplied, which made every commit/UI test depend on a
+// globally installed DSH. A real install always wins; otherwise the stub prefix
+// is appended so the suite runs on any machine.
+installStubDshOnAmbientPath();
 export { assert };
 // Pinned dependency versions. `include` is the fixture baseline every synthetic
 // anchor writes (still admitted); `includeAdmitted` is the exact-membership set
@@ -64,7 +72,7 @@ export function makeProfile(home, name, { manifest = true, bundles = [], entries
   }
   return profileDir;
 }
-export function resolveRealScope({ pathEnv = process.env.PATH ?? '' } = {}) {
+export function resolveInstalledScope({ pathEnv = process.env.PATH ?? '' } = {}) {
   const exePath = findDshExecutable({ pathEnv });
   if (exePath === null) throw new Error('S4 fixture prerequisite missing: no dsh executable on PATH.');
   const npmRoot = path.dirname(exePath);
@@ -82,6 +90,24 @@ export function resolveRealScope({ pathEnv = process.env.PATH ?? '' } = {}) {
   }
   throw new Error('S4 fixture prerequisite missing: no exact-version scope. ' + problems.join('; '));
 }
+// A1: prefer the installed pinned DSH; fall back to the test-only stub tree when
+// no dsh executable exists at all (tests/support/dsh-stub-tree.mjs). A present but
+// version-skewed install still throws: skew must never be masked.
+export function resolveRealScope(options = {}) {
+  const pathEnv = options.pathEnv !== undefined ? options.pathEnv : (process.env.PATH ?? '');
+  try {
+    return resolveInstalledScope({ pathEnv });
+  } catch (err) {
+    if (!/no dsh executable on PATH/.test(String((err && err.message) || err))) throw err;
+    return stubInstallScope();
+  }
+}
+
+export function stubInstallScope() {
+  const { scope } = stubDshTree();
+  return scope;
+}
+
 // Declared-skip variant of resolveRealScope: a clean runner (no global dsh on
 // PATH) reports "skipped: <capability>" instead of an uncaught prerequisite
 // error. Callers must return immediately when it returns null.
@@ -93,8 +119,17 @@ export function resolveRealScopeOrSkip(t, label = 'pinned DSH 0.2.1-alpha.2 inst
     return null;
   }
 }
+// The stub scope for this process (memoised through the shared helper).
+export function resolvedStubScope() {
+  return stubDshTree();
+}
+
 export function bindReal(home, name, extra = {}) {
-  const r = resolveProfileTarget({ profileName: name, dshHome: home, pathEnv: process.env.PATH ?? '', ...extra });
+  const stub = resolvedStubScope();
+  const anchored = Object.hasOwn(extra, 'installAnchorDir') || realDshInstalledOnPath()
+    ? extra
+    : { ...extra, installAnchorDir: stub.scope };
+  const r = resolveProfileTarget({ profileName: name, dshHome: home, pathEnv: withStubDshPath(process.env.PATH ?? ''), ...anchored });
   assert.equal(r.ok, true, 'S1 real-PATH bind failed: ' + JSON.stringify(r).slice(0, 800));
   return r.target;
 }
