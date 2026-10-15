@@ -126,7 +126,11 @@ describe('S3 T18 — planning and frozen-source regressions', () => {
       // Re-pinned by the B4 defect fix with the named reason: an alias inside
       // a replaced models span now refuses ANCHOR_IN_MANAGED_SCOPE instead of
       // rendering READY and silently dropping a non-local reference.
-      ['profile/surgical-render.mjs', 'dd430ab94dfd4179ada87191583cf9ed5934ac4968d44b5c12b706641abc79b3'],
+      // Re-pinned by the D07 defect fix with the named reason: an F1-add
+      // insertion sharing its offset with the combined F2 insertion merges
+      // (models block first) instead of refusing a duplicate site.
+      ['profile/surgical-render.mjs', '6b9ad428030f47b6b9417901b68bca459a292eb4e6e966217a6631fffa61dd2f'],
+
 
 
     ]);

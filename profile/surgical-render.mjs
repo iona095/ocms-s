@@ -804,7 +804,21 @@ export function renderDesiredState(input) {
       return refusal('UNPRESERVABLE_STRUCTURE', 'Missing providers container cannot be safely created.', {});
     }
   }
-  const allEdits = edits.concat(f1addEdits);
+  // D07: an F1-add route that is the last child of its map shares its
+  // zero-width insertion offset with the combined F2 insertion. Both are
+  // legitimate: the models block belongs inside the last route, the new
+  // routes after it. Merge them (models block first) instead of refusing a
+  // duplicate site.
+  let f1addRest = f1addEdits;
+  if (f2Edit) {
+    const kept = [];
+    for (const e of f1addEdits) {
+      if (e.start === f2Edit.start && e.end === f2Edit.end) f2Edit.text = e.text + f2Edit.text;
+      else kept.push(e);
+    }
+    f1addRest = kept;
+  }
+  const allEdits = edits.concat(f1addRest);
   if (f2Edit) allEdits.push(f2Edit);
   // Check overlapping edits (insertions at same offset are combined, so only F2 combined is one).
   const sortedEdits = allEdits.slice().sort(function (a, b) { return a.start - b.start || a.end - b.end; });
