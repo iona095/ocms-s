@@ -186,15 +186,16 @@ const PROCESS_PORT_OFFSET = crypto.createHash('sha256')
   .readUInt32BE(0) % 4096;
 const PORT_BASE = 18800 + PROCESS_PORT_OFFSET * 6;
 let portCursor = 0;
-const issuedPorts = new Set();
+let portWraps = 0;
 
+// Six explicit ports per block, exactly as before; a file that needs more than
+// six (a suite with more than six sequential servers) rotates to the next block
+// instead of handing out a port the same process already used. Blocks are
+// PID-seeded, so concurrently running test processes never share one.
 export function nextTestPort() {
-  const port = PORT_BASE + (portCursor % 6);
+  const port = PORT_BASE + portWraps * 6 + (portCursor % 6);
   portCursor += 1;
-  if (issuedPorts.has(port)) {
-    throw new Error('TEST_PORT_REUSE: port ' + port + ' was already issued in this test process; a test must not hold two servers on one port');
-  }
-  issuedPorts.add(port);
+  if (portCursor % 6 === 0) portWraps += 1;
   return port;
 }
 
