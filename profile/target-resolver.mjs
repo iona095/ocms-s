@@ -457,22 +457,43 @@ export function admitDependencyPackages({ profileDirReal, installAnchorDir = nul
     );
   }
 
-  // dsh baseline from the install scope (explicit preferred, else derived).
-  const installScope = explicitScope !== null
-    ? explicitScope
-    : derivedScopes.map((s) => realpathOrNull(s) ?? s).find((s) => {
-      const read = readManifestVersion(path.join(s, 'dsh', 'package.json'));
-      return read.ok;
-    });
-  const dshManifest = installScope !== undefined && installScope !== null
-    ? path.join(installScope, 'dsh', 'package.json')
-    : null;
-  const dshRead = dshManifest !== null ? readManifestVersion(dshManifest) : { ok: false, error: 'anchor-unresolved' };
-  if (!dshRead.ok || !EXPECTED_VERSIONS.dsh.has(dshRead.version)) {
+  // dsh baseline (S6 [GLM L14]): the same candidate loop as config-reader and
+  // commit. Per install scope the candidates are [scope/dsh, scope/../..]; the
+  // first candidate that is readable, named @deepseek-ai/dsh and pinned wins.
+  // Mismatching candidates are skipped, so a skewed top-level dsh never shadows
+  // a valid pinned nested scope. Skew is reported only when nothing is valid.
+  const dshScopes = explicitScope !== null
+    ? [explicitScope]
+    : derivedScopes.map((s) => realpathOrNull(s) ?? s);
+  let dshDir = null;
+  let dshRead = { ok: false, error: 'anchor-unresolved' };
+  let dshSkew = null;
+  for (const scope of dshScopes) {
+    for (const candidate of [path.join(scope, 'dsh'), path.join(scope, '..', '..')]) {
+      const read = readManifestVersion(path.join(candidate, 'package.json'));
+      if (!read.ok) continue;
+      let nameOk = false;
+      try {
+        nameOk = JSON.parse(fs.readFileSync(path.join(candidate, 'package.json'), 'utf8')).name === '@deepseek-ai/dsh';
+      } catch {
+        nameOk = false;
+      }
+      if (!nameOk) continue;
+      if (!EXPECTED_VERSIONS.dsh.has(read.version)) {
+        if (dshSkew === null) dshSkew = read.version;
+        continue;
+      }
+      dshDir = candidate;
+      dshRead = read;
+      break;
+    }
+    if (dshDir !== null) break;
+  }
+  if (dshDir === null) {
     return refusal(
       'INCOMPATIBLE_DSH',
       'The installed dsh baseline version cannot be established exactly.',
-      !dshRead.ok ? 'dsh-version-unverifiable' : `version-skew: dsh is ${dshRead.version}, expected ${admittedVersionsText('dsh')}`,
+      dshSkew !== null ? `version-skew: dsh is ${dshSkew}, expected ${admittedVersionsText('dsh')}` : 'dsh-version-unverifiable',
     );
   }
 
@@ -487,7 +508,7 @@ export function admitDependencyPackages({ profileDirReal, installAnchorDir = nul
       anchorDir: winner.scope,
       packages,
       versions: Object.fromEntries(UTILITY_PACKAGES.map((p) => [p, packages[p].version])),
-      dsh: { path: path.join(installScope, 'dsh'), version: dshRead.version },
+      dsh: { path: dshDir, version: dshRead.version },
       dshVersion: dshRead.version,
       exePath,
     },

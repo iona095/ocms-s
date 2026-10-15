@@ -62,7 +62,8 @@ describe('S3 T18 — planning and frozen-source regressions', () => {
       // Re-pinned by the P2 defect fix (report C15; named reason: a Windows
       // reserved device stem is now detected before the FIRST dot, so con.x.y
       // and com1.a.b are refused instead of admitted).
-      ['profile/target-resolver.mjs', '86851a249e638ebbf8996bcd2eb0e2a2cd72df0a112b9d9486eb78fafff00a20'],
+      // Re-pinned by S6 baseline-divergence (named reason: the dsh baseline now uses the config-reader/commit candidate loop, skipping skewed or misnamed candidates so a top-level dsh cannot shadow a valid pinned nested scope). Superseded pin 86851a249e638ebbf8996bcd2eb0e2a2cd72df0a112b9d9486eb78fafff00a20.
+      ['profile/target-resolver.mjs', 'dbd861995c87e63d15a8ca1a38cb22a7bdf35a5d730151058f80bbc581e9ff8a'],
       ['tests/profile-target/helpers.mjs', '535be36cad699d729c0eb5e9afde0aaf5ad9517b67b052eb7c2026a560c42c6f'],
       ['tests/profile-target/target-admission.test.mjs', 'ed8225f5c92461768b92b8a6571bd22720d5f54dfefedee79572f37564883ed5'],
       // Re-pinned by the B5 follow-up (named reason: the S1 export
@@ -106,7 +107,8 @@ describe('S3 T18 — planning and frozen-source regressions', () => {
       // Re-pinned by the P2 defect fix (report C15; named reason: a Windows
       // reserved device stem is now detected before the FIRST dot, so con.x.y
       // and com1.a.b are refused instead of admitted).
-      ['profile/target-resolver.mjs', '86851a249e638ebbf8996bcd2eb0e2a2cd72df0a112b9d9486eb78fafff00a20'],
+      // Re-pinned by S6 baseline-divergence (named reason: the dsh baseline now uses the config-reader/commit candidate loop, skipping skewed or misnamed candidates so a top-level dsh cannot shadow a valid pinned nested scope). Superseded pin 86851a249e638ebbf8996bcd2eb0e2a2cd72df0a112b9d9486eb78fafff00a20.
+      ['profile/target-resolver.mjs', 'dbd861995c87e63d15a8ca1a38cb22a7bdf35a5d730151058f80bbc581e9ff8a'],
       // Re-pinned by the 0b/D3 lock-label fix (named reason above: unexpected
       // lock-acquisition errors are no longer blanket-labeled INCOMPATIBLE_DSH).
       // 0b follow-up: recognize a LOCK_TIMEOUT code as well as the native sentence.
