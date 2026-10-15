@@ -225,11 +225,10 @@ export function makeDeps(overrides = {}) {
     probeHttp: async () => ({ ok: false, status: 0, json: null }),
     deadlineMs: 15_000,
     intervalMs: 250,
-    timers: {
-      setTimeout(fn, ms) { record.timers.push(ms); fn(); return 0; },
-      clearTimeout() {},
-      async delay() {},
-    },
+    // K5: the injected-timers double (setTimeout/clearTimeout/delay) was dead —
+    // lifecycle.mjs never consumed it and no test asserted record.timers, and
+    // its immediate-fire setTimeout cannot implement a real pause. Deleted
+    // rather than honored; the controller owns its own bounded sleeps.
     log: { info() {}, warn() {}, error() {} },
     ...overrides,
   };

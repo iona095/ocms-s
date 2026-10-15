@@ -143,6 +143,13 @@ export async function apply(ctx, options = {}) {
     nodeBin: typeof options.nodeBin === 'string' ? options.nodeBin : undefined,
     settingsPath: typeof options.settingsPath === 'string' ? options.settingsPath : undefined,
   };
+  // K5: an out-of-range/non-integer port is still replaced by the default
+  // (the Start contract is unchanged), but never silently — the rejected
+  // value is named in a diagnostic. Schema-bounds rejection was considered
+  // and rejected: apply() throwing would break the established Start surface.
+  if (typeof options.port === 'number' && config.port !== options.port) {
+    safeLog().warn('ignoring invalid configured port ' + String(options.port) + '; using default port ' + DEFAULT_PORT);
+  }
 
   if (typeof process.execPath !== 'string') {
     throw new Error('ocms/incompatible-dsh: no Node runtime executable is resolvable in this host');

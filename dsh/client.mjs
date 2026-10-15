@@ -328,15 +328,28 @@ export function createOcmsClient({ createElement: h, useState, useEffect }) {
       },
       stop: async function () { return normalizeStatus(unwrapOutcome(await remoteNs().stop(), 'stop failed')); },
     };
-    ctx.slots.inject('conversation.view', function () {
-      return ctx.slots.register({
+    // K5: the inject/register handles were dropped on the floor, so disposal
+    // released only the remote mount and leaked the slot registration.
+    const slotDisposers = [];
+    const disposeInject = ctx.slots.inject('conversation.view', function () {
+      const unregister = ctx.slots.register({
         name: 'conversation.view',
         id: VIEW_META.id,
         order: VIEW_META.order,
         label: VIEW_META.label,
       }, function (props) { return h(OcmsModels, Object.assign({}, props, { lifecycle: lifecycleFace })); });
+      if (typeof unregister === 'function') slotDisposers.push(unregister);
+      return unregister;
     });
-    return function () { return disposeRemote(); };
+    return function () {
+      for (const disposeSlot of slotDisposers.splice(0)) {
+        try { disposeSlot(); } catch { /* best effort */ }
+      }
+      if (typeof disposeInject === 'function') {
+        try { disposeInject(); } catch { /* best effort */ }
+      }
+      return disposeRemote();
+    };
   }
 
   return { inject, apply };

@@ -215,6 +215,7 @@ export function createLifecycleController(deps) {
       } else if (state === 'ERROR') {
         clearOwnership();
         exitInfo = null;
+        lastMessage = null;
         emit('OFFLINE');
       }
       // STOPPING: the stop or dispose flow consumes this exit; state is already
@@ -264,6 +265,7 @@ export function createLifecycleController(deps) {
       } else if (state === 'ERROR') {
         clearOwnership();
         exitInfo = null;
+        lastMessage = null;
         emit('OFFLINE');
       }
       settleExitWaiters(child);
@@ -305,9 +307,9 @@ export function createLifecycleController(deps) {
       }
       return statusPayload();
     }
-    if (state === 'STARTING' || state === 'STOPPING') {
-      return Promise.reject(ocmsFailure('ocms/busy', 'A lifecycle transition is already in progress.'));
-    }
+    // K5: the STARTING/STOPPING busy guard below was dead — transition is set
+    // synchronously before any await, so transition !== null already covers
+    // every in-flight transition. Removed; the fence above is the only guard.
     // §12/§19: any retained handle blocks a new spawn, whatever the reported
     // state. Only that handle's own exit releases ownership.
     if (ownedChild !== null) {
@@ -322,6 +324,10 @@ export function createLifecycleController(deps) {
       // (2) port state (§36): bounded local probe; occupied ⇒ EXTERNAL refusal.
       // A probe that itself fails is treated as free (the spawn race resolves
       // to ERROR at bind time) and the underlying fault is logged.
+      // Pre-probe normalization: a Start from ERROR visibly returns to OFFLINE
+      // before probing. (K5 keeps this unconditional: the happy-path contract
+      // observes OFFLINE first; the later re-assertions below are the guarded
+      // ones, since state is always OFFLINE when they run.)
       emit('OFFLINE');
       let portState;
       try {
@@ -335,12 +341,16 @@ export function createLifecycleController(deps) {
       if (startInvalidated(myGeneration)) {
         clearOwnership();
         lastMessage = 'The DSH Host instance was disposed during startup.';
-        emit('OFFLINE');
+        // K5: state is already OFFLINE here (pre-probe normalization above),
+        // so re-emitting would notify a duplicate transition.
+        if (state !== 'OFFLINE') emit('OFFLINE');
         throw ocmsFailure('ocms/start-failed', lastMessage);
       }
       if (portState !== 'free') {
-        emit('EXTERNAL');
+        // K5: the message is assigned BEFORE the emission — observers receive
+        // the same trusted payload status() returns, never a bare state.
         lastMessage = 'Port ' + port + ' is already in use by a process not owned by this DSH instance.';
+        emit('EXTERNAL');
         throw ocmsFailure('ocms/port-in-use', lastMessage);
       }
       // (3) Node executable (§13).
@@ -365,7 +375,8 @@ export function createLifecycleController(deps) {
       // dispose() that landed after the probe cannot be followed by a spawn.
       if (startInvalidated(myGeneration)) {
         lastMessage = 'The DSH Host instance was disposed during startup.';
-        emit('OFFLINE');
+        // K5: no duplicate OFFLINE (see pre-probe normalization).
+        if (state !== 'OFFLINE') emit('OFFLINE');
         throw disposalFailure();
       }
       // (6) STARTING strictly before spawn (§38).

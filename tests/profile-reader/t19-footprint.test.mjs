@@ -96,6 +96,17 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
       // the confirmation dialog showed UNKNOWN for profile targets, suppressed the
       // PRODUCTION warning, and a 409 busy Apply left the page in APPLYING).
       ['ui/index.html', 'f4db7da417ce1d69a65ed50bdc68e3666c8c96fbc4f6781b6dc82a976a32ada8'],
+      // Re-pinned by K5 lifecycle-misc (named reason: EXTERNAL is emitted with
+      // its message assigned, ERROR to OFFLINE drops the stale message, the
+      // disposed-during-probe OFFLINE re-assertion is guarded, the dead
+      // STARTING/STOPPING busy guard is removed, spawn returns are validated,
+      // close reconciles error retention, and F7 liveness checks precede the
+      // readiness break).
+      ['dsh/lifecycle.mjs', 'cee594647186d708e2186cae76ebe2c089dd19a8d58d6fd0b4cdf6b4dd6c37de'],
+      // Re-pinned by K5 lifecycle-misc (named reason: an invalid configured
+      // port still falls back to the default but now names the rejected value
+      // in a warn diagnostic instead of substituting silently).
+      ['dsh/host.mjs', '537b90b5c462143bf5e68b91ef5b89d000f7124816641f6a84bd3e0ffc0d7900'],
     ]);
     for (const [rel, hex] of CURRENT_PINS) {
       assert.equal(shaFile(rel), hex, `CURRENT surface drift: ${rel}`);
