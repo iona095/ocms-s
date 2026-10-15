@@ -1235,8 +1235,15 @@
     // Display-only counts from the currently rendered preview; they carry no
     // authority and are never sent back to the server.
     if (lastPreview) {
-      confirmPathEl.textContent = fieldOf(lastPreview.target || {}, ['displayPath', 'path']) || targetPathEl.textContent;
-      classificationBadge(confirmClassEl, lastPreview.target ? lastPreview.target.production : undefined);
+      // C07: a profile payload carries classification and patchPathReal, not the
+      // legacy production/displayPath pair, so confirmation used to show UNKNOWN
+      // for every profile target and suppressed the PRODUCTION warning.
+      const confirmTarget = lastPreview.target || {};
+      const productionFlag = confirmTarget.production === true || confirmTarget.classification === 'PRODUCTION'
+        ? true
+        : (confirmTarget.production === false || confirmTarget.classification === 'SCRATCH' ? false : undefined);
+      confirmPathEl.textContent = fieldOf(confirmTarget, ['displayPath', 'path', 'patchPathReal']) || targetPathEl.textContent;
+      classificationBadge(confirmClassEl, productionFlag);
       setConfirmCount('confirm-count-added', lastPreview.changes && lastPreview.changes.added);
       setConfirmCount('confirm-count-removed', lastPreview.changes && lastPreview.changes.removed);
       setConfirmCount('confirm-count-moved', lastPreview.changes && lastPreview.changes.moved);
@@ -1245,7 +1252,7 @@
       setConfirmCount('confirm-count-skipped', lastPreview.skippedUnresolved);
       setConfirmCount('confirm-count-unsupported', lastPreview.unsupportedSkipped);
       setConfirmCount('confirm-count-fallback', lastPreview.fallbackResolved);
-      const production = lastPreview.target && lastPreview.target.production === true;
+      const production = productionFlag === true;
       confirmNoteEl.textContent = production
         ? 'PRODUCTION target: a timestamped backup will be created before replacement.'
         : 'A timestamped backup will be created before replacement.';
@@ -1305,7 +1312,9 @@
         setState('IDLE');
         setNotice(err.message, 'warn');
       } else if (code === 'PREVIEW_BUSY' || code === 'APPLY_BUSY') {
-        // Nonfatal: the current preview and state remain valid.
+        // C25: nonfatal, but the page must not stay in APPLYING. The retained
+        // preview and READY state are still valid, so restore them.
+        setState('READY');
         setNotice(err.message, 'warn');
       } else {
         previewId = null;

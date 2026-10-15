@@ -37,6 +37,12 @@ export async function buildProfilePreview(input = {}) {
   }
   let declaredOverlays = src.declaredOverlays;
   if (declaredOverlays === undefined) {
+    // C10: an EXACT_OVERLAYS attestation must carry an array of overlays. Without
+    // this guard a string spread per character into bogus overlay paths and any
+    // other shape threw a TypeError that surfaced as a 500.
+    if (attestation !== null && attestation !== undefined && typeof attestation === "object" && !Array.isArray(attestation) && attestation.mode === "EXACT_OVERLAYS" && !Array.isArray(attestation.overlays)) {
+      return fail("INVALID_ATTESTATION", "An EXACT_OVERLAYS attestation must carry an array of overlays; failing closed.", "attestation-overlays-malformed");
+    }
     if (attestation !== null && attestation !== undefined && attestation.mode === "EXACT_OVERLAYS") declaredOverlays = [...attestation.overlays];
     else declaredOverlays = [];
   }

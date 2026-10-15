@@ -61,7 +61,12 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
       // activePreview slot and then committed activePreview.plan; it now captures
       // the retained preview before the await, commits the captured plan and
       // re-checks the slot). The pin keeps guarding the CURRENT reviewed bytes.
-      ['ui.mjs', '448bfc9289893f6acaf06b98f7fff285f36d10f3c0284657db7224a14a07185b'],
+      ['ui.mjs', '60d99497d39d1fbf422cd74f891c73664d8013fa2e27bce65dbe6e54c03a2629'],
+      // Re-pinned by the C09/C10 refusal hardening (named reason: a JSON null body
+      // reached Object.keys as a 500, and an EXACT_OVERLAYS attestation without an
+      // overlays array either spread a string per character or threw a TypeError
+      // that surfaced as a 500; both are now typed 400 refusals).
+      ['profile/preview-session.mjs', '7863d287a36f863ecd96842b710089c4cc1477ea29b0dd7399bd13a5dd4a27f1'],
       ['ui/index.html', '4e8491022f5c0f1b4cc5493434a32d56a7f46abd1f752c6905114e129b8fc2c0'],
     ]);
     for (const [rel, hex] of CURRENT_PINS) {

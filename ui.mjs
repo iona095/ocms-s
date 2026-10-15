@@ -727,6 +727,12 @@ export async function startServer(options = {}) {
   }
 
   async function handleProfileApply(res, parsed) {
+    // C09: a JSON null (or any non-object) body must be a typed 400, not a 500
+    // thrown out of Object.keys.
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      refusal(res, 400, 'BAD_REQUEST', 'Malformed request.');
+      return;
+    }
     const keys = Object.keys(parsed);
     const previewId = parsed.previewId;
     const hasSchema = typeof previewId === 'string' && keys.length === 3 && keys.includes('previewId') && keys.includes('confirmed') && keys.includes('selection');
