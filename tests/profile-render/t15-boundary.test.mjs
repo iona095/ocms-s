@@ -94,7 +94,11 @@ describe('S3 T18 — planning and frozen-source regressions', () => {
       // a stray CR per line and refused GENERATED_MEMBERSHIP_MISMATCH. The pin
       // below replaces the "must not be modified" work-tree check so any later
       // drift still trips here.
-      ['profile/surgical-render.mjs', 'f5444d64718ae0bd770e58070c3b061c306b8f3fa8ce2894813b421f0dbfa5ef'],
+      // Re-pinned by the B1 defect fix with the named reason: the same-line F1
+      // branch still pre-converted block text (CRLF double-CR), and candidate
+      // excision assumed a fixed two-character models separator (extra spaces
+      // or tabs falsely refused UNRELATED_CONTENT_CHANGED).
+      ['profile/surgical-render.mjs', '5993e2a19d2e2902962641075df29c5cdf9fce6f1bc93b24b86367ded6ffd8b0'],
     ]);
     for (const [rel, hex] of REPINNED) {
       assert.equal(sha(rel), hex, 'version-skew reproducibility (v1.4.7-rc6 §5) re-pin drifted: ' + rel);

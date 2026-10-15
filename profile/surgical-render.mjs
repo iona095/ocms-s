@@ -623,17 +623,10 @@ export function renderDesiredState(input) {
       const blockEolFixed = block.split('\n').join(eol);
       if (sameLine) {
         const indent = keyCol + 2;
-        const indented = indentBlock(blockEolFixed, indent, eol);
-        frag = eol + indented.slice(0, indented.length - eol.length);
-        // indentBlock adds trailing eol; we need exactly one trailing eol to match original span trailing newline.
-        // Original F1 flow span ends with eol already; our frag starts with eol and ends without extra? Adjust:
-        // Actually original span '[1, 2]\n' length includes one eol. Our frag '\n          - ...\n' also includes leading+trailing eol.
-        // But prefix 'models: ' already ends without eol, so leading eol is needed. Keep trailing eol.
-        frag = eol + indentBlock(blockEolFixed, indent, eol);
-        // indentBlock already ends with eol; remove duplicate leading? No, keep as is and trim to single trailing.
-        // The above double counts; fix: frag should be eol + indented block (which already ends with eol).
-        // Recompute cleanly:
-        frag = eol + indentBlock(blockEolFixed, indent, eol);
+        // indentBlock owns the line-ending join. Pre-converting block to CRLF
+        // here would leave stray CRs on CRLF patches (the F1-add path already
+        // avoids that same double conversion).
+        frag = eol + indentBlock(block, indent, eol);
       } else {
         const vcol = valS - valLineS;
         const blines = blockEolFixed.split(eol);
@@ -853,8 +846,13 @@ export function renderDesiredState(input) {
       } catch (e) { sameLineOrig = false; }
       if (sameLineOrig && wanted.length > 0) {
         const candKey = candLocated.routeInfo[route].modelsPair.key;
-        const candKeyEnd = candKey.range[1];
-        const expStartChar = candKeyEnd + 2;
+        let expStartChar = candKey.range[1];
+        // The separator after a same-line models key is not always ': '.
+        // Skip the actual colon/space/tab separator and begin excision at the
+        // inserted block's line break, so extra spaces or tabs stay in the
+        // remainder exactly as they appear in the original.
+        if (candText[expStartChar] === ':') expStartChar += 1;
+        while (candText[expStartChar] === ' ' || candText[expStartChar] === '\t') expStartChar += 1;
         candByteSpans.push({ route, kind: 'F1', start: charToByte(candText, expStartChar), end: charToByte(candText, ce) });
       } else {
         candByteSpans.push({ route, kind: 'F1', start: charToByte(candText, cs), end: charToByte(candText, ce) });
