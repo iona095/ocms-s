@@ -241,44 +241,56 @@ export function createOcmsClient({ createElement: h, useState, useEffect }) {
     const status = statusState[0];
     const setStatus = statusState[1];
     const lifecycle = props.lifecycle;
+    // K2: sequence guard — concurrent face operations each take a number; only
+    // the latest started operation may write status. A slow refresh that
+    // settles after a fresh Stop is dropped instead of resurrecting ONLINE
+    // with an iframe on a dead port.
+    let seq = 0;
+    const current = (my) => my === seq;
     useEffect(() => {
       let alive = true;
+      const my = ++seq;
       Promise.resolve(lifecycle.refresh && lifecycle.refresh())
-        .then((s) => { if (alive) setStatus(normalizeStatus(s)); })
+        .then((s) => { if (alive && current(my)) setStatus(normalizeStatus(s)); })
         .catch((err) => {
-          if (alive) setStatus({ state: 'ERROR', message: err && typeof err.message === 'string' ? err.message : 'status refresh failed' });
+          if (alive && current(my)) setStatus({ state: 'ERROR', message: err && typeof err.message === 'string' ? err.message : 'status refresh failed' });
         });
       return function () { alive = false; };
     }, [lifecycle]);
     const face = {
       refresh: async function () {
+        const my = ++seq;
         const s = normalizeStatus(await lifecycle.refresh());
-        setStatus(s);
+        if (current(my)) setStatus(s);
         return s;
       },
       start: async function () {
+        const my = ++seq;
         try {
           const s = normalizeStatus(await lifecycle.start());
-          setStatus(s);
+          if (current(my)) setStatus(s);
         } catch (err) {
+          if (!current(my)) return;
           // K1: a busy/port-in-use rejection describes current server state,
           // not a client failure — refresh it instead of showing ERROR.
           const code = err && typeof err.code === 'string' ? err.code : null;
           if (code === 'ocms/busy' || code === 'ocms/port-in-use') {
-            try { setStatus(normalizeStatus(await lifecycle.refresh())); return; } catch { /* fall through to ERROR */ }
+            try { if (current(my)) setStatus(normalizeStatus(await lifecycle.refresh())); return; } catch { /* fall through to ERROR */ }
           }
-          setStatus({ state: 'ERROR', message: err && typeof err.message === 'string' ? err.message : undefined });
+          if (current(my)) setStatus({ state: 'ERROR', message: err && typeof err.message === 'string' ? err.message : undefined });
         }
       },
       stop: async function () {
+        const my = ++seq;
         try {
           const s = normalizeStatus(await lifecycle.stop());
-          setStatus(s);
+          if (current(my)) setStatus(s);
         } catch (err) {
+          if (!current(my)) return;
           // K1: Stop shows ERROR like Start does; the refresh attempt stays
           // as a fallback, but its failure must not swallow the Stop failure.
-          try { setStatus(normalizeStatus(await lifecycle.refresh())); } catch (ignored) {
-            setStatus({ state: 'ERROR', message: err && typeof err.message === 'string' ? err.message : 'stop failed' });
+          try { if (current(my)) setStatus(normalizeStatus(await lifecycle.refresh())); } catch (ignored) {
+            if (current(my)) setStatus({ state: 'ERROR', message: err && typeof err.message === 'string' ? err.message : 'stop failed' });
           }
         }
       },
