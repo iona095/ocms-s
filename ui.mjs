@@ -205,9 +205,12 @@ function readBody(req, limit) {
   });
 }
 
-function listBackups(dir) {
+// C06: OCMS-S names a backup after the target it replaced, so the scan must use
+// the bound target's own basename instead of the default settings.yaml name.
+function listBackups(dir, basename) {
   try {
-    return fs.readdirSync(dir).filter((n) => n.startsWith('settings.yaml.bak-')).sort();
+    const prefix = String(basename) + '.bak-';
+    return fs.readdirSync(dir).filter((n) => n.startsWith(prefix)).sort();
   } catch {
     return [];
   }
@@ -892,7 +895,8 @@ export async function startServer(options = {}) {
     applyBusy = true;
     try {
       const dir = path.dirname(resolvedTarget);
-      const before = new Set(listBackups(dir));
+      const targetBasename = path.basename(resolvedTarget);
+      const before = new Set(listBackups(dir, targetBasename));
       let outcome;
       try {
         outcome = commitPlan(activePreview.plan);
@@ -910,13 +914,17 @@ export async function startServer(options = {}) {
         return;
       }
       activePreview = null;
-      const after = listBackups(dir);
+      const after = listBackups(dir, targetBasename);
       const fresh = after.filter((n) => !before.has(n));
       let backupPath = null;
       if (fresh.length > 0) backupPath = path.join(dir, fresh[fresh.length - 1]);
       else if (after.length > 0) backupPath = path.join(dir, after[after.length - 1]);
-      else backupPath = resolvedTarget + '.bak';
-      sendJson(res, 200, { ok: true, status: 'UPDATED', backupPath, target: targetInfo() });
+      // C06: never fabricate a recovery path. When no backup exists the response
+      // omits the field instead of pointing the operator at a file that was
+      // never created.
+      const body = { ok: true, status: 'UPDATED', target: targetInfo() };
+      if (backupPath !== null) body.backupPath = backupPath;
+      sendJson(res, 200, body);
     } finally {
       applyBusy = false;
     }

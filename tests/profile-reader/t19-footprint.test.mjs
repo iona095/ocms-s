@@ -61,7 +61,7 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
       // activePreview slot and then committed activePreview.plan; it now captures
       // the retained preview before the await, commits the captured plan and
       // re-checks the slot). The pin keeps guarding the CURRENT reviewed bytes.
-      ['ui.mjs', '6935aaf2cea39e74a357ef24ad7a16c1d05ead2f5ae08013ad3cbc875583110b'],
+      ['ui.mjs', '448bfc9289893f6acaf06b98f7fff285f36d10f3c0284657db7224a14a07185b'],
       ['ui/index.html', '4e8491022f5c0f1b4cc5493434a32d56a7f46abd1f752c6905114e129b8fc2c0'],
     ]);
     for (const [rel, hex] of CURRENT_PINS) {
