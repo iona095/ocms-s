@@ -94,7 +94,11 @@ describe('S3 T18 — planning and frozen-source regressions', () => {
       // Re-pinned by the 0b/D3 lock-label fix (named reason above: unexpected
       // lock-acquisition errors are no longer blanket-labeled INCOMPATIBLE_DSH).
       // 0b follow-up: recognize a LOCK_TIMEOUT code as well as the native sentence.
-      ['profile/commit.mjs', '6a3542b7afc7cff8a4851b6e635f0eb9bacaf9c1a060568efa1b37e2383298d9'],
+      // Re-pinned by the B5 follow-up with the named reason: commit-side
+      // row anchoring shares anchorNameBesideFile and covers top-level rows,
+      // matching the S1/S2 address rule.
+      ['profile/commit.mjs', 'e08abf377fdf4934b7799a11aebef169ba7d5fc2d9fde0158c8bfa84e2a331e3'],
+
 
 
       // Re-pinned by the B5 defect fix with the named reason: insert-name

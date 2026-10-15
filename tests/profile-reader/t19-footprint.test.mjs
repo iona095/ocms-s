@@ -62,7 +62,7 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
       // Re-pinned by the 0b/D3 lock-label fix (named reason: an unexpected
       // lock-acquisition failure was blanket-labeled INCOMPATIBLE_DSH; it is
       // now VERIFY_FAILED while native LOCK_TIMEOUT detection is unchanged).
-      ['profile/commit.mjs', '6a3542b7afc7cff8a4851b6e635f0eb9bacaf9c1a060568efa1b37e2383298d9'], // 0b follow-up: LOCK_TIMEOUT code is recognized alongside the native sentence.
+      ['profile/commit.mjs', 'e08abf377fdf4934b7799a11aebef169ba7d5fc2d9fde0158c8bfa84e2a331e3'], // 0b follow-up: LOCK_TIMEOUT code is recognized alongside the native sentence. B5 follow-up: anchorRows shares anchorNameBesideFile and covers top-level rows.
 
       // Re-pinned by the C08/D02 defect fix (named reason: the profile Apply
       // handler awaited verifyProfileApplySelection against the mutable

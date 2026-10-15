@@ -10,7 +10,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import { parseDocument, isSeq, isMap, isScalar } from 'yaml';
-import { sameTarget, admitDependencyPackages, EXPECTED_VERSIONS, classifyTarget, validateProfileName, resolveProfileTarget } from './target-resolver.mjs';
+import { sameTarget, admitDependencyPackages, EXPECTED_VERSIONS, classifyTarget, validateProfileName, resolveProfileTarget, anchorNameBesideFile } from './target-resolver.mjs';
 import { renderDesiredState, MANAGED_ROUTE_KEYS, classifyFootprint } from './surgical-render.mjs';
 import { isAdmittedProductionAttestation } from './live-attestation.mjs';
 export const LOCK_RESOURCE_SUFFIX = '.lock';
@@ -168,16 +168,21 @@ function parseDialectRows(jsYaml, entryListSchema, text, layer) {
   }
   return { ok: true, rows: parsed };
 }
+// B5: every row from one file anchors alike (top-level rows as well as
+// insert-directive children), sharing anchorNameBesideFile with S1/S2 so no
+// path can disagree about a row's address.
 function anchorRows(rows, file) {
-  const base = path.dirname(path.resolve(file));
   const visit = (entry) => {
     if (!isPlainObject(entry) && !Array.isArray(entry)) return;
-    if (!Array.isArray(entry) && typeof entry.name === 'string' && (path.isAbsolute(entry.name) || entry.name.startsWith('./') || entry.name.startsWith('../'))) {
-      entry.name = pathToFileURL(path.resolve(base, entry.name)).href;
+    if (!Array.isArray(entry) && typeof entry.name === 'string') {
+      entry.name = anchorNameBesideFile(entry.name, file);
     }
     if (!Array.isArray(entry) && entry.group && Array.isArray(entry.config)) entry.config.forEach(visit);
   };
-  rows.forEach((row) => { if (Array.isArray(row.insert)) row.insert.forEach(visit); });
+  rows.forEach((row) => {
+    visit(row);
+    if (Array.isArray(row.insert)) row.insert.forEach(visit);
+  });
   return rows;
 }
 function flattenRows(rows) {
