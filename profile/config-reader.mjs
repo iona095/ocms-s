@@ -359,7 +359,9 @@ function managedSlotEqual(a, b) {
   return isDeepStrictEqual(a.models, b.models);
 }
 
-function resolvePackageEntry(pkgDir) {
+// Exported for tests: resolves a package entry file, refusing anything that
+// escapes the package directory.
+export function resolvePackageEntry(pkgDir) {
   let manifest;
   try {
     manifest = JSON.parse(fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8'));
@@ -385,11 +387,23 @@ function resolvePackageEntry(pkgDir) {
     : pick(manifest.exports)) ?? (typeof manifest.main === 'string' ? manifest.main : null) ?? 'lib/index.js';
   if (typeof rel !== 'string' || rel.length === 0) return null;
   const abs = path.join(pkgDir, rel);
+  let real;
   try {
     if (!fs.statSync(abs).isFile()) return null;
+    real = fs.realpathSync(abs);
   } catch {
     return null;
   }
+  // P3-4: after realpath, refuse an entry that resolves outside the package
+  // directory (manifest ../ traversal or an escaping symlink).
+  let root;
+  try {
+    root = fs.realpathSync(pkgDir);
+  } catch {
+    return null;
+  }
+  const relToRoot = path.relative(root, real);
+  if (relToRoot === '' || relToRoot === '..' || relToRoot.startsWith('..' + path.sep) || path.isAbsolute(relToRoot)) return null;
   return abs;
 }
 
