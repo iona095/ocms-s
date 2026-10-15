@@ -11,6 +11,7 @@ import {
   V13_UI_HTML_SHA,
 } from './helpers.mjs';
 import { startEphemeralTestServer, tempDshHome } from '../v1.3/helpers.mjs';
+import { assertHeadersEquivalent } from '../support/embed-header-comparison.mjs';
 
 const hasEmbedOrigin = await probeEmbedOriginCapability();
 
@@ -96,16 +97,21 @@ test('CSP embed mode: exactly one normalized origin', { skip: !hasEmbedOrigin &&
 test('embed mode changes ONLY the frame policy (headers otherwise identical)', { skip: !hasEmbedOrigin && 'capability missing: startServer embedOrigin' }, async (t) => {
   const standalone = await getCsp(t);
   const embedded = await getCsp(t, { embedOrigin: 'http://127.0.0.1:3080' });
-  const names = new Set([...standalone.res.headers.keys(), ...embedded.res.headers.keys()]);
-  for (const name of names) {
-    if (name.toLowerCase() === 'content-security-policy') continue;
-    // The Date header legitimately advances between the two sequential
-    // responses; it carries no framing policy.
-    if (name.toLowerCase() === 'date') continue;
-    const a = String(standalone.res.headers.get(name));
-    const b = String(embedded.res.headers.get(name));
-    if (a !== b) assert.fail('header ' + name + ' must not change between standalone and embed mode (' + a + ' -> ' + b + ')');
+  // T1: the Date header is no longer exempt. Both responses' Date values
+  // must be valid HTTP dates agreeing within a tolerance; every other header
+  // is still compared exactly. The rule lives in tests/support and is proven
+  // with negative controls in tests/v1.4/embed-date-tolerance.test.mjs.
+  const standaloneHeaders = {};
+  for (const [k, v] of standalone.res.headers) {
+    if (k.toLowerCase() === 'content-security-policy') continue;
+    standaloneHeaders[k] = v;
   }
+  const embeddedHeaders = {};
+  for (const [k, v] of embedded.res.headers) {
+    if (k.toLowerCase() === 'content-security-policy') continue;
+    embeddedHeaders[k] = v;
+  }
+  assertHeadersEquivalent(standaloneHeaders, embeddedHeaders);
   const directivesOf = (res) => new Map(String(res.headers.get('content-security-policy')).split(';').map((d) => d.trim()).map((d) => [d.slice(0, d.indexOf(' ')), d]));
   const sa = directivesOf(standalone.res);
   const sb = directivesOf(embedded.res);
