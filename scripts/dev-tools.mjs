@@ -143,7 +143,13 @@ export async function resolveDshLaunch(shimPath, overrides) {
       if (typeof binField !== "string" || binField.length === 0) {
         continue;
       }
-      if (isAbsolute(binField) || binField.split("/").indexOf("..") !== -1) {
+      // P3: the bin field must stay inside the package root. Split on BOTH
+      // separators (a '..\\..\\x.js' traversal joined onto the root escapes it on
+      // Windows) and reject drive-relative forms too, which isAbsolute alone
+      // does not cover.
+      const binSegments = binField.split(/[\\/]/);
+      const binDrives = /^[A-Za-z]:/.test(binField);
+      if (isAbsolute(binField) || binDrives || binSegments.indexOf("..") !== -1) {
         continue;
       }
       const entry = join(root, binField);
