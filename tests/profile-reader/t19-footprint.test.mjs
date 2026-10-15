@@ -112,7 +112,8 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
       // Re-pinned by K7 client-seq-persistence (named reason: the bundle footer
       // now passes useRef through so the status sequence guard survives
       // re-renders; transform and banner untouched).
-      ['dsh/build-client.mjs', '29a3cea74ed2c9170c4b7be0f4472b3ff407ce42badd61dd3478c648c1ba6234'],
+      // Re-pinned by S12 build-client-atomic (named reason: unique same-dir temp plus rename with temp cleanup, and the import guard now also refuses any mid-line dynamic import()). Superseded pin 29a3cea74ed2c9170c4b7be0f4472b3ff407ce42badd61dd3478c648c1ba6234.
+      ['dsh/build-client.mjs', '0e7622c1051929f02a0e01854c79c7dbb55e13257fb550536c1214e5574b55b9'],
       ['dsh/host.mjs', '537b90b5c462143bf5e68b91ef5b89d000f7124816641f6a84bd3e0ffc0d7900'],
     ]);
     for (const [rel, hex] of CURRENT_PINS) {

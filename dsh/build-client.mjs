@@ -4,7 +4,7 @@
 // dsh/client.mjs is import-free by design, so the transform is a strict,
 // line-anchored export strip followed by deterministic concatenation.
 // Usage: node dsh/build-client.mjs
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, rename, unlink } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -17,8 +17,10 @@ const stripped = source.replace(/^export /gm, '');
 if (/^\s*export\b/m.test(stripped)) {
   throw new Error('build-client: unexpected export form survived the transform');
 }
-if (stripped.includes('import ') && /^\s*import\b/m.test(stripped)) {
-  throw new Error('build-client: dsh/client.mjs must stay import-free');
+// S12: the old line-anchored import check failed open on a mid-line dynamic
+// import(). Any static import or any dynamic import() anywhere refuses loudly.
+if (/^\s*import\b/m.test(stripped) || /\bimport\s*\(/.test(stripped)) {
+  throw new Error('build-client: unexpected import form survived the transform (dsh/client.mjs must stay import-free)');
 }
 
 const banner =
@@ -32,5 +34,15 @@ const footer =
   'return module.exports;\n' +
   '} });\n';
 
-await writeFile(path.join(dir, 'client.js'), banner + stripped + footer, 'utf8');
+const outPath = path.join(dir, 'client.js');
+// S12: write-then-rename through a unique same-dir temp, removed in a
+// finally-equivalent: a crash mid-write can never leave a truncated bundle.
+const tmpPath = outPath + '.tmp-' + process.pid + '-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+try {
+  await writeFile(tmpPath, banner + stripped + footer, 'utf8');
+  await rename(tmpPath, outPath);
+} catch (err) {
+  try { await unlink(tmpPath); } catch { /* best effort */ }
+  throw err;
+}
 console.log('dsh/client.js written');
