@@ -70,8 +70,10 @@ describe('v1.4.6-rc1 gateway base derivation and documented aliases', () => {
   it('3. doc-bases-disjoint: no base of one gateway prefixes a base of the other', () => {
     const bases = sync.DOC_ENDPOINT_BASES;
     assert.ok(Object.isFrozen(bases) && Object.isFrozen(bases.go) && Object.isFrozen(bases.zen));
-    assert.deepEqual([...bases.go], ['/zen/go/v1/', '/inference/go/v1/']);
-    assert.deepEqual([...bases.zen], ['/zen/v1/', '/inference/v1/']);
+    // NB1 re-pin (named reason: live docs moved to per-provider inference bases;
+    // old bases retained, new bases appended per gateway).
+    assert.deepEqual([...bases.go], ['/zen/go/v1/', '/inference/go/v1/', '/inference/go/openai/v1/', '/inference/go/anthropic/v1/', '/inference/go/google/v1beta/']);
+    assert.deepEqual([...bases.zen], ['/zen/v1/', '/inference/v1/', '/inference/openai/v1/', '/inference/anthropic/v1/', '/inference/google/v1beta/', '/inference/systemone/v1/']);
     for (const g of ['go', 'zen']) {
       const canonical = new URL(sync.routeBaseURL(g, 'openai-completions')).pathname + '/';
       assert.equal(bases[g][0], canonical, g + ' canonical doc base matches the routed base');

@@ -37,7 +37,11 @@ function sourcesFromDocs({ goMap, zenMap }) {
     const models = {};
     for (const id of Object.keys(map)) {
       const tail = new URL(map[id]).pathname.split('/').pop();
-      models[id] = catRecord({ id, name: id, provider: { npm: hintForTail(tail) } });
+      // The live docs mark the systemone rows with no SDK package ('-'): like
+      // the withdrawn-tail guard test, they carry no provider hint, so a known
+      // base with an unrecognized tail stays UNSUPPORTED (skip), never placed.
+      if (tail === 'systemone') models[id] = catRecord({ id, name: id, provider: undefined });
+      else models[id] = catRecord({ id, name: id, provider: { npm: hintForTail(tail) } });
     }
     return models;
   };

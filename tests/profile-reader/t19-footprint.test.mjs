@@ -70,7 +70,9 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
       // Re-pinned by S9 confirm-eof (named reason: defaultConfirmCli settles on readline close, so Ctrl-D/EOF declines through the verdict path instead of hanging forever). Superseded pin 5934a809cba70a4b65f380619271fb281178617d08081a75e36eeb27776cc34f.
       // Re-pinned by S10 preview-display-swallow (named reason: a failed Preview display refuses PREVIEW_DISPLAY_FAILED instead of continuing to confirm and Apply blind). Superseded pin 3b940afa7aaa5730b8891a93cbd0f5ace77529b5b12f1bfd8093e5a80defad43.
       // Re-pinned by C1 legacy-tmp-race (named reason: unique per-commit temp plus finally cleanup instead of the fixed shared <settings>.tmp). Superseded pin 8bd44f458a0cf500b8ab18a603b6eb62000a72a898d11de491b20e13cba9ed17.
-      ['sync.mjs', '6c3a335a9129e31490f671595bc7f2c2b5eebf3a51c95ee454f6682745ddd95e'],
+      // Re-pinned by NB1 inference bases (named reason: DOC_ENDPOINT_BASES gains the live
+      // per-provider /inference/... bases per gateway; old bases retained). Superseded pin 6c3a335a9129e31490f671595bc7f2c2b5eebf3a51c95ee454f6682745ddd95e.
+      ['sync.mjs', '1fb8014cdb4f164860cae6573ef38bfc1ab671ad16061e72ea26610db2fe40a3'],
 
 
       // Re-pinned by the 0b/D3 lock-label fix (named reason: an unexpected

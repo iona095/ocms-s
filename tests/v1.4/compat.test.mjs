@@ -232,7 +232,13 @@ test('v1.4.7-rc5 identity: sync.mjs pinned to the rc5 bytes plus the C02/C03 ver
   // Re-pinned by S9 confirm-eof (named reason: defaultConfirmCli settles on readline close, so Ctrl-D/EOF declines through the verdict path instead of hanging forever). Superseded pin 5934a809cba70a4b65f380619271fb281178617d08081a75e36eeb27776cc34f.
   // Re-pinned by S10 preview-display-swallow (named reason: a failed Preview display refuses PREVIEW_DISPLAY_FAILED instead of continuing to confirm and Apply blind). Superseded pin 3b940afa7aaa5730b8891a93cbd0f5ace77529b5b12f1bfd8093e5a80defad43.
   // Re-pinned by C1 legacy-tmp-race (named reason: unique per-commit temp plus finally cleanup instead of the fixed shared <settings>.tmp). Superseded pin 8bd44f458a0cf500b8ab18a603b6eb62000a72a898d11de491b20e13cba9ed17.
-  assert.equal(sha, '6c3a335a9129e31490f671595bc7f2c2b5eebf3a51c95ee454f6682745ddd95e', 'sync.mjs drift beyond the C02/C03 verdict fix is forbidden');
+  // Re-pinned by NB1 inference bases (named reason: the live Go/Zen docs moved every
+  // endpoint-table row onto per-provider /inference/... bases, so DOC_ENDPOINT_BASES gains
+  // /inference/go/openai/v1/, /inference/go/anthropic/v1/, /inference/go/google/v1beta/ for go
+  // and /inference/openai/v1/, /inference/anthropic/v1/, /inference/google/v1beta/,
+  // /inference/systemone/v1/ for zen; old bases retained, fail-closed matching unchanged).
+  // Superseded pin 6c3a335a9129e31490f671595bc7f2c2b5eebf3a51c95ee454f6682745ddd95e.
+  assert.equal(sha, '1fb8014cdb4f164860cae6573ef38bfc1ab671ad16061e72ea26610db2fe40a3', 'sync.mjs drift beyond the C02/C03 verdict fix is forbidden');
 });
 
 test('v1.4.7-rc2 Amendment B identity: plan-builder pinned to the B bytes', () => {

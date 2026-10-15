@@ -53,7 +53,8 @@ describe('v1.4.7-rc1 go docs move and fail-closed base', () => {
   it('G1 go bases list the inference/go base second and stay disjoint', () => {
     const bases = sync.DOC_ENDPOINT_BASES;
     assert.ok(Object.isFrozen(bases) && Object.isFrozen(bases.go) && Object.isFrozen(bases.zen));
-    assert.deepEqual([...bases.go], ['/zen/go/v1/', '/inference/go/v1/']);
+    // NB1 re-pin (named reason: live docs moved to per-provider inference bases; old bases retained).
+    assert.deepEqual([...bases.go], ['/zen/go/v1/', '/inference/go/v1/', '/inference/go/openai/v1/', '/inference/go/anthropic/v1/', '/inference/go/google/v1beta/']);
     assert.equal(bases.go[0], new URL(sync.routeBaseURL('go', 'openai-completions')).pathname + '/');
     for (const a of bases.go) for (const b of bases.zen) {
       assert.ok(!a.startsWith(b) && !b.startsWith(a), 'I-DISJOINT ' + a + ' vs ' + b);

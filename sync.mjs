@@ -56,9 +56,15 @@ export function routeBaseURL(gateway, api) {
   return api === 'anthropic-messages' ? GATEWAY_BASE[gateway] : GATEWAY_BASE[gateway] + '/v1';
 }
 
+// NB1 (2026-10-15): the live Go/Zen docs moved every endpoint-table row off the
+// old bases onto per-provider inference bases (fixtures in
+// tests/nb1-inference-bases/fixtures/). The google bases stop at v1beta/ so the
+// existing 'models/<id>' tail map is unchanged; systemone/v1/ is recognized so
+// its two documented rows stay ENDPOINT_UNSUPPORTED (skip) instead of blocking
+// the whole plan with ENDPOINT_BASE_UNKNOWN. Closed exact prefixes only.
 export const DOC_ENDPOINT_BASES = Object.freeze({
-  go: Object.freeze(['/zen/go/v1/', '/inference/go/v1/']),
-  zen: Object.freeze(['/zen/v1/', '/inference/v1/']),
+  go: Object.freeze(['/zen/go/v1/', '/inference/go/v1/', '/inference/go/openai/v1/', '/inference/go/anthropic/v1/', '/inference/go/google/v1beta/']),
+  zen: Object.freeze(['/zen/v1/', '/inference/v1/', '/inference/openai/v1/', '/inference/anthropic/v1/', '/inference/google/v1beta/', '/inference/systemone/v1/']),
 });
 
 // ---------------------------------------------------------------------------

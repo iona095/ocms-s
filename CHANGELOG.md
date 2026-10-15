@@ -4,6 +4,18 @@ All notable project-level changes are summarized here.
 
 This file is intentionally concise. The authoritative behavioral specification remains the current contract.
 
+## NB1 inference bases (unreleased)
+
+Sync recognizes the live per-provider inference endpoint bases observed in the
+2026-10-15 Go/Zen docs captures (fixtures under tests/nb1-inference-bases/):
+go gains /inference/go/openai/v1/, /inference/go/anthropic/v1/ and
+/inference/go/google/v1beta/; zen gains /inference/openai/v1/,
+/inference/anthropic/v1/, /inference/google/v1beta/ and /inference/systemone/v1/.
+Old bases are retained. Fail-closed ENDPOINT_BASE_UNKNOWN behaviour is unchanged;
+the two documented systemone rows resolve to ENDPOINT_UNSUPPORTED (skip), so the
+captured-docs preview reports zero ENDPOINT_BASE_UNKNOWN. No version bump (owner
+to decide).
+
 ## 1.4.7-rc7 (unreleased)
 
 Bug-fix pass from the eight-model bug hunt (baseline cc1a14f).
