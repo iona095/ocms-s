@@ -228,12 +228,14 @@ test('v1.4.7-rc5 identity: sync.mjs pinned to the rc5 bytes plus the C02/C03 ver
   const sha = sha256Hex(fs.readFileSync(path.join(REPO_ROOT, 'sync.mjs')));
   // Re-pinned by the P1 defect fix (report C14; named reason: the legacy
   // default settings path no longer falls back to a literal machine path).
-  assert.equal(sha, 'a89f9bcdb35b8efa52ffa8a7ca658bff2f632e485b60a4482b13c59d70c4b478', 'sync.mjs drift beyond the C02/C03 verdict fix is forbidden');
+  // Re-pinned by S8 digest-numerics (named reason: canonicalJson maps non-finite numbers to distinct bare tokens instead of collapsing onto 'null', and the reader gains the bigint arm; identical rule in all three copies). Superseded pin a89f9bcdb35b8efa52ffa8a7ca658bff2f632e485b60a4482b13c59d70c4b478.
+  assert.equal(sha, '5934a809cba70a4b65f380619271fb281178617d08081a75e36eeb27776cc34f', 'sync.mjs drift beyond the C02/C03 verdict fix is forbidden');
 });
 
 test('v1.4.7-rc2 Amendment B identity: plan-builder pinned to the B bytes', () => {
   const sha = sha256Hex(fs.readFileSync(path.join(REPO_ROOT, 'profile', 'plan-builder.mjs')));
-  assert.equal(sha, '0bd80eca74a5e967cfd6e8fd1430ff9eef6c723b7ed380834f88685b83c53198', 'plan-builder drift beyond the v1.4.7-rc2 Amendment B implementation is forbidden');
+  // Re-pinned by S8 digest-numerics (named reason: canonicalJson maps non-finite numbers to distinct bare tokens instead of collapsing onto 'null', and the reader gains the bigint arm; identical rule in all three copies). Superseded pin 0bd80eca74a5e967cfd6e8fd1430ff9eef6c723b7ed380834f88685b83c53198.
+  assert.equal(sha, 'ee428f453e5ff91c9281e708e66a0fc580bdb61417f1c75e8f6b3a3607c85548', 'plan-builder drift beyond the v1.4.7-rc2 Amendment B implementation is forbidden');
 });
 
 test('v1.4.7-rc1 Amendment A identity: surgical-render pinned to the rc1 bytes', { skip: 'superseded by the C04/D01 CRLF indentBlock fix (see the C04 pin below)' }, () => {

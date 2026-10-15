@@ -66,7 +66,8 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
       // Re-pinned by the P1 defect fix (report C14; named reason: the legacy default
 // settings path resolves USERPROFILE, then DSH_HOME, then refuses with a typed
 // error instead of falling back to a literal machine path).
- ['sync.mjs', 'a89f9bcdb35b8efa52ffa8a7ca658bff2f632e485b60a4482b13c59d70c4b478'],
+ // Re-pinned by S8 digest-numerics (named reason: canonicalJson maps non-finite numbers to distinct bare tokens instead of collapsing onto 'null', and the reader gains the bigint arm; identical rule in all three copies). Superseded pin a89f9bcdb35b8efa52ffa8a7ca658bff2f632e485b60a4482b13c59d70c4b478.
+      ['sync.mjs', '5934a809cba70a4b65f380619271fb281178617d08081a75e36eeb27776cc34f'],
 
 
       // Re-pinned by the 0b/D3 lock-label fix (named reason: an unexpected

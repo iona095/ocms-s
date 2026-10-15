@@ -157,7 +157,14 @@ function canonicalJson(value) {
   if (value === undefined || value === null) return 'null';
   const t = typeof value;
   if (t === 'boolean' || t === 'string') return JSON.stringify(value);
-  if (t === 'number') return Number.isFinite(value) ? JSON.stringify(value) : 'null';
+  // S8 digest-numerics (same rule as profile/config-reader.mjs): non-finite numbers digest as distinct bare tokens,
+  // never as 'null' (null vs .nan digested identically). Bare tokens cannot
+  // collide with quoted strings, 'null', or containers.
+  if (t === 'number') {
+    if (Number.isFinite(value)) return JSON.stringify(value);
+    if (Number.isNaN(value)) return 'NaN';
+    return value < 0 ? '-Infinity' : 'Infinity';
+  }
   if (t === 'bigint') return JSON.stringify(String(value));
   if (Array.isArray(value)) return '[' + value.map(canonicalJson).join(',') + ']';
   if (t !== 'object') return 'null';
