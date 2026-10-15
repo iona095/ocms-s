@@ -56,6 +56,11 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
     // beyond the §10-authorized version-bump files below.
     const CURRENT_PINS = new Map([
       ['sync.mjs', '60a8412f2a4f083cf89f67d0105d36de5aa67186cb2a8db8e87a06046508d3b7'],
+      // Re-pinned by the 0b/D3 lock-label fix (named reason: an unexpected
+      // lock-acquisition failure was blanket-labeled INCOMPATIBLE_DSH; it is
+      // now VERIFY_FAILED while native LOCK_TIMEOUT detection is unchanged).
+      ['profile/commit.mjs', '0a9b6517061fa982c5cc071e5102146778c01350bf2f268c10ffcba244f3f1f1'],
+
       // Re-pinned by the C08/D02 defect fix (named reason: the profile Apply
       // handler awaited verifyProfileApplySelection against the mutable
       // activePreview slot and then committed activePreview.plan; it now captures

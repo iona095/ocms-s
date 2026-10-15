@@ -406,7 +406,10 @@ export async function ProfileAwareCommit(input) {
   } catch (err) {
     const msg = err && err.message ? String(err.message) : String(err);
     if (msg.includes('timed out waiting for the writer lock')) return { ok: false, code: 'LOCK_TIMEOUT', message: 'The native writer lock timed out.', status: 'BLOCKED', lockResource, waitMs: waitMsRaw };
-    return { ok: false, code: 'INCOMPATIBLE_DSH', message: 'The native lock cannot be acquired.', status: 'BLOCKED', detail: msg.slice(0, 300), lockResource, waitMs: waitMsRaw };
+    if (err && err.ok === false && typeof err.code === 'string' && COMMIT_REFUSAL_CODES.includes(err.code)) {
+      return { ...err, lockResource: err.lockResource ?? lockResource, waitMs: err.waitMs ?? waitMsRaw };
+    }
+    return { ok: false, code: 'VERIFY_FAILED', message: 'The commit could not be attempted safely.', status: 'BLOCKED', detail: ('lock-acquisition-unexpected:' + msg).slice(0, 300), lockResource, waitMs: waitMsRaw };
   }
   if (opResult && typeof opResult === 'object' && !Array.isArray(opResult)) {
     if (opResult.lockResource === undefined) opResult.lockResource = lockResource;
