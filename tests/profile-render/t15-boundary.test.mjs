@@ -98,7 +98,11 @@ describe('S3 T18 — planning and frozen-source regressions', () => {
       // branch still pre-converted block text (CRLF double-CR), and candidate
       // excision assumed a fixed two-character models separator (extra spaces
       // or tabs falsely refused UNRELATED_CONTENT_CHANGED).
-      ['profile/surgical-render.mjs', '5993e2a19d2e2902962641075df29c5cdf9fce6f1bc93b24b86367ded6ffd8b0'],
+      // Re-pinned by the B2 defect fix with the named reason: a bare models
+      // key (null value, including the null-scalar form) is accepted as an
+      // empty list via a synthetic span covering only that key line ending.
+      ['profile/surgical-render.mjs', 'ff2426b41a88b3b89e1f20f8f714c6087839276d8122f3fac9da63062a1bfeaa'],
+
     ]);
     for (const [rel, hex] of REPINNED) {
       assert.equal(sha(rel), hex, 'version-skew reproducibility (v1.4.7-rc6 §5) re-pin drifted: ' + rel);

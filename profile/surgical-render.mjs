@@ -319,7 +319,32 @@ function parseAndLocate(text) {
         if (p.key && p.key.value === 'models') { mp = p; break; }
       }
       if (!mp) { routeInfo[route] = { present: true, hasModels: false, routePair: rp, routeMap: rm }; continue; }
-      const mn = mp.value;
+      let mn = mp.value;
+      if (mn === null || (isScalar(mn) && mn.value === null)) {
+        // A bare "models:" key carries a null YAML value. Accept it as an
+        // empty list without touching bytes: the synthetic empty sequence
+        // spans only that key line's ending, so construction replaces the
+        // line break with the rendered block and verification excises it.
+        const keyEnd = mp.key && Array.isArray(mp.key.range) ? mp.key.range[1] : null;
+        if (typeof keyEnd !== 'number') {
+          routeInfo[route] = { present: true, hasModels: true, malformedModels: true, routePair: rp, routeMap: rm, modelsPair: mp, modelsNode: mn };
+          continue;
+        }
+        let spanStart = keyEnd;
+        if (text[spanStart] === ':') spanStart += 1;
+        while (text[spanStart] === ' ' || text[spanStart] === '\t') spanStart += 1;
+        let spanEnd = spanStart;
+        if (text.slice(spanEnd, spanEnd + 2) === '\r\n') spanEnd += 2;
+        else if (text[spanEnd] === '\n') spanEnd += 1;
+        else {
+          routeInfo[route] = { present: true, hasModels: true, malformedModels: true, routePair: rp, routeMap: rm, modelsPair: mp, modelsNode: mn };
+          continue;
+        }
+        const emptyModels = doc.createNode([]);
+        emptyModels.range = [spanStart, spanStart, spanEnd];
+        mp.value = emptyModels;
+        mn = emptyModels;
+      }
       if (!isSeq(mn)) {
         routeInfo[route] = { present: true, hasModels: true, malformedModels: true, routePair: rp, routeMap: rm, modelsPair: mp, modelsNode: mn };
         continue;
