@@ -111,11 +111,13 @@ export function stubInstallScope() {
 // Declared-skip variant of resolveRealScope: a clean runner (no global dsh on
 // PATH) reports "skipped: <capability>" instead of an uncaught prerequisite
 // error. Callers must return immediately when it returns null.
-export function resolveRealScopeOrSkip(t, label = 'pinned DSH 0.2.1-alpha.2 installed on PATH (resolveRealScope)') {
+export function resolveRealScopeOrSkip(t, label = 'pinned DSH 0.2.1-alpha.2 installed on PATH (resolveInstalledScope)') {
   try {
-    return resolveRealScope();
+    return resolveInstalledScope();
   } catch (err) {
-    t.skip(label + ': ' + String((err && err.message) || err));
+    const message = String((err && err.message) || err);
+    if (!/no dsh executable on PATH/.test(message)) throw err;
+    t.skip(label + ': ' + message);
     return null;
   }
 }
