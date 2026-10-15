@@ -113,7 +113,9 @@ export function makeModelsView(h, api) {
     if (state === 'OFFLINE' || state === 'ERROR') {
       children.push(h('div', { style: { display: 'flex', gap: '8px', padding: '8px 14px' } }, startButton, refreshButton));
     } else if (state === 'STARTING') {
-      children.push(actions);
+      // K1: never an empty action bar — Refresh (disabled while STARTING)
+      // stays visible so the operator can re-poll without remounting.
+      children.push(h('div', { style: { display: 'flex', gap: '8px', padding: '8px 14px' } }, refreshButton));
     } else if (state === 'ONLINE') {
       children.push(h('div', { style: { display: 'flex', gap: '8px', padding: '8px 14px' } }, stopButton, refreshButton));
     } else if (state === 'STOPPING') {
@@ -259,6 +261,12 @@ export function createOcmsClient({ createElement: h, useState, useEffect }) {
           const s = normalizeStatus(await lifecycle.start());
           setStatus(s);
         } catch (err) {
+          // K1: a busy/port-in-use rejection describes current server state,
+          // not a client failure — refresh it instead of showing ERROR.
+          const code = err && typeof err.code === 'string' ? err.code : null;
+          if (code === 'ocms/busy' || code === 'ocms/port-in-use') {
+            try { setStatus(normalizeStatus(await lifecycle.refresh())); return; } catch { /* fall through to ERROR */ }
+          }
           setStatus({ state: 'ERROR', message: err && typeof err.message === 'string' ? err.message : undefined });
         }
       },
@@ -267,7 +275,11 @@ export function createOcmsClient({ createElement: h, useState, useEffect }) {
           const s = normalizeStatus(await lifecycle.stop());
           setStatus(s);
         } catch (err) {
-          try { setStatus(normalizeStatus(await lifecycle.refresh())); } catch (ignored) { /* keep last status */ }
+          // K1: Stop shows ERROR like Start does; the refresh attempt stays
+          // as a fallback, but its failure must not swallow the Stop failure.
+          try { setStatus(normalizeStatus(await lifecycle.refresh())); } catch (ignored) {
+            setStatus({ state: 'ERROR', message: err && typeof err.message === 'string' ? err.message : 'stop failed' });
+          }
         }
       },
     };
