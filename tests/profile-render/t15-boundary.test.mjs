@@ -55,8 +55,11 @@ describe('S3 T18 — planning and frozen-source regressions', () => {
     // profile/target-resolver.mjs re-pinned by v1.4.7-rc6 §5 with the named
     // reason "version-skew reproducibility (v1.4.7-rc6 §5)": the shared
     // exact-membership admission sets. No other behaviour changed.
+    // Re-pinned by the B5 defect fix with the named reason: row-name
+    // anchoring is now shared (anchorNameBesideFile) so S1 binding identity
+    // and S2 composition agree on every row's address.
     const recorded = new Map([
-      ['profile/target-resolver.mjs', '565d1356edf2030f03d7760a846644657482fa955145f00125eb522d711b90f5'],
+      ['profile/target-resolver.mjs', '1c370b065b4fefc59b36811d159945e46e6b34ac0a34f92933d94e104f37db10'],
       ['tests/profile-target/helpers.mjs', '535be36cad699d729c0eb5e9afde0aaf5ad9517b67b052eb7c2026a560c42c6f'],
       ['tests/profile-target/target-admission.test.mjs', 'ed8225f5c92461768b92b8a6571bd22720d5f54dfefedee79572f37564883ed5'],
       ['tests/profile-target/boundary.test.mjs', 'b4b0638a77ade1deee4c8033c62225541e596745dd5de60c52b4e7439ed717ea'],
@@ -80,14 +83,20 @@ describe('S3 T18 — planning and frozen-source regressions', () => {
     // old work-tree check the pin keeps guarding after the change is
     // committed. Commit and config-reader gain the tripwire they lacked.
     const REPINNED = new Map([
-      ['profile/target-resolver.mjs', '565d1356edf2030f03d7760a846644657482fa955145f00125eb522d711b90f5'],
+      // Re-pinned by the B5 defect fix with the named reason: row-name
+      // anchoring is now shared (anchorNameBesideFile) so S1 binding identity
+      // and S2 composition agree on every row's address.
+      ['profile/target-resolver.mjs', '1c370b065b4fefc59b36811d159945e46e6b34ac0a34f92933d94e104f37db10'],
       // Re-pinned by the 0b/D3 lock-label fix (named reason above: unexpected
       // lock-acquisition errors are no longer blanket-labeled INCOMPATIBLE_DSH).
       // 0b follow-up: recognize a LOCK_TIMEOUT code as well as the native sentence.
       ['profile/commit.mjs', '6a3542b7afc7cff8a4851b6e635f0eb9bacaf9c1a060568efa1b37e2383298d9'],
 
 
-      ['profile/config-reader.mjs', '846e34de8343c6a390bca41d487b9900d6fd7fb556db762635a447d8663ff7cf'],
+      // Re-pinned by the B5 defect fix with the named reason: insert-name
+      // anchoring now covers top-level rows as well as insert children, so
+      // one file's rows always address identically in composition.
+      ['profile/config-reader.mjs', 'ed0e72e4ac039860fbc824dcb1990f2815839ba582792158216384ba77a64a49'],
       // Re-pinned by the C04/D01 defect fix with the named reason: indentBlock
       // owns the line-ending join, and three call sites pre-converted block
       // text to the file eol, so an F1-add or F2 render on a CRLF patch wrote

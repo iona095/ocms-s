@@ -189,8 +189,11 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
     // reason "version-skew reproducibility (v1.4.7-rc6 §5)": EXPECTED_VERSIONS
     // became exact-membership sets so cordis-plugin-include admits exactly
     // {1.0.10-alpha.1, 1.0.10-alpha.2}. No other behaviour changed.
+    // Re-pinned by the B5 defect fix with the named reason: row-name
+    // anchoring is now shared (anchorNameBesideFile) so S1 binding identity
+    // and S2 composition agree on every row's address.
     const recorded = new Map([
-      ['profile/target-resolver.mjs', '565d1356edf2030f03d7760a846644657482fa955145f00125eb522d711b90f5'],
+      ['profile/target-resolver.mjs', '1c370b065b4fefc59b36811d159945e46e6b34ac0a34f92933d94e104f37db10'],
       ['tests/profile-target/helpers.mjs', '535be36cad699d729c0eb5e9afde0aaf5ad9517b67b052eb7c2026a560c42c6f'],
       ['tests/profile-target/target-admission.test.mjs', 'ed8225f5c92461768b92b8a6571bd22720d5f54dfefedee79572f37564883ed5'],
       ['tests/profile-target/boundary.test.mjs', 'b4b0638a77ade1deee4c8033c62225541e596745dd5de60c52b4e7439ed717ea'],

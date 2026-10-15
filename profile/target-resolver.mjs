@@ -21,7 +21,21 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 import { parseDocument } from 'yaml';
+
+// Anchor a row name beside its patch file, mirroring the composition
+// pipeline's documented layer admission: absolute and ./ ../-relative names
+// become file URLs so rows from one file address identically; every other
+// name passes through untouched. Pure path logic; merge behavior stays
+// DSH-owned. Shared by S1 binding identity and S2 composition so the two
+// never disagree about a row's address.
+export function anchorNameBesideFile(name, besideFile) {
+  if (typeof name !== 'string' || name.length === 0) return name;
+  if (!(path.isAbsolute(name) || name.startsWith('./') || name.startsWith('../'))) return name;
+  const base = path.dirname(path.resolve(besideFile));
+  return pathToFileURL(path.resolve(base, name)).href;
+}
 
 // Pinned dependency versions, as EXACT-MEMBERSHIP SETS: one set per checked
 // package, consulted by exact string equality through Set#has. No ranges, no
@@ -647,7 +661,7 @@ export function resolveProfileTarget(options = {}) {
       profileName: nameCheck.name,
       profileDirReal,
       patchPathReal,
-      pluginEntryName: typeof entry.name === 'string' && entry.name.length > 0 ? entry.name : 'llm-pi-ai',
+      pluginEntryName: anchorNameBesideFile(typeof entry.name === 'string' && entry.name.length > 0 ? entry.name : 'llm-pi-ai', patchPathReal),
       classification,
       dshHomeReal: truthHomeReal, // classification authority anchor; part of the bound identity.
       declaredOverlays: snapshotValue(declaredOverlays), // bound snapshot; later caller mutation cannot alter it. Opaque in S1; interpretation belongs to S5.

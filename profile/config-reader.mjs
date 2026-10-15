@@ -29,6 +29,7 @@ import {
   EXPECTED_VERSIONS,
   classifyTarget,
   sameTarget,
+  anchorNameBesideFile,
 } from './target-resolver.mjs';
 
 // Exactly the six managed routes (P0-R2 §9; mirrors sync.mjs
@@ -256,20 +257,22 @@ function isCandidateRow(row) {
   return isPlainObject(row) && typeof row.id === 'string' && row.id === 'llm-pi-ai' && !Object.hasOwn(row, 'insert');
 }
 
-// Converter for relative insert names beside their patch file (mirrors the
-// pipeline's documented anchoring so overlay rows compose identically). Pure
-// path logic; merge behavior stays DSH-owned.
+// Converter for relative row names beside their patch file (mirrors the
+// pipeline's documented anchoring so every layer composes identically).
+// Every row from one file must anchor alike: insert-directive children AND
+// top-level rows, otherwise one logical row splits into two addresses and
+// composition addressability breaks. Pure path logic; merge behavior stays
+// DSH-owned.
 function anchorInsertNames(rows, file) {
-  const base = path.dirname(path.resolve(file));
   const visit = (entry) => {
     if (!isPlainObject(entry) && !Array.isArray(entry)) return;
-    if (!Array.isArray(entry) && typeof entry.name === 'string'
-      && (path.isAbsolute(entry.name) || entry.name.startsWith('./') || entry.name.startsWith('../'))) {
-      entry.name = pathToFileURL(path.resolve(base, entry.name)).href;
+    if (!Array.isArray(entry) && typeof entry.name === 'string') {
+      entry.name = anchorNameBesideFile(entry.name, file);
     }
     if (!Array.isArray(entry) && entry.group && Array.isArray(entry.config)) entry.config.forEach(visit);
   };
   rows.forEach((row) => {
+    visit(row);
     if (Array.isArray(row.insert)) row.insert.forEach(visit);
   });
   return rows;
