@@ -19,6 +19,16 @@ Bug-fix pass from the eight-model bug hunt (baseline cc1a14f).
 - Preview: display errors are no longer swallowed, and the UI no longer shows a blind UPDATED (S10).
 - Build client: the atomic-write guard hole is closed (S12).
 - Legacy Apply: the temp-file race is fixed (C1/C20).
+- S3 refusal-taxonomy: one code per vanished-profile condition.
+- S4 legacy-apply-500: a refused legacy commit is a typed NOT_WRITTEN refusal.
+- S5 open-browser-error: an error listener is attached to the browser opener child.
+- S6 baseline-divergence: dsh baseline selection mirrors config-reader and commit.
+- K1 client-starting-state: Refresh renders in STARTING, Stop shows ERROR, busy Start refreshes.
+- K2 client-status-order: a sequence guard drops stale status writes.
+- K3 client-iframe-prefix: the iframe URL is parsed for origin with credentials rejected.
+- K4 lifecycle-spawn-seam: spawn returns validated, error reconciles on close, F7 probe race closed.
+- K5 lifecycle-misc: ordered EXTERNAL message, no stale message or duplicate OFFLINE, slots released, port diagnostics.
+- K7 client-seq-persistence: ref-backed status generation survives re-renders.
 - CI: the clean-machine gate is now `scripts/ci-check-clean-machine.mjs` and works on Windows runners.
 
 ### Tests
@@ -31,11 +41,14 @@ Bug-fix pass from the eight-model bug hunt (baseline cc1a14f).
 
 - S11 watcher atomic replace: not reproducible on Windows.
 - S14 empty providers: SPEC 9.15 mandates the refusal.
+- S3b retained-preview-after-vanish: NOT REPRODUCIBLE through HTTP.
+- S7 preview-error-visibility: NOT REPRODUCIBLE; reachability guard.
+- K6 host-node-probe: NOT REPRODUCIBLE hermetically; seam guard.
 - The CRLF `\r\r\n` renderer defect (C04/D01) fails closed and never writes corrupted bytes.
 
 ### Compatibility note
 
-- Digests change for inputs containing NaN, which previously collided with null.
+- Digests change for inputs containing NaN, ±Infinity (all three canonical copies), or bigint (reader only; sync/plan-builder already emitted it). Inputs with only finite values digest identically. No persisted state carries digests, so no migration is required; only operators comparing digests across versions are affected.
 
 ## v1.4.7-rc6
 
