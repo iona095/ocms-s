@@ -711,11 +711,15 @@ export function renderDesiredState(input) {
     }
     // insertion byte offset: after last sibling line (routeMap end char -> byte).
     const charOff = rm.range[2];
-    // rm.range[2] may be at line start of next sibling (providers next route) or at map end.
-    // Find line-anchored insertion: if charOff is not at line start, advance to next line start.
+    // rm.range[2] is usually at the line start of the next sibling (after its
+    // newline). At end of file without a trailing newline it sits mid-line at
+    // EOF, so terminate the final content line with the file's own EOL first;
+    // otherwise the inserted models key glues onto that line and the
+    // candidate no longer parses.
     let insChar = charOff;
-    // If rm ends mid-line (should not for block), move to next line start.
-    // For block maps, range[2] is already at line start (after newline). Keep as is.
+    if (insChar > 0 && origText[insChar - 1] !== '\n') {
+      insertText = eol + insertText;
+    }
     const bs = charToByte(origText, insChar);
     f1addEdits.push({ start: bs, end: bs, text: insertText, route, kind: 'F1-add', charOff: insChar });
     origByteSpans.push({ route, kind: 'F1-add', start: bs, end: bs });
@@ -914,7 +918,18 @@ export function renderDesiredState(input) {
       if (!ri || !ri.present || !ri.modelsPair) return refusal('VERIFY_FAILED', 'Candidate F1-add span missing.', { route });
       const ks = ri.modelsPair.key.range[0];
       const ve = ri.modelsPair.value.range[2];
-      candByteSpans.push({ route, kind: 'F1-add', start: charToByte(candText, ks), end: charToByte(candText, ve) });
+      // P1-2: when the original insertion site was mid-line (end of file
+      // without a trailing newline), the inserted block begins with the
+      // file's EOL to terminate the final content line. That leading EOL is
+      // part of the edit, so the excision below must swallow it. The site
+      // test re-derives this from the original bytes, independent of how
+      // the candidate was constructed.
+      let siteMidLine = false;
+      try {
+        const siteBs = charToByte(origText, routeInfo[route].routeMap.range[2]);
+        siteMidLine = siteBs > 0 && origBytes[siteBs - 1] !== 10;
+      } catch { siteMidLine = false; }
+      candByteSpans.push({ route, kind: 'F1-add', start: charToByte(candText, ks), end: charToByte(candText, ve), swallowLeadingEol: siteMidLine });
       // Include leading indent? key range starts at key content, not indent. For excision, need to include indent+newline?
       // Our original insertion included indent. Candidate span from key start excludes indent, so remainder would retain indent spaces.
       // To make excision exact, expand candidate span to line start and include trailing eol.
@@ -959,7 +974,7 @@ export function renderDesiredState(input) {
   // Instead, use construction edits for candidate excision? But spec requires independent extraction.
   // We bridge by expanding candidate spans to cover full lines as inserted.
   // Expand logic using candText and byte offsets via char search.
-  function expandToFullLines(candTextStr, byteStart, byteEnd) {
+  function expandToFullLines(candTextStr, byteStart, byteEnd, swallowLeadingEol) {
     // Convert byte offsets to char offsets by scanning.
     let charS = 0;
     let acc = 0;
@@ -984,6 +999,14 @@ export function renderDesiredState(input) {
     let charE = lo;
     // Expand start to line start
     const ls = lineStartOf(candTextStr, charS);
+    // P1-2: an insertion that began mid-line (EOF without a trailing
+    // newline) carries its own leading EOL. Swallow exactly one preceding
+    // EOL so the excision removes precisely the inserted bytes.
+    let lsAdj = ls;
+    if (swallowLeadingEol === true) {
+      if (lsAdj >= 2 && candTextStr.slice(lsAdj - 2, lsAdj) === '\r\n') lsAdj -= 2;
+      else if (lsAdj >= 1 && candTextStr[lsAdj - 1] === '\n') lsAdj -= 1;
+    }
     // Expand end to include trailing eol (if present)
     let expEndChar = charE;
     if (candTextStr.slice(charE, charE + 2) === '\r\n') expEndChar = charE + 2;
@@ -999,13 +1022,13 @@ export function renderDesiredState(input) {
       if (nl >= 0) expEndChar = nl + 1;
       else expEndChar = candTextStr.length;
     }
-    return { start: Buffer.byteLength(candTextStr.slice(0, ls), 'utf8'), end: Buffer.byteLength(candTextStr.slice(0, expEndChar), 'utf8') };
+    return { start: Buffer.byteLength(candTextStr.slice(0, lsAdj), 'utf8'), end: Buffer.byteLength(candTextStr.slice(0, expEndChar), 'utf8') };
   }
   const finalCandSpans = [];
   for (const s of candByteSpans) {
     if (s.kind === 'F1') finalCandSpans.push(s);
     else {
-      const exp = expandToFullLines(candText, s.start, s.end);
+      const exp = expandToFullLines(candText, s.start, s.end, s.swallowLeadingEol === true);
       finalCandSpans.push({ route: s.route, kind: s.kind, start: exp.start, end: exp.end });
     }
   }
