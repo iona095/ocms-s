@@ -206,7 +206,9 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
       ['profile/target-resolver.mjs', '1c370b065b4fefc59b36811d159945e46e6b34ac0a34f92933d94e104f37db10'],
       ['tests/profile-target/helpers.mjs', '535be36cad699d729c0eb5e9afde0aaf5ad9517b67b052eb7c2026a560c42c6f'],
       ['tests/profile-target/target-admission.test.mjs', 'ed8225f5c92461768b92b8a6571bd22720d5f54dfefedee79572f37564883ed5'],
-      ['tests/profile-target/boundary.test.mjs', 'b4b0638a77ade1deee4c8033c62225541e596745dd5de60c52b4e7439ed717ea'],
+      // Re-pinned by the B5 follow-up (named reason: the S1 export
+      // allowlist admits the intentional anchorNameBesideFile export).
+      ['tests/profile-target/boundary.test.mjs', '3e95d853f2dc5aacd5e5642387fbcfc3667f80b9bfd4c466a2f8d854f92f9d2a'],
     ]);
     for (const [rel, hex] of recorded) {
       assert.ok(fs.existsSync(path.join(REPO, rel)), `S1 file vanished: ${rel}`);
