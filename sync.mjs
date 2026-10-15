@@ -1592,6 +1592,17 @@ function timestampStamp() {
   return new Date().toISOString().replace(/[:.]/g, '-');
 }
 
+// D04: two commits inside one timestamp tick must never share (and overwrite)
+// a backup path. The first free suffixed name wins; the tick stamp stays the
+// prefix so existing backup listings keep sorting together.
+export function legacyBackupPath(settingsPath, stamp) {
+  const base = String(settingsPath) + '.bak-' + String(stamp);
+  if (!fs.existsSync(base)) return base;
+  let n = 1;
+  while (fs.existsSync(base + '-' + n)) n += 1;
+  return base + '-' + n;
+}
+
 // ---------------------------------------------------------------------------
 // Shared PLAN / WRITE engine seam (contract v1.3 Stage 1).
 //
@@ -1790,7 +1801,7 @@ export function commitPlan(plan) {
     return refusalOutcome([planFailureReason(err)]);
   }
   const stamp = timestampStamp();
-  const backupPath = plan.settingsPath + '.bak-' + stamp;
+  const backupPath = legacyBackupPath(plan.settingsPath, stamp);
   const tempPath = plan.settingsPath + '.tmp';
   try {
     const next = buildNewConfig(current, plan.desired);

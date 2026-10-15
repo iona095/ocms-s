@@ -58,7 +58,10 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
       // Re-pinned by the C05 defect fix (named reason: missing --settings
       // exits 2 with verdict plus usage; YAML parse errors are coded
       // SETTINGS_INVALID and surface in the legacy verdict).
-      ['sync.mjs', '766412714056b8f973d969ebee327ebe2e0de656826a365e3076b5fd319bfc66'],
+      // Re-pinned by the D04 defect fix (named reason: backup names stay
+      // unique inside one timestamp tick via legacyBackupPath).
+      ['sync.mjs', 'a06dd0911b9aee04c1fb8ce395f7d4a71cd75596541ae724119acf0e8d3df923'],
+
       // Re-pinned by the 0b/D3 lock-label fix (named reason: an unexpected
       // lock-acquisition failure was blanket-labeled INCOMPATIBLE_DSH; it is
       // now VERIFY_FAILED while native LOCK_TIMEOUT detection is unchanged).
