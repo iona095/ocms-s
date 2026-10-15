@@ -36,7 +36,11 @@ function modelsB() {
 }
 
 describe('B5 — insert-name anchoring addressability', () => {
-  it('package-style names: direct row plus same-name insert child stay MATCHED', async () => {
+  it('package-style names: direct row plus same-name insert child stay MATCHED', async (t) => {
+    // Insert-directive composition is native semantics: the flat test stub
+    // splices user insert children last-wins while the installed loader does
+    // not surface them in the llm projection. Both cases need the real tree.
+    if (!requireRealCompositionOrSkip(t, 'real DSH insert-directive composition semantics')) return;
     restoreDshHome = sandboxDshHome();
     ({ home, cleanup: cleanupHome } = makeTempHome());
     try {
