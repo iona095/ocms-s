@@ -30,6 +30,9 @@ const REJECTED = [
   'http://127.0.0.1.evil.example',
   'http://localhost.evil.example',
   'http://user@127.0.0.1:3080',
+  // C13: userinfo confusion must not smuggle a foreign host past validation.
+  'http://127.0.0.1:@evil.example/',
+  'http://127.0.0.1:3080@evil.example/',
   'http://127.0.0.1',
   'http://127.0.0.1:0',
   'http://127.0.0.1:99999',
