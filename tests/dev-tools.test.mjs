@@ -268,6 +268,13 @@ describe("DX-2 explicit-profile local registration", () => {
     assert.throws(() => mod.parseRegisterArgs(["--unknown"]), Error, "unknown option rejected");
     assert.throws(() => mod.parseRegisterArgs(["--profile", "a", "--profile", "b"]), Error, "duplicate flag rejected");
     assert.throws(() => mod.parseRegisterArgs(["--profile=a"]), Error, "equals form rejected");
+    // C28: shell metacharacters arrive as plain argv strings (npm never
+    // interprets them); every parser must reject them as unknown options.
+    for (const evil of [["&&", "evil"], [";", "evil"], ["|", "evil"], ["`evil`"], ["$(evil)"]]) {
+      assert.throws(() => mod.parseRegisterArgs(evil), Error, "register rejects " + JSON.stringify(evil));
+      assert.throws(() => mod.parseBuildArgs(evil), Error, "build rejects " + JSON.stringify(evil));
+      assert.throws(() => mod.parseWatchArgs(evil), Error, "watch rejects " + JSON.stringify(evil));
+    }
   });
   it("DSH unavailable fails safely", async () => {
     const home = await makeHome();
