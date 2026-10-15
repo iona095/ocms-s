@@ -229,7 +229,8 @@ test('v1.4.7-rc5 identity: sync.mjs pinned to the rc5 bytes plus the C02/C03 ver
   // Re-pinned by the P1 defect fix (report C14; named reason: the legacy
   // default settings path no longer falls back to a literal machine path).
   // Re-pinned by S8 digest-numerics (named reason: canonicalJson maps non-finite numbers to distinct bare tokens instead of collapsing onto 'null', and the reader gains the bigint arm; identical rule in all three copies). Superseded pin a89f9bcdb35b8efa52ffa8a7ca658bff2f632e485b60a4482b13c59d70c4b478.
-  assert.equal(sha, '5934a809cba70a4b65f380619271fb281178617d08081a75e36eeb27776cc34f', 'sync.mjs drift beyond the C02/C03 verdict fix is forbidden');
+  // Re-pinned by S9 confirm-eof (named reason: defaultConfirmCli settles on readline close, so Ctrl-D/EOF declines through the verdict path instead of hanging forever). Superseded pin 5934a809cba70a4b65f380619271fb281178617d08081a75e36eeb27776cc34f.
+  assert.equal(sha, '3b940afa7aaa5730b8891a93cbd0f5ace77529b5b12f1bfd8093e5a80defad43', 'sync.mjs drift beyond the C02/C03 verdict fix is forbidden');
 });
 
 test('v1.4.7-rc2 Amendment B identity: plan-builder pinned to the B bytes', () => {

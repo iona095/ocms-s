@@ -1360,7 +1360,15 @@ async function defaultConfirmCli(promptText) {
     }
     const readline = await import("node:readline");
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    const answer = await new Promise((resolve) => rl.question(String(promptText || "Apply? [y/N] "), resolve));
+    // S9: on Ctrl-D/EOF only 'close' fires and the question callback never
+    // runs — without this listener the confirm (and the whole sync) hangs
+    // forever instead of declining through the verdict path.
+    const answer = await new Promise((resolve) => {
+      let done = false;
+      const doneOnce = (v) => { if (!done) { done = true; resolve(v); } };
+      rl.on('close', () => doneOnce(false));
+      rl.question(String(promptText || "Apply? [y/N] "), doneOnce);
+    });
     try { rl.close(); } catch {}
     return /^(y|yes)$/i.test(String(answer).trim());
   } catch {
