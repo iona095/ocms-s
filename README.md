@@ -4,7 +4,7 @@ A small, manual Node.js utility that synchronizes **OpenCode Go** and **OpenCode
 
 OCMS-S is deliberately narrow. It is **not** a daemon, scheduler, account checker, quota monitor, or model-probing system. v1.4 adds one optional DSH integration: a `Models` conversation-view tab that owns OCMS server lifecycle (status/Start/Stop) and iframe hosting only. All synchronization authority stays in the released engine and Web UX.
 
-Current project version: **v1.4.7-rc7** (release candidate)
+Current project version: **v1.4.7-rc8** (release candidate)
 
 Current authoritative specification:
 

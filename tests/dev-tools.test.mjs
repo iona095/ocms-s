@@ -1614,6 +1614,6 @@ describe("R1 ownership and cancellation repair", () => {
     // keeps this list complete.
     assert.deepEqual(pkg.files, ["sync.mjs", "ui.mjs", "ui/", "profile/", "dsh/host.mjs", "dsh/lifecycle.mjs", "dsh/client.js", "cordis.patch.yml"], "files whitelist");
     assert.deepEqual(Object.keys(pkg.dependencies || {}), ["yaml", "node-html-parser"], "no new runtime dependency");
-    assert.equal(pkg.version, "1.4.7-rc7", "version bump only by contract v1.4.7-rc6 section 6");
+    assert.equal(pkg.version, "1.4.7-rc8", "version bump only by contract v1.4.7-rc6 section 6");
   });
 });

@@ -4,7 +4,28 @@ All notable project-level changes are summarized here.
 
 This file is intentionally concise. The authoritative behavioral specification remains the current contract.
 
-## 1.4.7-rc7 (unreleased)
+## 1.4.7-rc8 (unreleased)
+
+Second bug-hunt fix pass (ten confirmed items P1-1…P3-4, RED/GREEN per item).
+
+### Fixed
+
+- Profile Apply: a second concurrent Apply now refuses APPLY_BUSY after verification, and the stale-slot check runs even while another Apply is busy; only the request that sets the busy flag releases it (P1-1).
+- Renderer: F1-add at end of file without a trailing newline terminates the final line with the file's EOL instead of gluing the models key onto it; verification excises the added line break (P1-2).
+- Sync report: a surplus stored copy on the wanted route is listed in removed; the write path is byte-identical (P2-2).
+- Reader: first-layer-only definitions name their supplying layer instead of "unknown" (P2-3).
+- UI Preview: a response that arrives after the selection changed (or a newer request started) is dropped with a notice instead of installing stale state (P3-1).
+- dev-tools: an unknown subcommand prints the general usage, not register usage (P3-2).
+- UI Host/Origin: bare loopback Host/Origin are accepted when bound to port 80 (P3-3).
+- Package entries: a manifest entry resolving outside its package directory is refused after realpath (P3-4).
+
+### Tests
+
+- ENV04 loader: every fiber case asserts its classification; file-rejects/native-accepts and harness/timeout outcomes fail loudly; string-splitting removed (P2-1).
+- assertNoMutation now compares file bytes (sha256) as well as set/size/mtime (P2-4).
+- Product-file pins were re-pinned with named reasons.
+
+## 1.4.7-rc7
 
 Bug-fix pass from the eight-model bug hunt (baseline cc1a14f), plus NB1 inference bases (branch bugfix/nb1-inference-bases).
 

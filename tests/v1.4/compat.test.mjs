@@ -94,17 +94,17 @@ test('package peers target DSH 0.2.1-alpha.2 exactly (old runtime dropped)', () 
   for (const [k, v] of Object.entries(pkg.peerDependencies)) {
     assert.doesNotMatch(String(v), /[\^~*]|>=|<=|x/, 'peer ' + k + ' must be exact (got ' + v + ')');
   }
-  assert.equal(pkg.version, '1.4.7-rc7', 'release metadata per contract v1.4.7-rc6 section 6');
+  assert.equal(pkg.version, '1.4.7-rc8', 'release metadata per contract v1.4.7-rc6 section 6');
   assert.equal(pkg.engines?.dsh, '0.2.1-alpha.2', 'engines.dsh declares the exact supported DSH target');
 });
 
-test('lockfile root peers mirror package.json and root version is 1.4.7-rc7', () => {
+test('lockfile root peers mirror package.json and root version is 1.4.7-rc8', () => {
   const lock = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package-lock.json'), 'utf8'));
   assert.equal(lock.name, 'ocms-s', 'lock root name');
-  assert.equal(lock.version, '1.4.7-rc7', 'lock root version must equal package version 1.4.7-rc7');
+  assert.equal(lock.version, '1.4.7-rc8', 'lock root version must equal package version 1.4.7-rc8');
   const rootPkg = lock.packages?.[''];
   assert.ok(rootPkg, 'lockfileVersion 3 root package entry must exist');
-  assert.equal(rootPkg.version, '1.4.7-rc7', 'lock root package version must equal package version 1.4.7-rc7');
+  assert.equal(rootPkg.version, '1.4.7-rc8', 'lock root package version must equal package version 1.4.7-rc8');
   assert.deepEqual(rootPkg.peerDependencies, { ...DSH_TARGET_PEERS }, 'lock root peers must mirror package.json peers');
 });
 
@@ -238,7 +238,10 @@ test('v1.4.7-rc5 identity: sync.mjs pinned to the rc5 bytes plus the C02/C03 ver
   // and /inference/openai/v1/, /inference/anthropic/v1/, /inference/google/v1beta/,
   // /inference/systemone/v1/ for zen; old bases retained, fail-closed matching unchanged).
   // Superseded pin 6c3a335a9129e31490f671595bc7f2c2b5eebf3a51c95ee454f6682745ddd95e.
-  assert.equal(sha, '1fb8014cdb4f164860cae6573ef38bfc1ab671ad16061e72ea26610db2fe40a3', 'sync.mjs drift beyond the C02/C03 verdict fix is forbidden');
+  // Re-pinned by the P2-2 defect fix (named reason: a surplus stored copy on
+  // the wanted route is reported in removed; the write path is byte-identical).
+  // Superseded pin 1fb8014cdb4f164860cae6573ef38bfc1ab671ad16061e72ea26610db2fe40a3.
+  assert.equal(sha, 'd5968ad92911fa7d17742a450dfb57c1d6f4ebf67073fca57a3143fe541beff9', 'sync.mjs drift beyond the C02/C03 verdict fix is forbidden');
 });
 
 test('v1.4.7-rc2 Amendment B identity: plan-builder pinned to the B bytes', () => {
@@ -261,7 +264,11 @@ test('v1.4.7-rc1 Amendment A identity: surgical-render pinned to the rc1 bytes',
 // D07 defect fix (same-offset F1-add/F2 merge).
 test('C04 identity: surgical-render pinned after the CRLF indentBlock fix', () => {
   const sha = sha256Hex(fs.readFileSync(path.join(REPO_ROOT, 'profile', 'surgical-render.mjs')));
-  assert.equal(sha, '6b9ad428030f47b6b9417901b68bca459a292eb4e6e966217a6631fffa61dd2f', 'surgical-render drift beyond the C04/D01 CRLF fix is forbidden');
+  // Re-pinned by the P1-2 defect fix (named reason: an F1-add insertion that
+  // begins mid-line terminates the final content line with the file's EOL, and
+  // verification excises that leading line break).
+  // Superseded pin 6b9ad428030f47b6b9417901b68bca459a292eb4e6e966217a6631fffa61dd2f.
+  assert.equal(sha, '52de0fc14720d77fc011a09790e656dffdd34e88731b03fd73857453734a5ce0', 'surgical-render drift beyond the C04/D01 CRLF fix is forbidden');
 });
 
 test('v1.4.6-rc2 identity: ui/index.html pinned to the rc2 bytes', { skip: 'superseded by contract v1.4.7-rc2 U5 (see rc2 pin below)' }, () => {
@@ -288,7 +295,11 @@ test('v1.4.7-rc4 identity: ui/index.html pinned to the rc4 bytes', { skip: 'supe
 // and the APPLYING restore on a busy refusal). The rc5 pin below is superseded.
 test('C07/C25 identity: ui/index.html pinned after the confirmation fix', () => {
   const sha = sha256Hex(fs.readFileSync(path.join(REPO_ROOT, 'ui', 'index.html'), 'utf8'));
-  assert.equal(sha, 'f4db7da417ce1d69a65ed50bdc68e3666c8c96fbc4f6781b6dc82a976a32ada8', 'ui/index.html drift beyond the C07/C25 fix is forbidden');
+  // Re-pinned by the P3-1 defect fix (named reason: an in-flight Preview
+  // response is dropped with a notice when the selection changed or a newer
+  // request started).
+  // Superseded pin f4db7da417ce1d69a65ed50bdc68e3666c8c96fbc4f6781b6dc82a976a32ada8.
+  assert.equal(sha, 'd63a61a1df1714b64d5838f66a2ff55e5ebc3ae2c259867e3a8f3c37b45e8618', 'ui/index.html drift beyond the C07/C25 fix is forbidden');
 });
 
 test('v1.4.7-rc5 identity: ui/index.html pinned to the rc5 bytes', { skip: 'superseded by the C07/C25 confirmation fix (see the C07/C25 pin above)' }, () => {
@@ -304,7 +315,7 @@ test('built client bundle carries the __ModuleLoader__ convention and no second 
   assert.ok(!/react-development|react-dom[^/]*\.min\.js/.test(text), 'no vendored react runtime copy');
 });
 
-test('root package version is 1.4.7-rc7 at release candidate', () => {
+test('root package version is 1.4.7-rc8 at release candidate', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8'));
-  assert.equal(pkg.version, '1.4.7-rc7');
+  assert.equal(pkg.version, '1.4.7-rc8');
 });
