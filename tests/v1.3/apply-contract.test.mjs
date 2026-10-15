@@ -143,9 +143,13 @@ test('E7: transaction failure preserves the original target and does not fabrica
     const dir = path.dirname(file);
     const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
     const preview = await postJson(started.port, '/api/preview', {}, authHeaders(started.token));
-    // Deterministic failure: occupy the temp path with a directory so the
-    // v1.2 temp-write step fails after backup (contract v1.2 section 15).
-    fs.mkdirSync(file + '.tmp');
+    // Deterministic failure: make the target read-only so the temp-write
+    // succeeds but the rename-over fails with EPERM after backup (contract
+    // v1.2 section 15). C1 gave commitPlan a unique per-commit temp, so the
+    // old fixed-temp occupation no longer collides; the failure now lands at
+    // the replacement step instead of the temp-write step. Windows-only
+    // mechanism (rename over a read-only file fails EPERM); CI runs Windows.
+    fs.chmodSync(file, 0o444);
     const failure = await postJson(started.port, '/api/apply', { previewId: preview.json.previewId }, authHeaders(started.token));
     // S4 legacy-apply-500: a refused transaction is the typed NOT_WRITTEN refusal
     // with its reasons; HTTP 500 is reserved for unexpected throws.
@@ -155,7 +159,7 @@ test('E7: transaction failure preserves the original target and does not fabrica
     assert.notEqual(failure.json.status, 'UPDATED', 'failure never fabricates UPDATED');
     assert.deepEqual(fs.readFileSync(file), originalBytes, 'original preserved');
     assert.equal(backupCount(dir), 1, 'backup was created before the failed replacement');
-    fs.rmdirSync(file + '.tmp');
+    fs.chmodSync(file, 0o666);
     const retry = await postJson(started.port, '/api/apply', { previewId: preview.json.previewId }, authHeaders(started.token));
     assert.equal(retry.status, 200, 'failed Apply does not consume the preview');
     assert.equal(retry.json.status, 'UPDATED');

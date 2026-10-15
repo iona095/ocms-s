@@ -1881,7 +1881,11 @@ export function commitPlan(plan) {
   }
   const stamp = timestampStamp();
   const backupPath = legacyBackupPath(plan.settingsPath, stamp);
-  const tempPath = plan.settingsPath + '.tmp';
+  // C1: unique per-commit temp (was a fixed "<settings>.tmp" shared by every
+  // concurrent committer with no lock): temp aliasing let one commit rename
+  // another's bytes or hit ENOENT on a moved temp. Same-dir keep: the rename
+  // stays atomic on one filesystem.
+  const tempPath = plan.settingsPath + '.tmp-' + process.pid + '-' + Date.now() + '-' + Math.random().toString(16).slice(2);
   try {
     // D05: edit the managed arrays inside the existing document so
     // comments, key order, and unrelated styling survive the write.
@@ -1914,13 +1918,16 @@ export function commitPlan(plan) {
     };
   } catch (err) {
     // A failed temporary-file validation or replacement leaves the original
-    // settings file in place. Cleanup is limited to this run's own temp path.
+    // settings file in place.
+    return refusalOutcome([planFailureReason(err)]);
+  } finally {
+    // C1: this run's own temp is always removed (success renamed it away
+    // already, so this is a guarded no-op then; failure unlinks it here).
     try {
       if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
     } catch {
-      // Preserve the original error/result even if temp cleanup is unavailable.
+      // Preserve the original result even if temp cleanup is unavailable.
     }
-    return refusalOutcome([planFailureReason(err)]);
   }
 }
 
