@@ -75,7 +75,11 @@ describe('S3 T18 — planning and frozen-source regressions', () => {
     // binding. Value equals the Amendment B reviewed bytes, so the
     // pin keeps guarding the planning surface. Planning semantics stay proven
     // through the original planning suites.
-    assert.equal(sha('sync.mjs'), '60a8412f2a4f083cf89f67d0105d36de5aa67186cb2a8db8e87a06046508d3b7', 'sync.mjs drift beyond the CURRENT reviewed bytes is forbidden');
+    // Re-pinned by the C05 defect fix with the named reason: a missing
+    // --settings file now prints verdict plus usage and exits 2, YAML parse
+    // errors become coded SETTINGS_INVALID, and plan {reason} objects surface
+    // in the legacy verdict instead of being dropped.
+    assert.equal(sha('sync.mjs'), '766412714056b8f973d969ebee327ebe2e0de656826a365e3076b5fd319bfc66', 'sync.mjs drift beyond the CURRENT reviewed bytes is forbidden');
     // The old "no profile/* modification" tripwire is replaced, not dropped:
     // the three files v1.4.7-rc6 §5 changed are now byte-pinned at their
     // re-pinned values under the named reason "version-skew reproducibility
