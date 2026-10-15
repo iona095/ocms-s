@@ -4,7 +4,10 @@
 // with every dsh-bearing entry removed. No product code is touched.
 // Node builtins only; no new dependencies.
 //
-// Usage: node tests/support/clean-env-run.mjs [-- npm test args...]
+// Usage: node tests/support/clean-env-run.mjs [<npm-script> [-- args...]]
+//   no argument  -> npm test                      (unchanged default)
+//   test:profile  -> npm run test:profile          (CI2: any named script)
+//   -- extra args -> appended, exactly as before
 // Exit code: the suite's exit code, or 1 when the run itself is invalid
 // (npm missing after the scrub, or a .dsh tree created in the scrubbed home),
 // or non-zero on vehicle timeout (process tree killed).
@@ -49,6 +52,32 @@ function findNpmCli() {
     }
   }
   return null;
+}
+
+// CI2: translate the vehicle's argv into npm arguments.
+//   [] | ['--']                        -> ['test']                 (unchanged)
+//   ['--', 'a', 'b']                    -> ['test', 'a', 'b']       (unchanged)
+//   ['test:profile']                    -> ['run', 'test:profile']  (new)
+//   ['--', 'x']                         -> ['test', 'x']  ('--' still means
+//                                          'append to npm test')
+//   ['test:profile', 'x']               -> ['run', 'test:profile', 'x']
+// A leading flag is never a script name: only a bare word without a leading
+// '-' is accepted, so the parser cannot be loosened into passing junk through.
+export function parseNpmArgs(argv) {
+  const rest = Array.isArray(argv) ? argv.slice() : [];
+  // A leading '--' keeps its documented legacy meaning: everything after it is
+  // appended to 'npm test', so the script name is never taken from there.
+  if (rest.length > 0 && rest[0] === '--') return ['test', ...rest.slice(1)];
+  const first = rest.length > 0 ? rest[0] : null;
+  const isScriptName = typeof first === 'string'
+    && first.length > 0
+    && first.trim() === first
+    && first[0] !== '-'
+    && /^[A-Za-z][A-Za-z0-9:._-]*$/.test(first);
+  if (!isScriptName) return ['test', ...rest];
+  const name = rest.shift();
+  if (name === 'test') return ['test', ...rest];
+  return ['run', name, ...rest];
 }
 
 function killTree(pid) {
@@ -134,9 +163,10 @@ async function main() {
     return;
   }
   console.log('[clean-env] npm entry: ' + npmCli + ' via ' + process.execPath);
-  let extraArgs = process.argv.slice(2);
-  if (extraArgs.length > 0 && extraArgs[0] === '--') extraArgs = extraArgs.slice(1);
-  const npmArgs = ['test', ...extraArgs];
+  // CI2: the npm script name is selectable. The default ('npm test') is
+  // unchanged; a bare script name such as 'test:profile' becomes
+  // ['run', 'test:profile']; anything after '--' is appended as before.
+  const npmArgs = parseNpmArgs(process.argv.slice(2));
   console.log('[clean-env] command: ' + JSON.stringify(process.execPath) + ' ' + JSON.stringify(npmCli) + ' ' + npmArgs.map((a) => JSON.stringify(a)).join(' '));
 
   const child = spawn(process.execPath, [npmCli, ...npmArgs], {
