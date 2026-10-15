@@ -66,6 +66,20 @@ describe('S2 T03 — ownership and stored/effective distinction', () => {
     assertNoMutation(snap, profileDir, 'T03 dormant: read mutated disk');
   });
 
+  it('P2-3 first-layer bundle attribution names the bundle layer, not unknown', async () => {
+    const profileDir = makeProfile(home, 'bundled-first', { entries: [llmRow({ config: 'absent' })], bundles: [FIXTURE_BUNDLE_PKG] });
+    makeFixtureBundle(profileDir, FIXTURE_BUNDLE_PKG, {
+      insertRows: [
+        { id: 'llm-pi-ai', name: FIXTURE_LLM_NAME, config: userModels() },
+      ],
+    });
+    const r = await readManagedConfig(readerOpts(bind('bundled-first')));
+    assert.equal(r.ok, false);
+    assert.equal(r.code, 'NOT_PROFILE_OWNED');
+    assert.equal(r.detail.source, 'bundle', 'first-layer supplier must be named: ' + JSON.stringify(r.detail));
+    assert.deepEqual(r.detail.effectiveFrom, { layer: 'bundle', source: FIXTURE_BUNDLE_PKG });
+  });
+
   it('T03 dormant user with bundle-supplied config refuses NOT_PROFILE_OWNED', async () => {    const profileDir = makeProfile(home, 'bundled', { entries: [llmRow({ config: 'absent' })], bundles: [FIXTURE_BUNDLE_PKG] });
     makeFixtureBundle(profileDir, FIXTURE_BUNDLE_PKG, {
       insertRows: [
