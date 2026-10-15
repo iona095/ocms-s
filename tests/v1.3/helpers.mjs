@@ -14,13 +14,9 @@ import { stringify as stringifyYaml } from 'yaml';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 
 export { assert };
-import { installStubDshOnAmbientPath } from '../support/dsh-stub-tree.mjs';
 
-// A1: every suite imports this module first. A composition scope is made
-// discoverable on the AMBIENT PATH (a real installed DSH always wins; otherwise
 // the test-only stub prefix is appended), so suites that reach the product's
 // PATH fallback do not depend on a globally installed DSH.
-installStubDshOnAmbientPath();
 
 // ---------------------------------------------------------------------------
 // Capability anchors (contract v1.3 sections 5.5, 13, 19). These are the ONLY
@@ -178,14 +174,27 @@ export function deferred() {
 // no test relies on port fallback or weakens production behavior.
 // ---------------------------------------------------------------------------
 
-const callingFile = path.basename(process.argv[1] || 'unknown.test.mjs');
-const portSeed = crypto.createHash('sha256').update('ocms-v13-test-port:' + callingFile).digest().readUInt32BE(0) % 32;
-const PORT_BASE = 18800 + portSeed * 6;
+// A2: the seed was derived from the calling FILE name, so two test files whose
+// hashes landed on the same block (or two concurrent runs of the same file)
+// fought over the same six ports: observed as EADDRINUSE flakes in the normal
+// suite and in the clean-environment vehicle. The offset is now derived from the
+// PID, so concurrently running test processes cannot share a block, and a port
+// reused inside one process fails loudly instead of handing out a duplicate.
+const PROCESS_PORT_OFFSET = crypto.createHash('sha256')
+  .update('ocms-v13-test-port-pid:' + String(process.pid))
+  .digest()
+  .readUInt32BE(0) % 4096;
+const PORT_BASE = 18800 + PROCESS_PORT_OFFSET * 6;
 let portCursor = 0;
+const issuedPorts = new Set();
 
 export function nextTestPort() {
   const port = PORT_BASE + (portCursor % 6);
   portCursor += 1;
+  if (issuedPorts.has(port)) {
+    throw new Error('TEST_PORT_REUSE: port ' + port + ' was already issued in this test process; a test must not hold two servers on one port');
+  }
+  issuedPorts.add(port);
   return port;
 }
 
