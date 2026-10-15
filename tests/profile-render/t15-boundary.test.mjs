@@ -126,7 +126,11 @@ describe('S3 T18 — planning and frozen-source regressions', () => {
       // row anchoring shares anchorNameBesideFile and covers top-level rows,
       // matching the S1/S2 address rule.
       // Re-pinned by S3 refusal-taxonomy: S3 refusal-taxonomy (bugfix-8model): PROFILE_NOT_INITIALIZED and SYMLINK_ESCAPE added to COMMIT_REFUSAL_CODES; the re-resolve pass-through now carries the vanished-profile refusal with status BLOCKED. Superseded pin e08abf377fdf4934b7799a11aebef169ba7d5fc2d9fde0158c8bfa84e2a331e3.
-      ['profile/commit.mjs', '281fc369c37208b899d010dcd98a4362d5cc62760f0a0efffefa41841b01d673'],
+      // Re-pinned by the P3-4 fix (named reason: a package manifest entry is
+      // resolved with realpath and refused when it lands outside the package
+      // directory). Superseded pin 281fc369c37208b899d010dcd98a4362d5cc62760f0a0efffefa41841b01d673.
+      ['profile/commit.mjs', 'd579dfb30d4efe452267f3c260760910ad0b243ac0cf17fc5d24c0d2b9dc59d9'],
+
 
 
 
@@ -138,7 +142,8 @@ describe('S3 T18 — planning and frozen-source regressions', () => {
       // against no config, so a first non-user layer that supplies the
       // effective config is attributed instead of reported unknown).
       // Superseded pin 3aa41c5bbb56fcb79003b759ffd74982203ede0fa6f055bf0b8e37b9b6b07055.
-      ['profile/config-reader.mjs', '38a0c6f171542afe451acdd55eba1bb2468c1b1e7ac18166e4649906fed2cb57'],
+      ['profile/config-reader.mjs', '1c0fe6c51c2b933abfb009977a43c14be24c7de35ba1c4fbe4c06b5a681c1ca9'],
+
 
       // Re-pinned by the C04/D01 defect fix with the named reason: indentBlock
       // owns the line-ending join, and three call sites pre-converted block

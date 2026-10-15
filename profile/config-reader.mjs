@@ -395,7 +395,7 @@ export function resolvePackageEntry(pkgDir) {
     return null;
   }
   // P3-4: after realpath, refuse an entry that resolves outside the package
-  // directory (manifest ../ traversal or an escaping symlink).
+  // directory (manifest ../ traversal or aliasing that escapes the package).
   let root;
   try {
     root = fs.realpathSync(pkgDir);

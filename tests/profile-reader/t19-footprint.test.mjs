@@ -83,7 +83,10 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
       // lock-acquisition failure was blanket-labeled INCOMPATIBLE_DSH; it is
       // now VERIFY_FAILED while native LOCK_TIMEOUT detection is unchanged).
       // Re-pinned by S3 refusal-taxonomy: S3 refusal-taxonomy (bugfix-8model): PROFILE_NOT_INITIALIZED and SYMLINK_ESCAPE added to COMMIT_REFUSAL_CODES; the re-resolve pass-through now carries the vanished-profile refusal with status BLOCKED. Superseded pin e08abf377fdf4934b7799a11aebef169ba7d5fc2d9fde0158c8bfa84e2a331e3.
-      ['profile/commit.mjs', '281fc369c37208b899d010dcd98a4362d5cc62760f0a0efffefa41841b01d673'], // 0b follow-up: LOCK_TIMEOUT code is recognized alongside the native sentence. B5 follow-up: anchorRows shares anchorNameBesideFile and covers top-level rows.
+      // Re-pinned by the P3-4 fix (named reason: a package manifest entry is
+      // resolved with realpath and refused when it lands outside the package
+      // directory). Superseded pin 281fc369c37208b899d010dcd98a4362d5cc62760f0a0efffefa41841b01d673.
+      ['profile/commit.mjs', 'd579dfb30d4efe452267f3c260760910ad0b243ac0cf17fc5d24c0d2b9dc59d9'], // 0b follow-up: LOCK_TIMEOUT code is recognized alongside the native sentence. B5 follow-up: anchorRows shares anchorNameBesideFile and covers top-level rows.
 
       // Re-pinned by the C08/D02 defect fix (named reason: the profile Apply
       // handler awaited verifyProfileApplySelection against the mutable
