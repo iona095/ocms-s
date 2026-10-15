@@ -68,7 +68,8 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
 // error instead of falling back to a literal machine path).
  // Re-pinned by S8 digest-numerics (named reason: canonicalJson maps non-finite numbers to distinct bare tokens instead of collapsing onto 'null', and the reader gains the bigint arm; identical rule in all three copies). Superseded pin a89f9bcdb35b8efa52ffa8a7ca658bff2f632e485b60a4482b13c59d70c4b478.
       // Re-pinned by S9 confirm-eof (named reason: defaultConfirmCli settles on readline close, so Ctrl-D/EOF declines through the verdict path instead of hanging forever). Superseded pin 5934a809cba70a4b65f380619271fb281178617d08081a75e36eeb27776cc34f.
-      ['sync.mjs', '3b940afa7aaa5730b8891a93cbd0f5ace77529b5b12f1bfd8093e5a80defad43'],
+      // Re-pinned by S10 preview-display-swallow (named reason: a failed Preview display refuses PREVIEW_DISPLAY_FAILED instead of continuing to confirm and Apply blind). Superseded pin 3b940afa7aaa5730b8891a93cbd0f5ace77529b5b12f1bfd8093e5a80defad43.
+      ['sync.mjs', '8bd44f458a0cf500b8ab18a603b6eb62000a72a898d11de491b20e13cba9ed17'],
 
 
       // Re-pinned by the 0b/D3 lock-label fix (named reason: an unexpected

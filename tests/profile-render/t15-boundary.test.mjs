@@ -95,7 +95,8 @@ describe('S3 T18 — planning and frozen-source regressions', () => {
   // resolves USERPROFILE, then DSH_HOME, then refuses with a typed error).
   // Re-pinned by S8 digest-numerics (named reason: canonicalJson maps non-finite numbers to distinct bare tokens instead of collapsing onto 'null', and the reader gains the bigint arm; identical rule in all three copies). Superseded pin a89f9bcdb35b8efa52ffa8a7ca658bff2f632e485b60a4482b13c59d70c4b478.
       // Re-pinned by S9 confirm-eof (named reason: defaultConfirmCli settles on readline close, so Ctrl-D/EOF declines through the verdict path instead of hanging forever). Superseded pin 5934a809cba70a4b65f380619271fb281178617d08081a75e36eeb27776cc34f.
-      assert.equal(sha('sync.mjs'), '3b940afa7aaa5730b8891a93cbd0f5ace77529b5b12f1bfd8093e5a80defad43', 'sync.mjs drift beyond the CURRENT reviewed bytes is forbidden');
+      // Re-pinned by S10 preview-display-swallow (named reason: a failed Preview display refuses PREVIEW_DISPLAY_FAILED instead of continuing to confirm and Apply blind). Superseded pin 3b940afa7aaa5730b8891a93cbd0f5ace77529b5b12f1bfd8093e5a80defad43.
+      assert.equal(sha('sync.mjs'), '8bd44f458a0cf500b8ab18a603b6eb62000a72a898d11de491b20e13cba9ed17', 'sync.mjs drift beyond the CURRENT reviewed bytes is forbidden');
     // The old "no profile/* modification" tripwire is replaced, not dropped:
     // the three files v1.4.7-rc6 §5 changed are now byte-pinned at their
     // re-pinned values under the named reason "version-skew reproducibility

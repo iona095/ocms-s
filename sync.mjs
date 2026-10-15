@@ -1402,7 +1402,13 @@ export async function runProfileSync(opts = {}) {
     return { ok: false, mode: "profile", code: (built && built.code) || "VERIFY_FAILED", message: (built && built.message) || "Preview failed.", detail: built && built.detail };
   }
   const preview = built.preview;
-  try { say(formatProfilePreviewText(preview)); } catch {}
+  // S10: a failed Preview display must refuse, never continue to confirm and
+  // Apply blind — the chain Preview -> display -> confirm -> Apply skips no step.
+  let previewDisplayed = true;
+  try { say(formatProfilePreviewText(preview)); } catch { previewDisplayed = false; }
+  if (!previewDisplayed) {
+    return { ok: false, mode: "profile", code: "PREVIEW_DISPLAY_FAILED", message: "The Preview could not be displayed; refusing without writing." };
+  }
   if (preview.status !== "READY" && preview.status !== "NO_CHANGE") {
     return { ok: false, mode: "profile", code: "PREVIEW_NOT_READY", message: "Preview is not ready for Apply." };
   }
@@ -1445,6 +1451,8 @@ export async function runSettingsSync(opts = {}) {
   try { sources = await fetchSources(fetchFn); }
   catch (err) { return { ok: false, mode: "legacy-settings", code: "FETCH_FAILED", message: String((err && err.message) || err) }; }
   const plan = buildPlan({ settingsPath, sources });
+  // S10: same fail-closed display gate as runProfileSync above.
+  let previewDisplayed = true;
   try {
     say("settings: " + realTarget + " (" + cls + ")\nstate: " + plan.state + "\n" + formatReport({
       result: plan.state,
@@ -1459,7 +1467,10 @@ export async function runSettingsSync(opts = {}) {
       fallbackResolved: plan.fallbackResolved || [],
       endpointBaseDrift: plan.endpointBaseDrift || [],
     }));
-  } catch {}
+  } catch { previewDisplayed = false; }
+  if (!previewDisplayed) {
+    return { ok: false, mode: "legacy-settings", code: "PREVIEW_DISPLAY_FAILED", message: "The settings Preview could not be displayed; refusing without writing." };
+  }
   if (plan.state === "BLOCKED") return { ok: false, mode: "legacy-settings", code: "PREVIEW_BLOCKED", message: "Settings Preview is blocked.", reasons: plan.blockedReasons };
   if (plan.state === "NO_CHANGE") return { ok: true, mode: "legacy-settings", result: "NO_CHANGE", settingsPath, settingsDigest: plan.settingsDigest };
   let confirmed = false;
