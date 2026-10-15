@@ -2,7 +2,7 @@
 // was that a cyclic YAML alias in a BUNDLE layer reaches the canonical digest
 // (which recursed without a visited set) and rejects readManagedConfig with a
 // RangeError instead of a typed refusal, because hasCycle() covers only the
-// user/home/overlay layers.
+// user, home and overlay layers.
 //
 // Probe evidence (this is the verdict, not a defect):
 //   1. The parser half IS real — the yaml library accepts a recursive alias
