@@ -118,6 +118,16 @@ test('F3: Host allowlist accepts only exact loopback forms on the bound port', {
   }
 });
 
+test('C29: server tokens are 256-bit hex and unique per server', { skip: SKIP }, async (t) => {
+  const file = scratchSettingsFile(t, currentWithExtras());
+  const first = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
+  const second = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
+  for (const started of [first, second]) {
+    assert.match(started.token, /^[0-9a-f]{64}$/, 'token is 32 random bytes as hex');
+  }
+  assert.notEqual(first.token, second.token, 'tokens are unique per server');
+});
+
 test('C27: X-Forwarded-Host never overrides the Host allowlist', { skip: SKIP }, async (t) => {
   const file = scratchSettingsFile(t, currentWithExtras());
   const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
