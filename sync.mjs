@@ -1544,7 +1544,12 @@ export async function dispatchSyncCli(argv = [], deps = {}) {
 export function readSettingsFile(settingsPath) {
   const bytes = fs.readFileSync(settingsPath);
   const text = bytes.toString('utf8');
-  const config = parseYaml(text);
+  let config = null;
+  try {
+    config = parseYaml(text);
+  } catch {
+    throw unresolved('SETTINGS_INVALID: settings file is not valid YAML');
+  }
   if (!config || typeof config !== 'object' || Array.isArray(config)) {
     throw unresolved('SETTINGS_INVALID: settings root must be a mapping');
   }
@@ -2023,7 +2028,12 @@ export function legacySettingsUnresolved(result) {
   const message = String((result && result.message) || 'refused');
   const out = [{ reason: code + ': ' + message }];
   const reasons = result && Array.isArray(result.reasons) ? result.reasons : [];
-  for (const r of reasons) if (typeof r === 'string') out.push({ reason: r });
+  // C05: plan-blocked reasons arrive as { reason } objects; surface their
+  // coded text instead of dropping them (strings still pass through).
+  for (const r of reasons) {
+    if (typeof r === 'string') out.push({ reason: r });
+    else if (r && typeof r.reason === 'string') out.push({ reason: r.reason });
+  }
   return out;
 }
 
@@ -2082,6 +2092,23 @@ async function main() {
     return;
   }
   if (result && result.ok === true) return;
+  // C05: a missing --settings file is a usage error, not a sync refusal:
+  // verdict plus usage, exit 2. Every other refusal keeps verdict + exit 1.
+  if (result && result.mode === 'refused' && result.code === 'SETTINGS_UNREADABLE') {
+    try {
+      console.log(formatReport({
+        result: 'NOT WRITTEN',
+        added: [],
+        removed: [],
+        moved: [],
+        metadataChanged: [],
+        unresolved: [{ reason: 'SETTINGS_UNREADABLE: The explicit settings path cannot be resolved.' }],
+      }));
+    } catch {}
+    console.log('Usage: node sync.mjs --settings=<path> [--scratch]');
+    process.exitCode = 2;
+    return;
+  }
   try {
     console.log(formatReport({
       result: 'NOT WRITTEN',
