@@ -72,7 +72,11 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
       // Re-pinned by C1 legacy-tmp-race (named reason: unique per-commit temp plus finally cleanup instead of the fixed shared <settings>.tmp). Superseded pin 8bd44f458a0cf500b8ab18a603b6eb62000a72a898d11de491b20e13cba9ed17.
       // Re-pinned by NB1 inference bases (named reason: DOC_ENDPOINT_BASES gains the live
       // per-provider /inference/... bases per gateway; old bases retained). Superseded pin 6c3a335a9129e31490f671595bc7f2c2b5eebf3a51c95ee454f6682745ddd95e.
-      ['sync.mjs', '1fb8014cdb4f164860cae6573ef38bfc1ab671ad16061e72ea26610db2fe40a3'],
+      // Re-pinned by the P2-2 defect fix (named reason: a surplus stored copy
+      // on the wanted route is reported in removed; the write path is
+      // byte-identical). Superseded pin 1fb8014cdb4f164860cae6573ef38bfc1ab671ad16061e72ea26610db2fe40a3.
+      ['sync.mjs', 'd5968ad92911fa7d17742a450dfb57c1d6f4ebf67073fca57a3143fe541beff9'],
+
 
 
       // Re-pinned by the 0b/D3 lock-label fix (named reason: an unexpected
@@ -91,7 +95,15 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
       // --port=0 remains a usage error).
       // Re-pinned by S4 legacy-apply-500 (named reason: a NOT WRITTEN legacy commit is now the typed 409 NOT_WRITTEN refusal with its reasons; 500 remains for unexpected throws). Superseded pin ab89c3fac719f116200c06caeea892ff8f8a915bfbc2c08416cb7be0edcbe2ac.
       // Re-pinned by S5 open-browser-error (named reason: the browser opener child always carries an 'error' listener, so a missing opener cannot crash the server). Superseded pin 99cbd2fb30578fb50a9dc0e2a83f4908e9cbcc144dda1c562517fd6adf4719a4.
-      ['ui.mjs', '9eda134dc30936cea1dab05ec4f895facc3bf15de76c5b7b0ed325ce79874577'],
+      // Re-pinned by the P1-1 defect fix (named reason: the post-verify stale
+      // check is unconditional, a resumed concurrent Apply refuses APPLY_BUSY,
+      // only the setter releases the busy flag, and a test seam exposes the
+      // verifier/commit for deterministic concurrency tests).
+      // Re-pinned by the P3-3 fix (named reason: bare loopback Host/Origin are
+      // accepted when bound to port 80; the two validators are exported for
+      // tests). Superseded pin 9eda134dc30936cea1dab05ec4f895facc3bf15de76c5b7b0ed325ce79874577.
+      ['ui.mjs', '87ae89018c36cd6da425cfced8a932f48ab4bd728c59475ccee3a294f20832a8'],
+
 
       // Re-pinned by the C09/C10 refusal hardening (named reason: a JSON null body
       // reached Object.keys as a 500, and an EXACT_OVERLAYS attestation without an
@@ -101,7 +113,12 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
       // Re-pinned by the C07/C25 confirmation and busy-state fix (named reason:
       // the confirmation dialog showed UNKNOWN for profile targets, suppressed the
       // PRODUCTION warning, and a 409 busy Apply left the page in APPLYING).
-      ['ui/index.html', 'f4db7da417ce1d69a65ed50bdc68e3666c8c96fbc4f6781b6dc82a976a32ada8'],
+      // Re-pinned by the P3-1 defect fix (named reason: an in-flight Preview
+      // response is dropped with a notice when the selection changed or a
+      // newer request started, via a generation counter plus a selection
+      // snapshot). Superseded pin f4db7da417ce1d69a65ed50bdc68e3666c8c96fbc4f6781b6dc82a976a32ada8.
+      ['ui/index.html', 'd63a61a1df1714b64d5838f66a2ff55e5ebc3ae2c259867e3a8f3c37b45e8618'],
+
       // Re-pinned by K5 lifecycle-misc (named reason: EXTERNAL is emitted with
       // its message assigned, ERROR to OFFLINE drops the stale message, the
       // disposed-during-probe OFFLINE re-assertion is guarded, the dead

@@ -100,7 +100,10 @@ describe('S3 T18 — planning and frozen-source regressions', () => {
       // Re-pinned by NB1 inference bases (named reason: DOC_ENDPOINT_BASES gains the live
       // per-provider /inference/... bases per gateway; old bases retained, matching unchanged).
       // Superseded pin 6c3a335a9129e31490f671595bc7f2c2b5eebf3a51c95ee454f6682745ddd95e.
-      assert.equal(sha('sync.mjs'), '1fb8014cdb4f164860cae6573ef38bfc1ab671ad16061e72ea26610db2fe40a3', 'sync.mjs drift beyond the CURRENT reviewed bytes is forbidden');
+      // Re-pinned by the P2-2 defect fix (named reason: a surplus stored copy
+      // on the wanted route is reported in removed; the write path is
+      // byte-identical). Superseded pin 1fb8014cdb4f164860cae6573ef38bfc1ab671ad16061e72ea26610db2fe40a3.
+      assert.equal(sha('sync.mjs'), 'd5968ad92911fa7d17742a450dfb57c1d6f4ebf67073fca57a3143fe541beff9', 'sync.mjs drift beyond the CURRENT reviewed bytes is forbidden');
     // The old "no profile/* modification" tripwire is replaced, not dropped:
     // the three files v1.4.7-rc6 §5 changed are now byte-pinned at their
     // re-pinned values under the named reason "version-skew reproducibility
@@ -131,7 +134,12 @@ describe('S3 T18 — planning and frozen-source regressions', () => {
       // anchoring now covers top-level rows as well as insert children, so
       // one file's rows always address identically in composition.
       // Re-pinned by S8 digest-numerics (named reason: canonicalJson maps non-finite numbers to distinct bare tokens instead of collapsing onto 'null', and the reader gains the bigint arm; identical rule in all three copies). Superseded pin ed0e72e4ac039860fbc824dcb1990f2815839ba582792158216384ba77a64a49.
-      ['profile/config-reader.mjs', '3aa41c5bbb56fcb79003b759ffd74982203ede0fa6f055bf0b8e37b9b6b07055'],
+      // Re-pinned by the P2-3 defect fix (named reason: layer 0 is compared
+      // against no config, so a first non-user layer that supplies the
+      // effective config is attributed instead of reported unknown).
+      // Superseded pin 3aa41c5bbb56fcb79003b759ffd74982203ede0fa6f055bf0b8e37b9b6b07055.
+      ['profile/config-reader.mjs', '38a0c6f171542afe451acdd55eba1bb2468c1b1e7ac18166e4649906fed2cb57'],
+
       // Re-pinned by the C04/D01 defect fix with the named reason: indentBlock
       // owns the line-ending join, and three call sites pre-converted block
       // text to the file eol, so an F1-add or F2 render on a CRLF patch wrote
@@ -151,7 +159,12 @@ describe('S3 T18 — planning and frozen-source regressions', () => {
       // Re-pinned by the D07 defect fix with the named reason: an F1-add
       // insertion sharing its offset with the combined F2 insertion merges
       // (models block first) instead of refusing a duplicate site.
-      ['profile/surgical-render.mjs', '6b9ad428030f47b6b9417901b68bca459a292eb4e6e966217a6631fffa61dd2f'],
+      // Re-pinned by the P1-2 defect fix (named reason: an F1-add insertion
+      // that begins mid-line terminates the final content line with the
+      // file's EOL, and verification excises that leading line break).
+      // Superseded pin 6b9ad428030f47b6b9417901b68bca459a292eb4e6e966217a6631fffa61dd2f.
+      ['profile/surgical-render.mjs', '52de0fc14720d77fc011a09790e656dffdd34e88731b03fd73857453734a5ce0'],
+
 
 
 
