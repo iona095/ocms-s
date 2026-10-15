@@ -129,4 +129,27 @@ describe("R2 B5 browser invalidation", () => {
     const note = String(h.els["status"].textContent).toLowerCase();
     assert.ok(note.includes("overlay") || note.includes("empty"));
   });
+  it("P3-1: selection change during Preview flight drops the stale response", async () => {
+    let releasePreview;
+    const gate = new Promise((res) => { releasePreview = res; });
+    const h = runClientScript((url) => {
+      if (url === "/api/state") return { ok: true, target: { displayPath: "x", production: false } };
+      if (url === "/api/preview") return gate.then(() => profilePreview("p-stale"));
+      return { ok: true, status: "UPDATED", profile: true, liveActivation: "UNKNOWN_LIVE_UNVERIFIED" };
+    });
+    await h.tick();
+    h.els["profile-picker"].value = "web";
+    h.els["refresh-btn"].fire("click");
+    await h.tick(2);
+    assert.equal(h.calls.filter((c) => c.url === "/api/preview").length, 1);
+    h.els["profile-picker"].value = "other";
+    h.els["profile-picker"].fire("input");
+    releasePreview();
+    await h.tick(12);
+    assert.notEqual(h.els["state-badge"].textContent, "READY", "a stale in-flight Preview must not install READY");
+    const note = String(h.els["status"].textContent).toLowerCase();
+    assert.ok(note.includes("stale") || note.includes("drop") || note.includes("changed"), "the drop must be announced: " + note);
+    h.els["apply-btn"].fire("click");
+    assert.equal(h.els["confirm-dialog"].open, false, "no confirm may open on a dropped preview");
+  });
 });
