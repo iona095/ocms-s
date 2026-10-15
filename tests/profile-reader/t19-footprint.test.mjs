@@ -84,7 +84,8 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
       // startServer accepts loopback port 0 for OS-assigned test ports; CLI
       // --port=0 remains a usage error).
       // Re-pinned by S4 legacy-apply-500 (named reason: a NOT WRITTEN legacy commit is now the typed 409 NOT_WRITTEN refusal with its reasons; 500 remains for unexpected throws). Superseded pin ab89c3fac719f116200c06caeea892ff8f8a915bfbc2c08416cb7be0edcbe2ac.
-      ['ui.mjs', '99cbd2fb30578fb50a9dc0e2a83f4908e9cbcc144dda1c562517fd6adf4719a4'],
+      // Re-pinned by S5 open-browser-error (named reason: the browser opener child always carries an 'error' listener, so a missing opener cannot crash the server). Superseded pin 99cbd2fb30578fb50a9dc0e2a83f4908e9cbcc144dda1c562517fd6adf4719a4.
+      ['ui.mjs', '9eda134dc30936cea1dab05ec4f895facc3bf15de76c5b7b0ed325ce79874577'],
 
       // Re-pinned by the C09/C10 refusal hardening (named reason: a JSON null body
       // reached Object.keys as a 500, and an EXACT_OVERLAYS attestation without an

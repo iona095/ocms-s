@@ -217,17 +217,17 @@ function listBackups(dir, basename) {
 }
 
 function defaultOpenBrowser(url) {
+  // S5 [GLM L10]: a missing opener is reported asynchronously as an 'error'
+  // event. Browser opening is best effort, so the listener is always attached.
+  const launch = (cmd, args) => {
+    const child = spawn(cmd, args, { detached: true, stdio: 'ignore', shell: false });
+    child.on('error', () => {});
+    if (child && typeof child.unref === 'function') child.unref();
+  };
   try {
-    if (process.platform === 'win32') {
-      const child = spawn('cmd', ['/c', 'start', '""', url], { detached: true, stdio: 'ignore', shell: false });
-      if (child && typeof child.unref === 'function') child.unref();
-    } else if (process.platform === 'darwin') {
-      const child = spawn('open', [url], { detached: true, stdio: 'ignore', shell: false });
-      if (child && typeof child.unref === 'function') child.unref();
-    } else {
-      const child = spawn('xdg-open', [url], { detached: true, stdio: 'ignore', shell: false });
-      if (child && typeof child.unref === 'function') child.unref();
-    }
+    if (process.platform === 'win32') launch('cmd', ['/c', 'start', '""', url]);
+    else if (process.platform === 'darwin') launch('open', [url]);
+    else launch('xdg-open', [url]);
   } catch {
     // best effort only
   }
