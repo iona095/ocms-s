@@ -1598,6 +1598,15 @@ describe("R1 ownership and cancellation repair", () => {
     const text = await readFile(join(ROOT, "README.md"), "utf8");
     assert.ok(!text.includes("npm run watch -- --profile"), "stale syntax removed");
   });
+  it("P3-2 unknown subcommand prints the general usage, not register usage", { timeout: 60000 }, async () => {
+    const out = spawnSync(process.execPath, [join(ROOT, "scripts", "dev-tools.mjs"), "nonsense"], { encoding: "utf8", timeout: 30000 });
+    assert.notEqual(out.status, 0, "unknown subcommand fails");
+    const text = String(out.stderr || "") + String(out.stdout || "");
+    assert.ok(text.includes("unknown subcommand"), "names the bad subcommand: " + text.slice(0, 200));
+    for (const sub of ["build", "register", "watch", "dev:web"]) {
+      assert.ok(text.includes(sub), "general usage lists " + sub + ": " + text.slice(0, 300));
+    }
+  });
   it("package manifest whitelist unchanged", async () => {
     const pkg = JSON.parse(await readFile(join(ROOT, "package.json"), "utf8"));
     // C01: "profile/" joined the whitelist because ui.mjs statically imports
