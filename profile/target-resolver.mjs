@@ -273,9 +273,21 @@ function isWithinDir(candidateReal, dirReal) {
 
 // Locate the dsh executable via PATH lookup (SPEC.md §DX-2 posture: PATH
 // lookup exactly, no bunx/npx fallback). Returns an absolute path or null.
-export function findDshExecutable({ pathEnv = process.env.PATH ?? '' } = {}) {
-  const bins = process.platform === 'win32' ? ['dsh', 'dsh.cmd', 'dsh.exe', 'dsh.ps1'] : ['dsh'];
-  for (const dir of String(pathEnv).split(path.delimiter)) {
+export function findDshExecutable({ pathEnv = process.env.PATH ?? '', pathext = process.env.PATHEXT ?? '' } = {}) {
+  // P4: Windows resolves a bare command name through PATHEXT, so an extension
+  // this list did not hardcode (.bat, .com, .ps1, ...) was invisible. Try the
+  // bare name first, then each advertised extension in PATHEXT order.
+  const bins = ['dsh'];
+  if (process.platform === 'win32') {
+    const advertised = String(pathext).split(';').map((e) => e.trim()).filter((e) => e.startsWith('.'));
+    for (const ext of (advertised.length > 0 ? advertised : ['.cmd', '.exe', '.bat', '.ps1'])) {
+      bins.push('dsh' + ext.toLowerCase());
+    }
+  }
+  for (const rawDir of String(pathEnv).split(path.delimiter)) {
+    // A quoted PATH entry keeps its quote characters; joining it verbatim
+    // never stats, which looked exactly like "dsh not found".
+    const dir = rawDir.trim().replace(/^"([\s\S]*)"$/, '$1');
     if (!dir) continue;
     for (const bin of bins) {
       const candidate = path.join(dir, bin);

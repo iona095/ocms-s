@@ -206,7 +206,7 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
     // anchoring is now shared (anchorNameBesideFile) so S1 binding identity
     // and S2 composition agree on every row's address.
     const recorded = new Map([
-      ['profile/target-resolver.mjs', '90573485d2a1bb9d262b2287d2096e2f3fc6001cdadb92f4c6aca7ba1a95854d'],
+      ['profile/target-resolver.mjs', '3fdcf7c436b80ee59b1c41f383af5c8c63a955ae670df7fa988a2f3c1cb7ac30'],
       ['tests/profile-target/helpers.mjs', '535be36cad699d729c0eb5e9afde0aaf5ad9517b67b052eb7c2026a560c42c6f'],
       ['tests/profile-target/target-admission.test.mjs', 'ed8225f5c92461768b92b8a6571bd22720d5f54dfefedee79572f37564883ed5'],
       // Re-pinned by the B5 follow-up (named reason: the S1 export

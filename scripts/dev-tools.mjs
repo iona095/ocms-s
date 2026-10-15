@@ -86,9 +86,23 @@ export async function findDshExecutable(env) {
   if (raw.length === 0) {
     return null;
   }
-  const cands = process.platform === "win32" ? ["dsh.cmd", "dsh.exe", "dsh.bat", "dsh"] : ["dsh"];
+  // P4: Windows resolves a bare command name through PATHEXT, so an extension
+  // this list did not hardcode (.ps1, .com, ...) was invisible and the lookup
+  // reported "dsh not found". Try the bare name, then each advertised
+  // extension in PATHEXT order.
+  const cands = ["dsh"];
+  if (process.platform === "win32") {
+    const raw2 = env && typeof env.PATHEXT === "string" ? env.PATHEXT : "";
+    const advertised = raw2.split(";").map((e) => e.trim()).filter((e) => e.startsWith("."));
+    for (const ext of (advertised.length > 0 ? advertised : [".cmd", ".exe", ".bat", ".ps1"])) {
+      cands.push("dsh" + ext.toLowerCase());
+    }
+  }
   const dirs = raw.split(delimiter);
-  for (const dir of dirs) {
+  for (const rawDir of dirs) {
+    // A quoted PATH entry keeps its quote characters; joining it verbatim never
+    // stats, which looked exactly like "dsh not found".
+    const dir = rawDir.trim().replace(/^"([\s\S]*)"$/, "$1");
     if (!dir) {
       continue;
     }
