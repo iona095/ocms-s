@@ -45,3 +45,7 @@ tests/profile-acceptance/env02-native.test.mjs text eol=lf
 # the working-tree bytes against the recorded capture SHAs, so checkout must
 # preserve exact bytes on every platform. Same treatment as contracts above.
 tests/v1.4.7-rc1/fixtures/*.html -text
+
+# OCMS-S NB1 captured docs fixtures (2026-10-15): hash the working-tree
+# bytes, so checkout must preserve exact bytes on every platform.
+tests/nb1-inference-bases/fixtures/*.html -text
