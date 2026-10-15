@@ -115,19 +115,15 @@ jobs:
           }
 
       - name: Prove clean-machine condition
+        # CI1: the logic lives in scripts/ci-check-clean-machine.mjs so it is
+        # provable off-Actions (tests/v1.4.7-rc6/ci-clean-machine.test.mjs
+        # drives it with fakes, positive and negative). The previous inline
+        # version required HOME on every platform; windows-latest sets no HOME,
+        # so both test jobs failed here and never ran the suite (Actions run
+        # 38732017995). Windows requires USERPROFILE/APPDATA/LOCALAPPDATA;
+        # HOME is required only off Windows.
         shell: pwsh
-        run: |
-          if (Test-Path (Join-Path $env:USERPROFILE '.dsh')) { throw 'runner has a real ~/.dsh; tests must be hermetic' }
-          if (Get-Command dsh -ErrorAction SilentlyContinue) { throw 'runner has dsh on PATH; tests must be hermetic' }
-          if (Test-Path Env:DSH_HOME) { throw "runner has DSH_HOME set ('$env:DSH_HOME'); the suites must derive a temp home, not inherit one" }
-          $missing = @()
-          foreach ($name in @('USERPROFILE', 'HOME', 'APPDATA', 'LOCALAPPDATA')) {
-            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) { $missing += $name }
-          }
-          if ($missing.Count -gt 0) {
-            throw "required temp-profile variable(s) not set: $($missing -join ', '); the suites cannot redirect the user profile"
-          }
-          Write-Host 'clean-machine condition holds: no real ~/.dsh, no dsh on PATH, DSH_HOME unset, profile variables present'
+        run: node scripts/ci-check-clean-machine.mjs
 
       - name: Run tests
         run: npm test
