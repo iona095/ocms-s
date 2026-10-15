@@ -672,7 +672,9 @@ export function renderDesiredState(input) {
     if (wanted.length === 0) {
       insertText = indentStr(col) + 'models: []' + eol;
     } else {
-      const block = stringify(wanted).split('\n').join(eol);
+      // indentBlock owns the line-ending join; pre-converting to eol here made
+      // every rendered line end with a stray CR on a CRLF patch (C04/D01).
+      const block = stringify(wanted);
       const indented = indentBlock(block, col + 2, eol);
       insertText = indentStr(col) + 'models:' + eol + indented;
     }
@@ -711,7 +713,7 @@ export function renderDesiredState(input) {
         combined += indentStr(innerCol) + 'baseURL: ' + baseURL + eol;
         combined += indentStr(innerCol) + 'apiKeyEnv: ' + apiKeyEnv + eol;
         if (wanted.length === 0) combined += indentStr(innerCol) + 'models: []' + eol;
-        else { combined += indentStr(innerCol) + 'models:' + eol; const block = stringify(wanted).split('\n').join(eol); combined += indentBlock(block, valueCol, eol); }
+        else { combined += indentStr(innerCol) + 'models:' + eol; const block = stringify(wanted); combined += indentBlock(block, valueCol, eol); }
       }
       const charOff = prov.range[2];
       const bs = charToByte(origText, charOff);
@@ -735,7 +737,7 @@ export function renderDesiredState(input) {
         combined += indentStr(fieldCol) + 'baseURL: ' + baseURL + eol;
         combined += indentStr(fieldCol) + 'apiKeyEnv: ' + apiKeyEnv + eol;
         if (wanted.length === 0) combined += indentStr(fieldCol) + 'models: []' + eol;
-        else { combined += indentStr(fieldCol) + 'models:' + eol; const block = stringify(wanted).split('\n').join(eol); combined += indentBlock(block, valueCol, eol); }
+        else { combined += indentStr(fieldCol) + 'models:' + eol; const block = stringify(wanted); combined += indentBlock(block, valueCol, eol); }
       }
       const charOff = located.configNode.range[2];
       const bs = charToByte(origText, charOff);
@@ -761,7 +763,7 @@ export function renderDesiredState(input) {
         combined += indentStr(fieldCol) + 'baseURL: ' + baseURL + eol;
         combined += indentStr(fieldCol) + 'apiKeyEnv: ' + apiKeyEnv + eol;
         if (wanted.length === 0) combined += indentStr(fieldCol) + 'models: []' + eol;
-        else { combined += indentStr(fieldCol) + 'models:' + eol; const block = stringify(wanted).split('\n').join(eol); combined += indentBlock(block, valueCol, eol); }
+        else { combined += indentStr(fieldCol) + 'models:' + eol; const block = stringify(wanted); combined += indentBlock(block, valueCol, eol); }
       }
       const charOff = located.entryNode.range[2];
       const bs = charToByte(origText, charOff);

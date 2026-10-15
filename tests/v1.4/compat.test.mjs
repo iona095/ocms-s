@@ -230,9 +230,18 @@ test('v1.4.7-rc2 Amendment B identity: plan-builder pinned to the B bytes', () =
   assert.equal(sha, '0bd80eca74a5e967cfd6e8fd1430ff9eef6c723b7ed380834f88685b83c53198', 'plan-builder drift beyond the v1.4.7-rc2 Amendment B implementation is forbidden');
 });
 
-test('v1.4.7-rc1 Amendment A identity: surgical-render pinned to the rc1 bytes', () => {
+test('v1.4.7-rc1 Amendment A identity: surgical-render pinned to the rc1 bytes', { skip: 'superseded by the C04/D01 CRLF indentBlock fix (see the C04 pin below)' }, () => {
   const sha = sha256Hex(fs.readFileSync(path.join(REPO_ROOT, 'profile', 'surgical-render.mjs')));
   assert.equal(sha, RC1GATE_RENDER_SHA, 'surgical-render drift beyond the v1.4.7-rc1 implementation is forbidden');
+});
+
+// Re-pinned by the C04/D01 defect fix (named reason: indentBlock owns the
+// line-ending join, and three call sites pre-converted block text to the file
+// eol, so an F1-add or F2 render on a CRLF patch emitted a stray CR per line
+// and refused GENERATED_MEMBERSHIP_MISMATCH).
+test('C04 identity: surgical-render pinned after the CRLF indentBlock fix', () => {
+  const sha = sha256Hex(fs.readFileSync(path.join(REPO_ROOT, 'profile', 'surgical-render.mjs')));
+  assert.equal(sha, 'f5444d64718ae0bd770e58070c3b061c306b8f3fa8ce2894813b421f0dbfa5ef', 'surgical-render drift beyond the C04/D01 CRLF fix is forbidden');
 });
 
 test('v1.4.6-rc2 identity: ui/index.html pinned to the rc2 bytes', { skip: 'superseded by contract v1.4.7-rc2 U5 (see rc2 pin below)' }, () => {

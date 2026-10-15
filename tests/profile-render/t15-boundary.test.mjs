@@ -83,6 +83,13 @@ describe('S3 T18 — planning and frozen-source regressions', () => {
       ['profile/target-resolver.mjs', '565d1356edf2030f03d7760a846644657482fa955145f00125eb522d711b90f5'],
       ['profile/commit.mjs', 'ba42ae5dc8516e04b7ca9154b689ab70102e500e5f000b27ee31474251f6d3b4'],
       ['profile/config-reader.mjs', '846e34de8343c6a390bca41d487b9900d6fd7fb556db762635a447d8663ff7cf'],
+      // Re-pinned by the C04/D01 defect fix with the named reason: indentBlock
+      // owns the line-ending join, and three call sites pre-converted block
+      // text to the file eol, so an F1-add or F2 render on a CRLF patch wrote
+      // a stray CR per line and refused GENERATED_MEMBERSHIP_MISMATCH. The pin
+      // below replaces the "must not be modified" work-tree check so any later
+      // drift still trips here.
+      ['profile/surgical-render.mjs', 'f5444d64718ae0bd770e58070c3b061c306b8f3fa8ce2894813b421f0dbfa5ef'],
     ]);
     for (const [rel, hex] of REPINNED) {
       assert.equal(sha(rel), hex, 'version-skew reproducibility (v1.4.7-rc6 §5) re-pin drifted: ' + rel);
@@ -91,7 +98,8 @@ describe('S3 T18 — planning and frozen-source regressions', () => {
     const out = execFileSync('git', ['diff', '--name-only'], { encoding: 'utf8' });
     const modified = out.split('\n').map((l) => l.trim()).filter(Boolean);
     assert.ok(!modified.includes('profile/plan-builder.mjs'), 'plan-builder must not be modified');
-    assert.ok(!modified.includes('profile/surgical-render.mjs'), 'surgical-render must not be modified');
+    // surgical-render is byte-pinned in REPINNED above (C04/D01 re-pin) instead
+    // of being unmodifiable: the named reason is the CRLF indentBlock fix.
   });
 });
 
