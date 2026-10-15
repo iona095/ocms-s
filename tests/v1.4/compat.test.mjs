@@ -216,9 +216,13 @@ test('v1.4.7-rc2 Amendment B identity: sync.mjs pinned to the B bytes', { skip: 
   assert.equal(sha, 'b686f64b47007d3f0046f70520e594afc08d217bc87d36dfd9bf6bc357fb4026', 'sync.mjs drift beyond the v1.4.7-rc2 Amendment B implementation is forbidden');
 });
 
-test('v1.4.7-rc5 identity: sync.mjs pinned to the rc5 bytes', () => {
+// Re-pinned by the C02/C03 defect fix (named reason: the legacy --settings CLI
+// exited 0 on every refusal and never printed the final UPDATED / NO CHANGE
+// verdict; main() now reports the verdict and exits 1 on refusal). The pin
+// keeps guarding the CURRENT reviewed bytes after that change.
+test('v1.4.7-rc5 identity: sync.mjs pinned to the rc5 bytes plus the C02/C03 verdict fix', () => {
   const sha = sha256Hex(fs.readFileSync(path.join(REPO_ROOT, 'sync.mjs')));
-  assert.equal(sha, 'efc81a712988a5ccda7189714731bb8456144a95941a3253d93d7f3fb589520b', 'sync.mjs drift beyond the v1.4.7-rc5 withdrawn-docs removals is forbidden');
+  assert.equal(sha, '60a8412f2a4f083cf89f67d0105d36de5aa67186cb2a8db8e87a06046508d3b7', 'sync.mjs drift beyond the C02/C03 verdict fix is forbidden');
 });
 
 test('v1.4.7-rc2 Amendment B identity: plan-builder pinned to the B bytes', () => {

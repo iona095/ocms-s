@@ -55,7 +55,7 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
     // forbidden files stay binding; no wildcards, no directory exemptions
     // beyond the §10-authorized version-bump files below.
     const CURRENT_PINS = new Map([
-      ['sync.mjs', 'efc81a712988a5ccda7189714731bb8456144a95941a3253d93d7f3fb589520b'],
+      ['sync.mjs', '60a8412f2a4f083cf89f67d0105d36de5aa67186cb2a8db8e87a06046508d3b7'],
       ['ui.mjs', 'bb136172e3c319e144b770f41c8bc16be6069fcbab0ecc8022888421d3fc9f4e'],
       ['ui/index.html', '4e8491022f5c0f1b4cc5493434a32d56a7f46abd1f752c6905114e129b8fc2c0'],
     ]);

@@ -1329,9 +1329,19 @@ function formatProfilePreviewText(preview) {
   }
   return lines.join("\n");
 }
+// C02: a missing interactive terminal must be visible, not a silent decline.
+function noteNonInteractiveDecline() {
+  try {
+    process.stderr.write('ocms-s: confirmation requires an interactive terminal (stdin is not a TTY); refusing without writing.' + String.fromCharCode(10));
+  } catch { /* diagnostics are best effort */ }
+}
+
 async function defaultConfirmCli(promptText) {
   try {
-    if (!process.stdin || process.stdin.isTTY !== true) return false;
+    if (!process.stdin || process.stdin.isTTY !== true) {
+      noteNonInteractiveDecline();
+      return false;
+    }
     const readline = await import("node:readline");
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     const answer = await new Promise((resolve) => rl.question(String(promptText || "Apply? [y/N] "), resolve));
@@ -2005,6 +2015,18 @@ export function blockedProfileUnresolved(result) {
   return out;
 }
 
+// C02/C03: legacy `--settings` refusals must be visible and must fail the
+// process, and every completed legacy run must end with exactly one verdict
+// (contract v1.2 section 17). Pure mapping, no I/O.
+export function legacySettingsUnresolved(result) {
+  const code = String((result && result.code) || 'REFUSED');
+  const message = String((result && result.message) || 'refused');
+  const out = [{ reason: code + ': ' + message }];
+  const reasons = result && Array.isArray(result.reasons) ? result.reasons : [];
+  for (const r of reasons) if (typeof r === 'string') out.push({ reason: r });
+  return out;
+}
+
 async function main() {
   // S5-R2 B1: explicitly selected targets only. Bare invocation refuses
   // without fetching or writing; legacy runSync({}) is never entered here.
@@ -2028,7 +2050,35 @@ async function main() {
     return;
   }
   if (result && result.mode === 'legacy-settings') {
-    if (result.result === 'NOT WRITTEN') process.exitCode = 1;
+    // C02/C03: refuse loudly (NOT WRITTEN + exit 1) and report the verdict on
+    // success (UPDATED / NO CHANGE), matching the profile branch below.
+    if (result.ok !== true) {
+      try {
+        console.log(formatReport({
+          result: 'NOT WRITTEN',
+          added: [],
+          removed: [],
+          moved: [],
+          metadataChanged: [],
+          unresolved: legacySettingsUnresolved(result),
+        }));
+      } catch {}
+      process.exitCode = 1;
+      return;
+    }
+    try {
+      console.log(formatReport({ result: String(result.result || 'NO CHANGE'), ...(result.report ? {} : {}),
+        added: (result.report && result.report.added) || [],
+        removed: (result.report && result.report.removed) || [],
+        moved: (result.report && result.report.moved) || [],
+        metadataChanged: (result.report && result.report.metadataChanged) || [],
+        preservedUnresolved: (result.report && result.report.preservedUnresolved) || [],
+        skippedUnresolved: (result.report && result.report.skippedUnresolved) || [],
+        unsupportedSkipped: (result.report && result.report.unsupportedSkipped) || [],
+        fallbackResolved: (result.report && result.report.fallbackResolved) || [],
+        endpointBaseDrift: (result.report && result.report.endpointBaseDrift) || [],
+      }));
+    } catch {}
     return;
   }
   if (result && result.ok === true) return;

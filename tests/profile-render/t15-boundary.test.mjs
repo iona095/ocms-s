@@ -72,7 +72,7 @@ describe('S3 T18 — planning and frozen-source regressions', () => {
     // binding. Value equals the Amendment B reviewed bytes, so the
     // pin keeps guarding the planning surface. Planning semantics stay proven
     // through the original planning suites.
-    assert.equal(sha('sync.mjs'), 'efc81a712988a5ccda7189714731bb8456144a95941a3253d93d7f3fb589520b', 'sync.mjs drift beyond the CURRENT reviewed bytes is forbidden');
+    assert.equal(sha('sync.mjs'), '60a8412f2a4f083cf89f67d0105d36de5aa67186cb2a8db8e87a06046508d3b7', 'sync.mjs drift beyond the CURRENT reviewed bytes is forbidden');
     // The old "no profile/* modification" tripwire is replaced, not dropped:
     // the three files v1.4.7-rc6 §5 changed are now byte-pinned at their
     // re-pinned values under the named reason "version-skew reproducibility
