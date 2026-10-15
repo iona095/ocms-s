@@ -237,6 +237,37 @@ export function createLifecycleController(deps) {
       }
       // STOPPING/ERROR: the pending stop or dispose flow owns the outcome.
     });
+    // K4: the runtime always follows 'error' with 'close', but 'exit' may
+    // never fire after a failed spawn — without this, an errored child with
+    // no exit retains ownership forever and blocks restart and disposal.
+    // A 'close' after an observed 'exit' is a no-op; otherwise it reconciles
+    // exactly like an exit and never overwrites the recorded fault.
+    child.on('close', (code, signal) => {
+      if (ownedChild !== child) return;
+      if (exitedChild === child) return;
+      exitedChild = child;
+      if (exitInfo === null) exitInfo = { kind: 'exit', code, signal };
+      if (state === 'STARTING') {
+        clearOwnership();
+        if (exitInfo.kind !== 'error') {
+          lastMessage = 'OCMS-S exited during startup (exit code ' + String(code) + ').';
+          safeLog.error(lastMessage);
+        }
+        emit('OFFLINE');
+      } else if (state === 'ONLINE') {
+        clearOwnership();
+        if (exitInfo.kind !== 'error') {
+          lastMessage = 'OCMS-S server exited unexpectedly.';
+          safeLog.warn(lastMessage);
+        }
+        emit('OFFLINE');
+      } else if (state === 'ERROR') {
+        clearOwnership();
+        exitInfo = null;
+        emit('OFFLINE');
+      }
+      settleExitWaiters(child);
+    });
   }
 
   async function status() {
@@ -350,6 +381,14 @@ export function createLifecycleController(deps) {
         emit('OFFLINE');
         throw ocmsFailure('ocms/start-failed', lastMessage);
       }
+      // K4: an unvalidated spawn return (null/undefined/non-handle) must fail
+      // the Start exactly like a spawn throw — never adopt it, or the invalid
+      // value wedges STARTING and blocks every later Start as "not exited".
+      if (!child || typeof child.on !== 'function' || typeof child.kill !== 'function') {
+        lastMessage = 'OCMS-S failed to start.';
+        emit('OFFLINE');
+        throw ocmsFailure('ocms/start-failed', lastMessage);
+      }
       // §12: a handle that exists is owned. Adoption happens before the
       // disposal fence so a same-tick dispose() and this Start share one
       // termination authority instead of racing two independent kills.
@@ -407,7 +446,9 @@ export function createLifecycleController(deps) {
           lastMessage = 'The DSH Host instance was disposed during startup.';
           throw ocmsFailure('ocms/start-failed', lastMessage);
         }
-        if (readinessSatisfied(probe)) break;
+        // K4 (DeepSeek F7): the liveness checks run BEFORE the readiness
+        // break — a child that died during the probe must never become ONLINE
+        // on a stale READY with ownership already cleared to null.
         if (exitedChild === child) {
           throw ocmsFailure('ocms/start-failed', lastMessage ?? 'OCMS-S exited during startup.');
         }
@@ -415,6 +456,7 @@ export function createLifecycleController(deps) {
           requestTermination(child);
           throw ocmsFailure('ocms/start-failed', lastMessage ?? 'OCMS-S failed to start.');
         }
+        if (readinessSatisfied(probe)) break;
         if (Date.now() - startedAt >= deadlineMs) {
           // §16/§35: the deadline fails the Start, it does not terminate the
           // child. Ownership is retained until the exact exit arrives and a
