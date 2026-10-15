@@ -100,7 +100,7 @@ describe('D02/C08 — Apply must commit the selection it verified', () => {
     assert.ok(handler.includes('verify(retained, parsed.selection)'), 'verification binds the captured slot');
     assert.ok(handler.includes('if (activePreview !== retained)'), 'the slot is re-checked unconditionally after the await');
     assert.ok(handler.includes("'APPLY_BUSY'"), 'a concurrent Apply is refused after verification');
-    assert.ok(handler.includes('ProfileAwareCommit({ plan: retained.plan'), 'commit binds the captured plan');
+    assert.ok(handler.includes('commit({ plan: retained.plan'), 'commit binds the captured plan');
     // No read after the capture may go through the mutable slot: the only
     // remaining uses are the pre-await guard, the scoped clears and the
     // post-await refusal.

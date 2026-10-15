@@ -782,11 +782,19 @@ export async function startServer(options = {}) {
     } catch {
       binding = null;
     }
-    if (!applyBusy && activePreview !== retained) {
+    // P1-1: the slot check is unconditional, so a Preview that replaced the
+    // retained slot during verification refuses STALE_PREVIEW even while
+    // another Apply holds the busy flag. A concurrent Apply that entered
+    // verification first refuses APPLY_BUSY once it resumes.
+    if (activePreview !== retained) {
       // A concurrent Preview replaced or cleared the retained slot while this
       // Apply was verifying; the verified selection no longer describes the
       // retained plan, so refuse without writing.
       refusal(res, 409, 'STALE_PREVIEW', 'Preview changed while Apply was verifying; run Refresh Preview and Apply again.');
+      return;
+    }
+    if (applyBusy) {
+      refusal(res, 409, 'APPLY_BUSY', 'Apply already in progress.');
       return;
     }
     if (!binding || binding.ok !== true) {
@@ -799,7 +807,10 @@ export async function startServer(options = {}) {
       refusal(res, 400, 'BAD_REQUEST', 'Malformed request.');
       return;
     }
+    // P1-1: only the request that sets the flag may release it.
+    let releaseBusy = false;
     applyBusy = true;
+    releaseBusy = true;
     try {
       let outcome;
       try {
@@ -853,7 +864,7 @@ export async function startServer(options = {}) {
       sendJson(res, 200, body);
       return;
     } finally {
-      applyBusy = false;
+      if (releaseBusy) applyBusy = false;
     }
   }
 
