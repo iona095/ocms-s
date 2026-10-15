@@ -1127,9 +1127,16 @@ export function diffDesired(desired, priors) {
   for (const [key, prior] of priors) {
     const copies = copiesOf(prior);
     const wanted = desiredIndex.get(key);
+    // P2-2: desired holds one copy per key, so only the first stored copy at
+    // the wanted route is kept; surplus same-route copies are reported in
+    // removed. Report-only: the write path never consumes this report.
+    let keptAtWanted = false;
     for (const entry of copies) {
       if (!entry || typeof entry.route !== 'string') continue;
-      if (wanted && wanted.route === entry.route) continue;
+      if (wanted && wanted.route === entry.route && !keptAtWanted) {
+        keptAtWanted = true;
+        continue;
+      }
       if (wanted && copies.length === 1) continue;
       removed.push({ key, route: entry.route });
     }
