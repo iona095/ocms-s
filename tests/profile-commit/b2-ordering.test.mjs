@@ -30,29 +30,54 @@ describe('S4-B2 ordering and side effects', () => {
     assert.ok(readBackupBytes(path.join(profileDir, backs[0])).equals(beforeBytes));
     assert.deepEqual(tempNames(profileDir), []);
   });
-  it('NEGATIVE CONTROL: a writer that corrupts the backup is caught by the exact-byte assertion', async () => {
-    // Proves the assertion above has teeth: if the backup held anything other
-    // than the pre-write bytes, the equality would be false.
+  it('NEGATIVE CONTROL: the backup is load-bearing and precedes the writer', async () => {
+    // Strengthened after audit. The previous control compared the backup to the
+    // POST-write bytes, which is already false in the happy path (the backup
+    // holds the pre-write content by design), so it proved only that
+    // Buffer.equals can return false.
+    //
+    // This control makes the positive test's OWN equality load-bearing:
+    //   1. inside the writer, the backup must ALREADY exist and ALREADY equal
+    //      the pre-write bytes -- the "precedes the writer" claim, true only if
+    //      the product wrote the backup before calling the writer;
+    //   2. corrupting it afterwards makes that same equality false, so the
+    //      positive test's assertion would fail.
     const built = await buildReadyPlan({ home });
+    const profileDir = built.profileDir;
+    const beforeBytes = readPatchBytes(profileDir);
     const scope = resolvedStubScope().scope;
     const { pathToFileURL } = await import('node:url');
     const realMod = await import(pathToFileURL(scope + '/dsh-atomic-write/lib/index.mjs').href);
     const realFn = realMod[WFA];
+    let observedAtWriterTime = null;
     const res = await ProfileAwareCommit({ plan: built.plan, waitMs: 8000, deps: { [WFA]: async (p, data, opts) => {
-      const before = backupNames(built.profileDir);
-      if (before.length > 0) {
+      const backs = backupNames(profileDir);
+      observedAtWriterTime = {
+        count: backs.length,
+        matchedPreWriteBytes: backs.length > 0
+          ? readBackupBytes(path.join(profileDir, backs[0])).equals(beforeBytes)
+          : false,
+      };
+      if (backs.length > 0) {
         const fs = await import('node:fs');
-        fs.writeFileSync(path.join(built.profileDir, before[0]), 'CORRUPTED-BACKUP', 'utf8');
+        fs.writeFileSync(path.join(profileDir, backs[0]), 'CORRUPTED-BACKUP', 'utf8');
       }
       return realFn(p, data, opts);
     } } });
     assert.equal(res.ok, true, 'the commit itself still succeeds');
-    const backs = backupNames(built.profileDir);
+    assert.ok(observedAtWriterTime, 'the writer really was invoked');
+    assert.equal(observedAtWriterTime.count, 1, 'exactly one backup exists at the moment the writer runs');
+    assert.equal(
+      observedAtWriterTime.matchedPreWriteBytes,
+      true,
+      'the backup already holds the exact pre-write bytes BEFORE the writer runs',
+    );
+    const backs = backupNames(profileDir);
     assert.equal(backs.length, 1);
     assert.equal(
-      readBackupBytes(path.join(built.profileDir, backs[0])).equals(readPatchBytes(built.profileDir)),
+      readBackupBytes(path.join(profileDir, backs[0])).equals(beforeBytes),
       false,
-      'a corrupted backup must NOT equal the post-write bytes; the exact-byte assertion would fail',
+      'after corruption the positive test own equality (backup === pre-write bytes) is false',
     );
   });
   it('NO_CHANGE invokes neither backup nor writer and preserves mtime', async () => {
