@@ -260,7 +260,9 @@ export async function startServer(options = {}) {
 
   let boundPort = port;
   if (boundPort === undefined) boundPort = DEFAULT_PORT;
-  if (typeof boundPort !== 'number' || !Number.isInteger(boundPort) || boundPort < 1 || boundPort > 65535) {
+  // Port 0 requests an OS-assigned loopback port for the in-process test seam.
+  // The CLI parser still rejects --port=0; only this programmatic entry accepts it.
+  if (typeof boundPort !== 'number' || !Number.isInteger(boundPort) || boundPort < 0 || boundPort > 65535) {
     throw new Error('INVALID_PORT');
   }
   const fetchImpl = fetchFn !== undefined ? fetchFn : globalThis.fetch;

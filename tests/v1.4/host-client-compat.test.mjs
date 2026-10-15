@@ -14,7 +14,7 @@ import { pathToFileURL } from 'node:url';
 import { Context } from '@deepseek-ai/cordis';
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol';
 
-import { assert, HOST_PATH, loadClientSourceModule, nextTestPort } from './helpers.mjs';
+import { assert, HOST_PATH, loadClientSourceModule } from './helpers.mjs';
 
 const HOST_URL = pathToFileURL(HOST_PATH).href;
 
@@ -142,8 +142,8 @@ test('Remote prototype descriptor stays version 1 with status/start/stop', { ski
 
 // RemoteError guard: a business failure keeps its code across the mapping.
 test('RemoteError business code preserved on occupied-port start', { skip, timeout: 30_000 }, async () => {
-  const port = nextTestPort();
-  const listener = await occupy(port);
+  const listener = await occupy(0);
+  const port = listener.address().port;
   try {
     const root = new Context();
     const fiber = root.plugin(hostModule.apply, { port });

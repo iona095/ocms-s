@@ -18,6 +18,7 @@ import {
   currentWithExtras,
   fetchFromBodies,
   fetchNever,
+  startEphemeralTestServer,
   startTestServer,
   tempDshHome,
   captureConsole,
@@ -28,6 +29,7 @@ import {
   validSourceBodies,
   loadUiServerModule,
   nodeSpawn,
+  spawnServerOnFreePort,
   spawnUntilStdout,
 } from './helpers.mjs';
 
@@ -51,7 +53,7 @@ const CSP_REQUIRED = [
 
 test('F1: the server binds literal 127.0.0.1 and never 0.0.0.0 or ::', { skip: SKIP }, async (t) => {
   const file = scratchSettingsFile(t, currentWithExtras());
-  const started = await startTestServer(t, { settingsPath: file, port: nextTestPort() });
+  const started = await startEphemeralTestServer(t, { settingsPath: file });
   const address = started.address ? started.address() : started.server.address();
   assert.equal(address.address, '127.0.0.1', 'literal loopback bind');
   assert.notEqual(address.address, '0.0.0.0');
@@ -61,8 +63,8 @@ test('F1: the server binds literal 127.0.0.1 and never 0.0.0.0 or ::', { skip: S
 
 test('F2: port conflict fails clearly instead of binding elsewhere', { skip: SKIP }, async (t) => {
   const file = scratchSettingsFile(t, currentWithExtras());
-  const port = nextTestPort();
-  const first = await startTestServer(t, { settingsPath: file, port });
+  const first = await startEphemeralTestServer(t, { settingsPath: file });
+  const port = first.port;
   const ui = await loadUiServerModule();
   let second = null;
   let bindFailed = false;
@@ -86,8 +88,8 @@ test('F2: port conflict fails clearly instead of binding elsewhere', { skip: SKI
 
 test('F3: Host allowlist accepts only exact loopback forms on the bound port', { skip: SKIP }, async (t) => {
   const file = scratchSettingsFile(t, currentWithExtras());
-  const port = nextTestPort();
-  const started = await startTestServer(t, { settingsPath: file, port, fetchFn: fetchFromBodies(validSourceBodies()) });
+  const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
+  const port = started.port;
   const cases = [
     { hostValue: '127.0.0.1:' + port, expected: 200 },
     { hostValue: 'localhost:' + port, expected: 200 },
@@ -120,8 +122,8 @@ test('F3b: Host refusals fetch nothing and write nothing', { skip: SKIP }, async
   const file = scratchSettingsFile(t, currentWithExtras());
   const beforeBytes = fs.readFileSync(file);
   const seen = [];
-  const port = nextTestPort();
-  const started = await startTestServer(t, { settingsPath: file, port, fetchFn: fetchFromBodies(validSourceBodies(), seen) });
+  const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies(), seen) });
+  const port = started.port;
   await httpRequest({ port, method: 'POST', urlPath: '/api/preview', hostValue: 'foreign.example:' + port, headers: authHeaders(started.token), body: {} });
   await httpRequest({ port, method: 'POST', urlPath: '/api/apply', hostValue: 'foreign.example:' + port, headers: authHeaders(started.token), body: { previewId: 'x' } });
   assert.deepEqual(seen, [], 'BAD_HOST refusals never fetch sources');
@@ -136,8 +138,8 @@ test('F4: Origin rules follow contract 15.3 (loopback accepted, foreign refused,
   { skip: SKIP },
   async (t) => {
     const file = scratchSettingsFile(t, currentWithExtras());
-    const port = nextTestPort();
-    const started = await startTestServer(t, { settingsPath: file, port, fetchFn: fetchFromBodies(validSourceBodies()) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
+    const port = started.port;
     const token = authHeaders(started.token);
     const valid = await postJson(port, '/api/preview', {}, { ...token, Origin: 'http://127.0.0.1:' + port });
     assert.equal(valid.status, 200, 'valid 127.0.0.1 Origin accepted');
@@ -159,8 +161,8 @@ test('F4: Origin rules follow contract 15.3 (loopback accepted, foreign refused,
 
 test('F5: token exists, is at least 256 bits, and authorizes POSTs', { skip: SKIP }, async (t) => {
   const file = scratchSettingsFile(t, currentWithExtras());
-  const port = nextTestPort();
-  const started = await startTestServer(t, { settingsPath: file, port, fetchFn: fetchFromBodies(validSourceBodies()) });
+  const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
+  const port = started.port;
   assert.match(started.token, /^[0-9a-f]{64,}$/, 'token is hex of at least 256 bits');
   const ok = await postJson(port, '/api/preview', {}, authHeaders(started.token));
   assert.equal(ok.status, 200, 'correct token accepted');
@@ -170,8 +172,8 @@ test('F6: missing and incorrect tokens are refused with BAD_TOKEN and no side ef
   const file = scratchSettingsFile(t, currentWithExtras());
   const beforeBytes = fs.readFileSync(file);
   const seen = [];
-  const port = nextTestPort();
-  const started = await startTestServer(t, { settingsPath: file, port, fetchFn: fetchFromBodies(validSourceBodies(), seen) });
+  const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies(), seen) });
+  const port = started.port;
   const missing = await postJson(port, '/api/preview', {}, {});
   assert.equal(missing.status, 403);
   assert.equal(missing.json.code, 'BAD_TOKEN');
@@ -187,8 +189,8 @@ test('F6: missing and incorrect tokens are refused with BAD_TOKEN and no side ef
 
 test('F7: malformed attacker-controlled tokens are refused without throwing', { skip: SKIP }, async (t) => {
   const file = scratchSettingsFile(t, currentWithExtras());
-  const port = nextTestPort();
-  const started = await startTestServer(t, { settingsPath: file, port, fetchFn: fetchFromBodies(validSourceBodies()) });
+  const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
+  const port = started.port;
   for (const bad of ['', 'a', 'x'.repeat(10240), 'a b c', ' Zed ', '\u00e9'.repeat(1)]) {
     const res = await postJson(port, '/api/preview', {}, { 'x-ocms-token': bad });
     assert.equal(res.status, 403, 'malformed token refused: ' + JSON.stringify(bad.slice(0, 12)));
@@ -204,8 +206,8 @@ test('F8: token is only ever delivered inside the served page (never headers, co
     const file = scratchSettingsFile(t, currentWithExtras());
     const dir = path.dirname(file);
     const lines = captureConsole(t);
-    const port = nextTestPort();
-    const started = await startTestServer(t, { settingsPath: file, port, fetchFn: fetchFromBodies(validSourceBodies()) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
+    const port = started.port;
     const page = await httpRequest({ port, method: 'GET', urlPath: '/' });
     assert.ok(page.body.includes(started.token), 'page bootstraps the token');
     for (const headerKey of Object.keys(page.headers)) {
@@ -228,8 +230,8 @@ test('F8: token is only ever delivered inside the served page (never headers, co
 
 test('F9: unknown routes are 404 and traversal-shaped paths cannot read disk', { skip: SKIP }, async (t) => {
   const file = scratchSettingsFile(t, currentWithExtras());
-  const port = nextTestPort();
-  const started = await startTestServer(t, { settingsPath: file, port, fetchFn: fetchFromBodies(validSourceBodies()) });
+  const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
+  const port = started.port;
   for (const urlPath of ['/definitely-not-here', '/api', '/api/nope', '/..%2F..%2Fsync.mjs', '/../../package.json', '/ui/', '/index.html', '/ui/index.html']) {
     const res = await httpRequest({ port, method: 'GET', urlPath });
     assert.equal(res.status, 404, 'unexpected route ' + urlPath + ' -> ' + res.status);
@@ -240,8 +242,8 @@ test('F9: unknown routes are 404 and traversal-shaped paths cannot read disk', {
 
 test('F10: unsupported methods are 405 (GET Apply, PUT/DELETE on known routes)', { skip: SKIP }, async (t) => {
   const file = scratchSettingsFile(t, currentWithExtras());
-  const port = nextTestPort();
-  const started = await startTestServer(t, { settingsPath: file, port, fetchFn: fetchFromBodies(validSourceBodies()) });
+  const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
+  const port = started.port;
   for (const c of [
     { method: 'GET', urlPath: '/api/preview' },
     { method: 'GET', urlPath: '/api/apply' },
@@ -262,8 +264,8 @@ test('F11: every response carries the contract CSP, no-store, nosniff, no-referr
   { skip: SKIP },
   async (t) => {
     const file = scratchSettingsFile(t, currentWithExtras());
-    const port = nextTestPort();
-    const started = await startTestServer(t, { settingsPath: file, port, fetchFn: fetchFromBodies(validSourceBodies()) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
+    const port = started.port;
     const responses = [
       await httpRequest({ port, method: 'GET', urlPath: '/' }),
       await httpRequest({ port, method: 'GET', urlPath: '/api/state' }),
@@ -291,8 +293,8 @@ test('F12: /api/state exposes only target/process info and never plan data or pr
   { skip: SKIP },
   async (t) => {
     const file = scratchSettingsFile(t, currentWithExtras());
-    const port = nextTestPort();
-    const started = await startTestServer(t, { settingsPath: file, port, fetchFn: fetchFromBodies(validSourceBodies()) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
+    const port = started.port;
     const state = await getJson(port, '/api/state');
     assert.equal(state.status, 200);
     assert.equal(state.json.ok, true);
@@ -317,8 +319,8 @@ test('F13: malformed request bodies are 400 and perform nothing', { skip: SKIP }
   const file = scratchSettingsFile(t, currentWithExtras());
   const beforeBytes = fs.readFileSync(file);
   const seen = [];
-  const port = nextTestPort();
-  const started = await startTestServer(t, { settingsPath: file, port, fetchFn: fetchFromBodies(validSourceBodies(), seen) });
+  const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies(), seen) });
+  const port = started.port;
   const baseline = seen.length;
   const malformed = await httpRequest({
     port,
@@ -369,8 +371,9 @@ test('I3: unknown CLI flags cause a usage error, never silent startup', { skip: 
 
 test('I4: --no-open suppresses browser opening and the server stays fully functional', { skip: SKIP }, async (t) => {
   const file = scratchSettingsFile(t, currentWithExtras());
-  const port = nextTestPort();
-  const spawned = await spawnUntilStdout([path.join(REPO_ROOT, 'ui.mjs'), '--port=' + port, '--settings=' + file, '--no-open'], '127.0.0.1:');
+  const spawnedServer = await spawnServerOnFreePort(t, (port) => ({ args: ['--port=' + port], ports: [port] }), ['--settings=' + file, '--no-open'], '127.0.0.1:');
+  const port = spawnedServer.ports[0];
+  const spawned = spawnedServer;
   assert.equal(spawned.matched, true, 'server prints the loopback URL');
   try {
     const page = await httpRequest({ port, method: 'GET', urlPath: '/' });
@@ -382,12 +385,11 @@ test('I4: --no-open suppresses browser opening and the server stays fully functi
 
 test('I5: browser-open failure is best effort and does not kill the server', { skip: SKIP }, async (t) => {
   const file = scratchSettingsFile(t, currentWithExtras());
-  const port = nextTestPort();
-  const started = await startTestServer(t, {
+  const started = await startEphemeralTestServer(t, {
     settingsPath: file,
-    port,
     openBrowser: async () => { throw new Error('SIMULATED_OPEN_FAILURE'); },
   });
+  const port = started.port;
   const page = await httpRequest({ port, method: 'GET', urlPath: '/' });
   assert.equal(page.status, 200, 'open failure leaves the server functional');
   await started.close();
@@ -395,13 +397,10 @@ test('I5: browser-open failure is best effort and does not kill the server', { s
 
 test('I6: target and index.html resolution work from a non-repository CWD', { skip: SKIP }, async (t) => {
   const file = scratchSettingsFile(t, currentWithExtras());
-  const port = nextTestPort();
   const otherCwd = scratchDir(t);
-  const spawned = await spawnUntilStdout(
-    [path.join(REPO_ROOT, 'ui.mjs'), '--port=' + port, '--settings=' + file, '--no-open'],
-    '127.0.0.1:',
-    { cwd: otherCwd },
-  );
+  const spawnedServer = await spawnServerOnFreePort(t, (port) => ({ args: ['--port=' + port], ports: [port] }), ['--settings=' + file, '--no-open'], '127.0.0.1:', { cwd: otherCwd });
+  const port = spawnedServer.ports[0];
+  const spawned = spawnedServer;
   assert.equal(spawned.matched, true, 'server starts from a foreign CWD');
   try {
     const page = await httpRequest({ port, method: 'GET', urlPath: '/' });
@@ -427,12 +426,9 @@ test('I7: default port is 18751 when --port is absent', { skip: SKIP }, async (t
 
 test('I8: duplicate --port never silently binds the default; behavior is deterministic and visible', { skip: SKIP }, async (t) => {
   const file = scratchSettingsFile(t, currentWithExtras());
-  const portA = nextTestPort();
-  const portB = portA + 1;
-  const spawned = await spawnUntilStdout(
-    [path.join(REPO_ROOT, 'ui.mjs'), '--port=' + portA, '--port=' + portB, '--settings=' + file, '--no-open'],
-    '127.0.0.1:',
-  );
+  const spawnedServer = await spawnServerOnFreePort(t, (portA) => ({ args: ['--port=' + portA, '--port=' + (portA + 1)], ports: [portA, portA + 1] }), ['--settings=' + file, '--no-open'], '127.0.0.1:');
+  const spawned = spawnedServer;
+  const [portA, portB] = spawnedServer.ports;
   try {
     if (spawned.matched) {
       // Accepted form: exactly one explicit port, never the silent default.

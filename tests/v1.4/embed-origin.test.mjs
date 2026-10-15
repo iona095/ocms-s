@@ -6,12 +6,11 @@ import {
   assert,
   loadUiModule,
   probeEmbedOriginCapability,
-  nextTestPort,
   scratchSettingsFile,
   V13_SYNC_SHA,
   V13_UI_HTML_SHA,
 } from './helpers.mjs';
-import { tempDshHome } from '../v1.3/helpers.mjs';
+import { startEphemeralTestServer, tempDshHome } from '../v1.3/helpers.mjs';
 
 const hasEmbedOrigin = await probeEmbedOriginCapability();
 
@@ -73,8 +72,7 @@ test('embed-origin: duplicate CLI option rejected', { skip: !hasEmbedOrigin && '
 async function getCsp(t, { embedOrigin } = {}) {
   const ui = await loadUiModule();
   const settingsPath = scratchSettingsFile(t);
-  const port = nextTestPort();
-  const started = await ui.startServer({ settingsPath, port, fetchFn: async () => { throw new Error('UNEXPECTED_LIVE_NETWORK'); }, embedOrigin, dshHome: tempDshHome(t) });
+  const started = await startEphemeralTestServer(t, { settingsPath, fetchFn: async () => { throw new Error('UNEXPECTED_LIVE_NETWORK'); }, embedOrigin, dshHome: tempDshHome(t) });
   t.after(async () => { try { await started.close(); } catch { /* teardown */ } });
   const res = await fetch('http://127.0.0.1:' + started.port + '/', { headers: { Host: '127.0.0.1:' + started.port } });
   return { res, started };

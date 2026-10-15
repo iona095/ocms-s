@@ -328,6 +328,30 @@ export function spawnUntilStdout(args, marker, options = {}) {
   });
 }
 
+// Spawned UI servers cannot receive port 0 through the CLI: --port=0 is an
+// explicit usage error. Request PID-ring candidates, but retry a bounded number
+// of times when startup itself reports EADDRINUSE. Any other startup outcome
+// is returned unchanged so usage errors are never masked as collisions.
+export async function spawnServerOnFreePort(t, makePortArgs, baseArgs, marker, options = {}) {
+  const allocatePort = options.allocatePort ?? nextTestPort;
+  const attempts = options.attempts ?? 12;
+  const timeoutMs = options.timeoutMs ?? 5000;
+  let lastCollision = null;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const requested = makePortArgs(allocatePort());
+    const spawned = await spawnUntilStdout(
+      [path.join(REPO_ROOT, 'ui.mjs'), ...requested.args, ...baseArgs],
+      marker,
+      { ...options, timeoutMs },
+    );
+    if (spawned.matched) return { ...spawned, ports: requested.ports };
+    const output = String(spawned.stdout || '') + String(spawned.stderr || '');
+    if (!/EADDRINUSE/.test(output)) return { ...spawned, ports: requested.ports };
+    lastCollision = new Error('EADDRINUSE while starting a spawned test server (attempt ' + (attempt + 1) + ' of ' + attempts + ')');
+  }
+  throw lastCollision ?? new Error('spawnServerOnFreePort exhausted its bounded retries');
+}
+
 export function nodeSpawn(args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, args, {
@@ -396,13 +420,17 @@ export async function withTimeout(promise, ms, label) {
   }
 }
 
-export async function startTestServer(t, { settingsPath, port, fetchFn = fetchNever, openBrowser = false, dshHome } = {}) {
+export async function startEphemeralTestServer(t, { port: _requestedPort, ...options } = {}) {
+  return startTestServer(t, { ...options, port: 0 });
+}
+
+export async function startTestServer(t, { settingsPath, port, fetchFn = fetchNever, openBrowser = false, dshHome, embedOrigin } = {}) {
   if (!hasUiServer) throw new Error('capability missing: ui.mjs does not exist yet');
   const ui = await loadUiServerModule();
   assert.equal(typeof ui.startServer, 'function', 'ui.mjs must export startServer(options)');
   if (settingsPath !== undefined) assertScratchTarget(settingsPath);
   const home = dshHome !== undefined ? dshHome : tempDshHome(t);
-  const started = await ui.startServer({ settingsPath, port, fetchFn, openBrowser, dshHome: home });
+  const started = await ui.startServer({ settingsPath, port, fetchFn, openBrowser, dshHome: home, embedOrigin });
   assert.equal(typeof started.port, 'number', 'started.port present');
   assert.equal(typeof started.token, 'string', 'started.token present (test seam only)');
   assert.equal(typeof started.close, 'function', 'started.close present');

@@ -10,7 +10,6 @@ import { parse as parseYaml } from 'yaml';
 import {
   sync,
   hasUiServer,
-  nextTestPort,
   scratchSettingsFile,
   assertNoBackupOrTemp,
   backupCount,
@@ -18,6 +17,7 @@ import {
   validSources,
   currentWithExtras,
   fetchFromBodies,
+  startEphemeralTestServer,
   startTestServer,
   getJson,
   postJson,
@@ -32,7 +32,7 @@ test('E1: Apply requires a previewId (absent identity is refused, nothing is wri
   async (t) => {
     const file = scratchSettingsFile(t, currentWithExtras());
     const beforeBytes = fs.readFileSync(file);
-    const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn: fetchFromBodies(validSourceBodies()) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
     const refusal = await postJson(started.port, '/api/apply', {}, authHeaders(started.token));
     assert.ok(refusal.status === 400 || refusal.status === 409, 'missing identity refused');
     assert.equal(refusal.json.ok, false);
@@ -46,7 +46,7 @@ test('E2: a READY retained plan applies through the v1.2 transaction and reports
   async (t) => {
     const file = scratchSettingsFile(t, currentWithExtras());
     const originalBytes = fs.readFileSync(file);
-    const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn: fetchFromBodies(validSourceBodies()) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
     const preview = await postJson(started.port, '/api/preview', {}, authHeaders(started.token));
     assert.equal(preview.json.state, 'READY');
     const applied = await postJson(started.port, '/api/apply', { previewId: preview.json.previewId }, authHeaders(started.token));
@@ -71,7 +71,7 @@ test('E3: NO_CHANGE cannot Apply; nothing is manufactured (no backup, no write)'
     assert.equal(sync.syncFromSources({ settingsPath: file, sources: validSources() }).result, 'UPDATED');
     const beforeBytes = fs.readFileSync(file);
     const backups = backupCount(path.dirname(file));
-    const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn: fetchFromBodies(validSourceBodies()) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
     const preview = await postJson(started.port, '/api/preview', {}, authHeaders(started.token));
     assert.equal(preview.json.state, 'NO_CHANGE');
     const refusal = await postJson(started.port, '/api/apply', { previewId: preview.json.previewId }, authHeaders(started.token));
@@ -88,7 +88,7 @@ test('E4: BLOCKED cannot Apply; no bypass, no backup, no mutation',
     const file = scratchSettingsFile(t, currentWithExtras());
     const beforeBytes = fs.readFileSync(file);
     const bodies = validSourceBodies(validSources({ catalog: { go: {} } }));
-    const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn: fetchFromBodies(bodies) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(bodies) });
     const preview = await postJson(started.port, '/api/preview', {}, authHeaders(started.token));
     assert.equal(preview.json.state, 'BLOCKED');
     const refusal = await postJson(started.port, '/api/apply', { previewId: preview.json.previewId }, authHeaders(started.token));
@@ -104,7 +104,7 @@ test('E5: Apply performs zero source fetches and zero replanning (retained-plan 
     const file = scratchSettingsFile(t, currentWithExtras());
     const bodies = validSourceBodies(validSources());
     const seen = [];
-    const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn: fetchFromBodies(bodies, seen) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(bodies, seen) });
     const preview = await postJson(started.port, '/api/preview', {}, authHeaders(started.token));
     assert.equal(preview.status, 200);
     assert.equal(seen.length, 5, 'preview fetched the five sources');
@@ -127,7 +127,7 @@ test('E6: the committed document equals the CLI-planner document for identical p
     const cliBytes = fs.readFileSync(fileA);
 
     const fileB = scratchSettingsFile(t, currentWithExtras());
-    const started = await startTestServer(t, { settingsPath: fileB, port: nextTestPort(), fetchFn: fetchFromBodies(validSourceBodies()) });
+    const started = await startEphemeralTestServer(t, { settingsPath: fileB, fetchFn: fetchFromBodies(validSourceBodies()) });
     const preview = await postJson(started.port, '/api/preview', {}, authHeaders(started.token));
     assert.equal(preview.json.state, 'READY');
     const applied = await postJson(started.port, '/api/apply', { previewId: preview.json.previewId }, authHeaders(started.token));
@@ -141,7 +141,7 @@ test('E7: transaction failure preserves the original target and does not fabrica
     const file = scratchSettingsFile(t, currentWithExtras());
     const originalBytes = fs.readFileSync(file);
     const dir = path.dirname(file);
-    const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn: fetchFromBodies(validSourceBodies()) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
     const preview = await postJson(started.port, '/api/preview', {}, authHeaders(started.token));
     // Deterministic failure: occupy the temp path with a directory so the
     // v1.2 temp-write step fails after backup (contract v1.2 section 15).

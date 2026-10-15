@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import * as sync from '../../sync.mjs';
 import { buildProfileAwarePlan } from '../../profile/plan-builder.mjs';
-import { assert, scratchSettingsFile, catRecord, startTestServer, postJson, authHeaders, fetchFromBodies, validSourceBodies, nextTestPort } from '../v1.3/helpers.mjs';
+import { assert, scratchSettingsFile, catRecord, startTestServer, postJson, authHeaders, fetchFromBodies, validSourceBodies } from '../v1.3/helpers.mjs';
 import { __reuse as planReuse } from '../../profile/plan-builder.mjs';
 import { withR2Port } from '../profile-cli-ui/helpers.mjs';
 import { sandboxDshHome, makeTempHome, makeProfile, makeFixtureBundle, llmRow, modelsConfig } from '../profile-commit/helpers.mjs';

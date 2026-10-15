@@ -110,9 +110,9 @@ describe('v1.4.7-rc2 profile Preview reviewable content', () => {
   });
   it('legacy response shape unchanged since rc1', async (t) => {
     const file = scratchSettingsFile(t);
-    const { startTestServer, nextTestPort } = await import('../v1.3/helpers.mjs');
+    const { startEphemeralTestServer } = await import('../v1.3/helpers.mjs');
     const sources = validSources();
-    const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn: fetchFromBodies(validSourceBodies(sources)) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies(sources)) });
     const res = await postJson(started.port, '/api/preview', {}, authHeaders(started.token));
     assert.equal(res.status, 200);
     assert.deepEqual(Object.keys(res.json).sort(), ['changes', 'endpointBaseDrift', 'fallbackResolved', 'generatedAt', 'ok', 'preservedUnresolved', 'previewId', 'skippedUnresolved', 'sources', 'state', 'target', 'unsupportedSkipped']);

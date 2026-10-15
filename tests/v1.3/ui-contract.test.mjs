@@ -10,10 +10,10 @@ import {
   REPO_ROOT,
   hasUiServer,
   hasUiHtml,
-  nextTestPort,
   scratchSettingsFile,
   currentWithExtras,
   fetchFromBodies,
+  startEphemeralTestServer,
   startTestServer,
   httpRequest,
   postJson,
@@ -134,7 +134,7 @@ test('K2: hostile model IDs and names flow through the Preview API as JSON data 
       },
     });
     const file = scratchSettingsFile(t, currentWithExtras());
-    const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn: fetchFromBodies(validSourceBodies(sources)) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies(sources)) });
     const preview = await postJson(started.port, '/api/preview', {}, authHeaders(started.token));
     assert.equal(preview.status, 200, 'hostile-but-valid sources still preview');
     assert.ok((preview.headers['content-type'] || '').includes('application/json'), 'API stays JSON');
@@ -166,7 +166,7 @@ test('K2b: hostile ampersand/quote payloads survive JSON transport unmangled for
       },
     });
     const file = scratchSettingsFile(t, currentWithExtras());
-    const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn: fetchFromBodies(validSourceBodies(sources)) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies(sources)) });
     const preview = await postJson(started.port, '/api/preview', {}, authHeaders(started.token));
     assert.equal(preview.status, 200);
     // The model ID arrives character-exact through JSON transport, so a client

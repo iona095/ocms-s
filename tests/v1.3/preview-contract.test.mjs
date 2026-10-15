@@ -11,7 +11,6 @@ import {
   sync,
   hasUiServer,
   hasUiHtml,
-  nextTestPort,
   scratchDir,
   scratchSettingsFile,
   assertNoBackupOrTemp,
@@ -23,6 +22,7 @@ import {
   fetchFromBodies,
   fetchNever,
   deferred,
+  startEphemeralTestServer,
   startTestServer,
   getJson,
   postJson,
@@ -65,7 +65,7 @@ test('C1: explicit Preview fetches exactly the five permitted public source clas
   async (t) => {
     const file = scratchSettingsFile(t, currentWithExtras());
     const seen = [];
-    const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn: fetchFromBodies(validSourceBodies(), seen) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies(), seen) });
     const page = await getJson(started.port, '/');
     assert.equal(page.status, 200, 'page serves');
     assert.deepEqual(seen, [], 'page load must fetch zero upstream sources');
@@ -86,7 +86,7 @@ test('C2: Preview performs zero disk writes (bytes, listing, backup, temp)',
     const dir = path.dirname(file);
     const beforeBytes = fs.readFileSync(file);
     const beforeFiles = fs.readdirSync(dir).sort();
-    const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn: fetchFromBodies(validSourceBodies()) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
     const preview = await postJson(started.port, '/api/preview', {}, authHeaders(started.token));
     assert.equal(preview.status, 200);
     assert.deepEqual(fs.readFileSync(file), beforeBytes, 'settings bytes unchanged');
@@ -98,7 +98,7 @@ test('C3: READY preview envelope carries contract shape, items (not counts-only)
   { skip: PREVIEW_SKIP },
   async (t) => {
     const file = scratchSettingsFile(t, currentWithExtras());
-    const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn: fetchFromBodies(validSourceBodies()) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
     const preview = await postJson(started.port, '/api/preview', {}, authHeaders(started.token));
     assert.equal(preview.status, 200);
     const body = preview.json;
@@ -124,7 +124,7 @@ test('C4: Preview returns NO_CHANGE when managed arrays already match; creates n
     const file = scratchSettingsFile(t, currentWithExtras());
     assert.equal(sync.syncFromSources({ settingsPath: file, sources: validSources() }).result, 'UPDATED');
     const backups = backupCount(path.dirname(file));
-    const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn: fetchFromBodies(validSourceBodies()) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
     const preview = await postJson(started.port, '/api/preview', {}, authHeaders(started.token));
     assert.equal(preview.status, 200);
     assert.equal(preview.json.state, 'NO_CHANGE');
@@ -138,7 +138,7 @@ test('C5: Preview returns BLOCKED for source refusal with a safe reason and no b
     const file = scratchSettingsFile(t, currentWithExtras());
     const beforeBytes = fs.readFileSync(file);
     const bodies = validSourceBodies(validSources({ catalog: { go: {} } }));
-    const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn: fetchFromBodies(bodies) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(bodies) });
     const preview = await postJson(started.port, '/api/preview', {}, authHeaders(started.token));
     assert.equal(preview.status, 200, 'BLOCKED is a valid preview outcome, not an HTTP error');
     const body = preview.json;
@@ -154,7 +154,7 @@ test('C6: Preview response is minimized (no settings content, no raw bodies, no 
   { skip: PREVIEW_SKIP },
   async (t) => {
     const file = scratchSettingsFile(t, currentWithExtras());
-    const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn: fetchFromBodies(validSourceBodies()) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
     const page = await httpRequest({ port: started.port, method: 'GET', urlPath: '/' });
     assert.ok(page.body.includes(started.token), 'token bootstrapped into the page (the only delivery)');
     const preview = await postJson(started.port, '/api/preview', {}, authHeaders(started.token));
@@ -171,7 +171,7 @@ test('C7: Preview exposes every unresolved/fallback item with required detail, d
   { skip: PREVIEW_SKIP },
   async (t) => {
     const file = scratchSettingsFile(t, currentWithExtras());
-    const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn: fetchFromBodies(validSourceBodies(fallbackSources())) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies(fallbackSources())) });
     const preview = await postJson(started.port, '/api/preview', {}, authHeaders(started.token));
     assert.equal(preview.json.state, 'READY');
     assert.deepEqual(preview.json.fallbackResolved, [
@@ -189,7 +189,7 @@ test('D1: previewId is unpredictable, distinct per preview, and at least 128 bit
   { skip: PREVIEW_SKIP },
   async (t) => {
     const file = scratchSettingsFile(t, currentWithExtras());
-    const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn: fetchFromBodies(validSourceBodies()) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
     const first = await postJson(started.port, '/api/preview', {}, authHeaders(started.token));
     const second = await postJson(started.port, '/api/preview', {}, authHeaders(started.token));
     assert.match(first.json.previewId, /^[0-9a-f]{32,}$/);
@@ -201,7 +201,7 @@ test('D2: Apply with an unknown previewId refuses STALE_PREVIEW without side eff
   async (t) => {
     const file = scratchSettingsFile(t, currentWithExtras());
     const beforeBytes = fs.readFileSync(file);
-    const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn: fetchFromBodies(validSourceBodies()) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
     const refusal = await postJson(started.port, '/api/apply', { previewId: 'a'.repeat(64) }, authHeaders(started.token));
     assert.equal(refusal.status, 409);
     assert.equal(refusal.json.code, 'STALE_PREVIEW');
@@ -212,7 +212,7 @@ test('D3: a replaced preview invalidates the previous one; the current one appli
   { skip: PREVIEW_SKIP },
   async (t) => {
     const file = scratchSettingsFile(t, currentWithExtras());
-    const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn: fetchFromBodies(validSourceBodies()) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
     const first = await postJson(started.port, '/api/preview', {}, authHeaders(started.token));
     const second = await postJson(started.port, '/api/preview', {}, authHeaders(started.token));
     const stale = await postJson(started.port, '/api/apply', { previewId: first.json.previewId }, authHeaders(started.token));
@@ -227,7 +227,7 @@ test('D4: a consumed preview cannot execute twice (exactly one write, one backup
   { skip: PREVIEW_SKIP },
   async (t) => {
     const file = scratchSettingsFile(t, currentWithExtras());
-    const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn: fetchFromBodies(validSourceBodies()) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
     const preview = await postJson(started.port, '/api/preview', {}, authHeaders(started.token));
     const first = await postJson(started.port, '/api/apply', { previewId: preview.json.previewId }, authHeaders(started.token));
     assert.equal(first.status, 200);
@@ -242,10 +242,10 @@ test('D5: a new server process invalidates all previously retained previews',
   { skip: PREVIEW_SKIP },
   async (t) => {
     const file = scratchSettingsFile(t, currentWithExtras());
-    const first = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn: fetchFromBodies(validSourceBodies()) });
+    const first = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
     const preview = await postJson(first.port, '/api/preview', {}, authHeaders(first.token));
     await first.close();
-    const second = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn: fetchFromBodies(validSourceBodies()) });
+    const second = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
     const replay = await postJson(second.port, '/api/apply', { previewId: preview.json.previewId }, authHeaders(second.token));
     assert.equal(replay.status, 409);
     assert.equal(replay.json.code, 'STALE_PREVIEW', 'previews are memory-only; restart invalidates them');
@@ -256,7 +256,7 @@ test('D6: settings byte change after Preview refuses with STALE_PREVIEW and inva
   { skip: PREVIEW_SKIP },
   async (t) => {
     const file = scratchSettingsFile(t, currentWithExtras());
-    const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn: fetchFromBodies(validSourceBodies()) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
     const preview = await postJson(started.port, '/api/preview', {}, authHeaders(started.token));
     fs.appendFileSync(file, '\n# external edit\n', 'utf8');
     const before = fs.readFileSync(file);
@@ -274,7 +274,7 @@ test('D7: parse-equivalent but byte-different settings refuse Apply (byte-level 
   { skip: PREVIEW_SKIP },
   async (t) => {
     const file = scratchSettingsFile(t, currentWithExtras());
-    const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn: fetchFromBodies(validSourceBodies()) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
     const preview = await postJson(started.port, '/api/preview', {}, authHeaders(started.token));
     const bytes = fs.readFileSync(file).toString('utf8');
     fs.writeFileSync(file, bytes.replace('providers:', 'providers:   '), 'utf8');
@@ -287,7 +287,7 @@ test('D8: browser-supplied plan arrays, counts, and routes can never alter Apply
   { skip: PREVIEW_SKIP },
   async (t) => {
     const file = scratchSettingsFile(t, currentWithExtras());
-    const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn: fetchFromBodies(validSourceBodies()) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
     const preview = await postJson(started.port, '/api/preview', {}, authHeaders(started.token));
     const tampered = await postJson(started.port, '/api/apply', {
       previewId: preview.json.previewId,
@@ -309,7 +309,7 @@ test('D9: browser-supplied settings paths can never redirect the target',
   { skip: PREVIEW_SKIP },
   async (t) => {
     const file = scratchSettingsFile(t, currentWithExtras());
-    const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn: fetchFromBodies(validSourceBodies()) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
     const preview = await postJson(started.port, '/api/preview?settings=C:\\elsewhere\\settings.yaml', { targetPath: 'C:\\elsewhere\\settings.yaml', settingsPath: 'C:\\elsewhere\\settings.yaml' }, authHeaders(started.token));
     assert.equal(preview.status, 200, 'path-like browser values do not break the request');
     assert.ok(preview.json.target.displayPath.includes(path.basename(file)), 'server-resolved target wins');
@@ -322,7 +322,7 @@ test('D10: every refusal class leaves zero backup/temp and no extra source fetch
     const file = scratchSettingsFile(t, currentWithExtras());
     const beforeBytes = fs.readFileSync(file);
     const seen = [];
-    const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn: fetchFromBodies(validSourceBodies(), seen) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies(), seen) });
     const baseline = seen.length;
     await postJson(started.port, '/api/apply', { previewId: 'b'.repeat(64) }, authHeaders(started.token));
     await postJson(started.port, '/api/apply', {}, authHeaders(started.token));

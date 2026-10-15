@@ -51,16 +51,15 @@ export function writeTextFile(p, text) {
 export function joinPath(...parts) {
   return path.join(...parts);
 }
-// R2 reliability: parallel test files derive ports from a small per-file
-// base and can collide (EADDRINUSE). Retry across the rotating base until a
-// free port binds; concurrent holders stay far below the base size.
+// R2 reliability: request an OS-assigned ephemeral port for every server. Port 0
+// cannot collide with another suite's fixed-port ring. The bounded EADDRINUSE
+// retry remains only for the integer-nanosecond case in which the OS reuses a
+// just-released ephemeral port before this process binds it.
 export async function withR2Port(t, startFn) {
-  const v13 = await import("../v1.3/helpers.mjs");
   let last = null;
   for (let i = 0; i < 12; i++) {
-    const port = v13.nextTestPort();
     try {
-      const started = await startFn(port);
+      const started = await startFn(0);
       t.after(async () => { try { await started.close(); } catch {} });
       return started;
     } catch (err) {
@@ -71,7 +70,7 @@ export async function withR2Port(t, startFn) {
       throw err;
     }
   }
-  throw last;
+  throw last ?? new Error('withR2Port exhausted its bounded ephemeral-port retries');
 }
 export function bindTarget(home, name, extra = {}) {
   const r = resolveProfileTarget({ profileName: name, dshHome: home, pathEnv: process.env.PATH ?? '', ...extra });

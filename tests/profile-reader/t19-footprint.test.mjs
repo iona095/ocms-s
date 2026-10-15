@@ -66,7 +66,11 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
       // activePreview slot and then committed activePreview.plan; it now captures
       // the retained preview before the await, commits the captured plan and
       // re-checks the slot). The pin keeps guarding the CURRENT reviewed bytes.
-      ['ui.mjs', '60d99497d39d1fbf422cd74f891c73664d8013fa2e27bce65dbe6e54c03a2629'],
+      // Re-pinned by the 0d ephemeral-port seam (named reason: programmatic
+      // startServer accepts loopback port 0 for OS-assigned test ports; CLI
+      // --port=0 remains a usage error).
+      ['ui.mjs', 'ab89c3fac719f116200c06caeea892ff8f8a915bfbc2c08416cb7be0edcbe2ac'],
+
       // Re-pinned by the C09/C10 refusal hardening (named reason: a JSON null body
       // reached Object.keys as a 500, and an EXACT_OVERLAYS attestation without an
       // overlays array either spread a string per character or threw a TypeError

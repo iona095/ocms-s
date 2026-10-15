@@ -7,7 +7,6 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import {
   hasUiServer,
-  nextTestPort,
   scratchSettingsFile,
   assertNoBackupOrTemp,
   backupCount,
@@ -15,6 +14,7 @@ import {
   validSources,
   currentWithExtras,
   fetchFromBodies,
+  startEphemeralTestServer,
   startTestServer,
   postJson,
   authHeaders,
@@ -39,7 +39,7 @@ test('G1: second concurrent Preview is refused 409 PREVIEW_BUSY while the first 
       if (body === undefined) throw new Error('UNEXPECTED_LIVE_NETWORK');
       return { ok: true, status: 200, text: async () => body };
     };
-    const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn });
     const first = postJson(started.port, '/api/preview', {}, authHeaders(started.token));
     await withTimeout(buildStarted.promise, 15000, 'first preview to reach acquisition'); // first preview is provably inside acquisition
     try {
@@ -70,7 +70,7 @@ test('G2: Apply while a Preview build is in progress is refused, writes nothing,
       if (body === undefined) throw new Error('UNEXPECTED_LIVE_NETWORK');
       return { ok: true, status: 200, text: async () => body };
     };
-    const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn });
     const preview = postJson(started.port, '/api/preview', {}, authHeaders(started.token));
     await withTimeout(buildStarted.promise, 15000, 'preview build to reach acquisition'); // preview build is provably in progress
     try {
@@ -92,7 +92,7 @@ test('G3: sequential duplicate Apply after success is exactly STALE_PREVIEW with
   { skip: SKIP },
   async (t) => {
     const file = scratchSettingsFile(t, currentWithExtras());
-    const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn: fetchFromBodies(validSourceBodies()) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
     const preview = await postJson(started.port, '/api/preview', {}, authHeaders(started.token));
     const first = await postJson(started.port, '/api/apply', { previewId: preview.json.previewId }, authHeaders(started.token));
     assert.equal(first.status, 200);
@@ -108,8 +108,8 @@ test('G4: concurrent duplicate Apply never writes twice and the loser is a contr
   { skip: SKIP },
   async (t) => {
     const file = scratchSettingsFile(t, currentWithExtras());
-    const port = nextTestPort();
-    const started = await startTestServer(t, { settingsPath: file, port, fetchFn: fetchFromBodies(validSourceBodies()) });
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
+    const port = started.port;
     const preview = await postJson(port, '/api/preview', {}, authHeaders(started.token));
     const body = { previewId: preview.json.previewId };
     const headers = authHeaders(started.token);

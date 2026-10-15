@@ -183,9 +183,8 @@ describe('v1.4.6-rc2 show why a profile Preview is blocked', () => {
       catalog: { zen: { npm: '@ai-sdk/openai', models: { 'model-z': catRecord({ id: 'model-z', name: 'Z', provider: { npm: '@ai-sdk/openai' } }) } } },
       docs: { zen: { 'model-z': 'https://opencode.ai/inference/v1/responses' } },
     });
-    const { startTestServer } = await import('../v1.3/helpers.mjs');
-    const { nextTestPort } = await import('../v1.3/helpers.mjs');
-    const started = await startTestServer(t, { settingsPath: file, port: nextTestPort(), fetchFn: fetchFromBodies(validSourceBodies(sources)) });
+    const { startEphemeralTestServer } = await import('../v1.3/helpers.mjs');
+    const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies(sources)) });
     const preview = await postJson(started.port, '/api/preview', {}, authHeaders(started.token));
     assert.equal(preview.status, 200);
     assert.equal(preview.json.state, 'READY');
