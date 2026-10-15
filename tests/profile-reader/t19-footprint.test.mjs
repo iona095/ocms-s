@@ -63,7 +63,10 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
       // Re-pinned by the D05 defect fix (named reason: legacy Apply edits
       // managed arrays inside the existing document via surgicalLegacyUpdate
       // so comments, key order, and unrelated styling survive the write).
-      ['sync.mjs', 'f61f09d822bfa182d20756f976bbe657f40db0b4dd59205d9cb90e376ef40ecb'],
+      // Re-pinned by the P1 defect fix (report C14; named reason: the legacy default
+// settings path resolves USERPROFILE, then DSH_HOME, then refuses with a typed
+// error instead of falling back to a literal machine path).
+ ['sync.mjs', 'a89f9bcdb35b8efa52ffa8a7ca658bff2f632e485b60a4482b13c59d70c4b478'],
 
 
       // Re-pinned by the 0b/D3 lock-label fix (named reason: an unexpected
@@ -203,7 +206,7 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
     // anchoring is now shared (anchorNameBesideFile) so S1 binding identity
     // and S2 composition agree on every row's address.
     const recorded = new Map([
-      ['profile/target-resolver.mjs', '1c370b065b4fefc59b36811d159945e46e6b34ac0a34f92933d94e104f37db10'],
+      ['profile/target-resolver.mjs', '90573485d2a1bb9d262b2287d2096e2f3fc6001cdadb92f4c6aca7ba1a95854d'],
       ['tests/profile-target/helpers.mjs', '535be36cad699d729c0eb5e9afde0aaf5ad9517b67b052eb7c2026a560c42c6f'],
       ['tests/profile-target/target-admission.test.mjs', 'ed8225f5c92461768b92b8a6571bd22720d5f54dfefedee79572f37564883ed5'],
       // Re-pinned by the B5 follow-up (named reason: the S1 export

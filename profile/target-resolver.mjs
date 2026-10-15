@@ -109,7 +109,10 @@ export function validateProfileName(name) {
     name.startsWith('-') ||
     name.endsWith('.') ||
     name.endsWith(' ') ||
-    RESERVED_DEVICE.test(name.replace(/\.[^.]*$/, ''))
+    // Windows treats the name before the FIRST dot as the device name, so a
+    // reserved stem stays reserved however many extensions follow it
+    // (con.x.y, nul.a.b, com1.a.b all resolve to the device 'con', 'nul', 'com1').
+    RESERVED_DEVICE.test(name.split('.')[0].replace(/[ .]+$/, ''))
   ) {
     return refusal('INVALID_PROFILE_NAME', `Profile name ${JSON.stringify(name)} is not admissible.`, 'profile-name-grammar');
   }

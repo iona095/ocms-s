@@ -59,7 +59,10 @@ describe('S3 T18 — planning and frozen-source regressions', () => {
     // anchoring is now shared (anchorNameBesideFile) so S1 binding identity
     // and S2 composition agree on every row's address.
     const recorded = new Map([
-      ['profile/target-resolver.mjs', '1c370b065b4fefc59b36811d159945e46e6b34ac0a34f92933d94e104f37db10'],
+      // Re-pinned by the P2 defect fix (report C15; named reason: a Windows
+      // reserved device stem is now detected before the FIRST dot, so con.x.y
+      // and com1.a.b are refused instead of admitted).
+      ['profile/target-resolver.mjs', '90573485d2a1bb9d262b2287d2096e2f3fc6001cdadb92f4c6aca7ba1a95854d'],
       ['tests/profile-target/helpers.mjs', '535be36cad699d729c0eb5e9afde0aaf5ad9517b67b052eb7c2026a560c42c6f'],
       ['tests/profile-target/target-admission.test.mjs', 'ed8225f5c92461768b92b8a6571bd22720d5f54dfefedee79572f37564883ed5'],
       // Re-pinned by the B5 follow-up (named reason: the S1 export
@@ -100,7 +103,10 @@ describe('S3 T18 — planning and frozen-source regressions', () => {
       // Re-pinned by the B5 defect fix with the named reason: row-name
       // anchoring is now shared (anchorNameBesideFile) so S1 binding identity
       // and S2 composition agree on every row's address.
-      ['profile/target-resolver.mjs', '1c370b065b4fefc59b36811d159945e46e6b34ac0a34f92933d94e104f37db10'],
+      // Re-pinned by the P2 defect fix (report C15; named reason: a Windows
+      // reserved device stem is now detected before the FIRST dot, so con.x.y
+      // and com1.a.b are refused instead of admitted).
+      ['profile/target-resolver.mjs', '90573485d2a1bb9d262b2287d2096e2f3fc6001cdadb92f4c6aca7ba1a95854d'],
       // Re-pinned by the 0b/D3 lock-label fix (named reason above: unexpected
       // lock-acquisition errors are no longer blanket-labeled INCOMPATIBLE_DSH).
       // 0b follow-up: recognize a LOCK_TIMEOUT code as well as the native sentence.
