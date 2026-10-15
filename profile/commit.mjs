@@ -15,7 +15,7 @@ import { renderDesiredState, MANAGED_ROUTE_KEYS, classifyFootprint } from './sur
 import { isAdmittedProductionAttestation } from './live-attestation.mjs';
 export const LOCK_RESOURCE_SUFFIX = '.lock';
 export const DEFAULT_WAIT_MS = 15000;
-export const COMMIT_REFUSAL_CODES = ['LOCK_TIMEOUT','STALE_TARGET','PATCH_UNREADABLE','PATCH_PARSE_ERROR','PATCH_ROOT_NOT_SEQUENCE','PLUGIN_ENTRY_MISSING','PLUGIN_ENTRY_DUPLICATE','NOT_PROFILE_OWNED','SETTINGS_INVALID','MEMBERSHIP_MISMATCH','GENERATED_MEMBERSHIP_MISMATCH','ANCHOR_IN_MANAGED_SCOPE','TAG_IN_MANAGED_ARRAY','UNOWNED_COMMENT_AMBIGUOUS','UNPRESERVABLE_STRUCTURE','UNRELATED_CONTENT_CHANGED','VERIFY_FAILED','OVERRIDDEN','LIVE_OVERLAY_UNKNOWN','BACKUP_FAILED','WRITE_FAILED','POST_WRITE_VERIFY_FAILED','INCOMPATIBLE_DSH'];
+export const COMMIT_REFUSAL_CODES = ['LOCK_TIMEOUT','STALE_TARGET','PATCH_UNREADABLE','PATCH_PARSE_ERROR','PATCH_ROOT_NOT_SEQUENCE','PLUGIN_ENTRY_MISSING','PLUGIN_ENTRY_DUPLICATE','NOT_PROFILE_OWNED','SETTINGS_INVALID','MEMBERSHIP_MISMATCH','GENERATED_MEMBERSHIP_MISMATCH','ANCHOR_IN_MANAGED_SCOPE','TAG_IN_MANAGED_ARRAY','UNOWNED_COMMENT_AMBIGUOUS','UNPRESERVABLE_STRUCTURE','UNRELATED_CONTENT_CHANGED','VERIFY_FAILED','OVERRIDDEN','LIVE_OVERLAY_UNKNOWN','BACKUP_FAILED','WRITE_FAILED','POST_WRITE_VERIFY_FAILED','INCOMPATIBLE_DSH','PROFILE_NOT_INITIALIZED','SYMLINK_ESCAPE'];
 function refusal(code, message, detail) {
   const out = { ok: false, code, message, status: 'BLOCKED' };
   if (detail !== undefined) out.detail = detail;
@@ -457,8 +457,8 @@ async function runLocked(input) {
   } catch { return refusal('STALE_TARGET', 'The bound target identity cannot be re-established.', 'reresolve-threw'); }
   if (!reResolved || typeof reResolved !== 'object') return refusal('STALE_TARGET', 'The bound target identity cannot be re-established.', 'reresolve-invalid');
   if (reResolved.ok !== true) {
-    const passThrough = ['INCOMPATIBLE_DSH', 'PLUGIN_ENTRY_MISSING', 'PLUGIN_ENTRY_DUPLICATE', 'PATCH_PARSE_ERROR', 'PATCH_ROOT_NOT_SEQUENCE', 'PATCH_UNREADABLE', 'SYMLINK_ESCAPE', 'NOT_PROFILE_OWNED'];
-    if (passThrough.includes(reResolved.code)) return reResolved;
+    const passThrough = ['INCOMPATIBLE_DSH', 'PLUGIN_ENTRY_MISSING', 'PLUGIN_ENTRY_DUPLICATE', 'PATCH_PARSE_ERROR', 'PATCH_ROOT_NOT_SEQUENCE', 'PATCH_UNREADABLE', 'SYMLINK_ESCAPE', 'NOT_PROFILE_OWNED', 'PROFILE_NOT_INITIALIZED'];
+    if (passThrough.includes(reResolved.code)) return { ...reResolved, status: 'BLOCKED' };
     const drifted = refusal('STALE_TARGET', 'The bound target identity drifted since binding.', reResolved.code || 'identity-drift');
     drifted.stale = true;
     return drifted;

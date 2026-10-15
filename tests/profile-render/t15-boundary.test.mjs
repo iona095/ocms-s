@@ -113,7 +113,8 @@ describe('S3 T18 — planning and frozen-source regressions', () => {
       // Re-pinned by the B5 follow-up with the named reason: commit-side
       // row anchoring shares anchorNameBesideFile and covers top-level rows,
       // matching the S1/S2 address rule.
-      ['profile/commit.mjs', 'e08abf377fdf4934b7799a11aebef169ba7d5fc2d9fde0158c8bfa84e2a331e3'],
+      // Re-pinned by S3 refusal-taxonomy: S3 refusal-taxonomy (bugfix-8model): PROFILE_NOT_INITIALIZED and SYMLINK_ESCAPE added to COMMIT_REFUSAL_CODES; the re-resolve pass-through now carries the vanished-profile refusal with status BLOCKED. Superseded pin e08abf377fdf4934b7799a11aebef169ba7d5fc2d9fde0158c8bfa84e2a331e3.
+      ['profile/commit.mjs', '281fc369c37208b899d010dcd98a4362d5cc62760f0a0efffefa41841b01d673'],
 
 
 
