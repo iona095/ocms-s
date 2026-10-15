@@ -462,6 +462,19 @@ export function renderDesiredState(input) {
     for (const a of subs) ownedAnchors.add(a);
     if (typeof mn.anchor === 'string' && mn.anchor.length > 0) ownedAnchors.add(mn.anchor);
   }
+  // Alias scope: any alias occurring inside a replaced models span refuses,
+  // whether its anchor lives inside or outside the span. Replacing the span
+  // would silently drop or rebind a non-local reference.
+  for (const route of MANAGED_ROUTE_KEYS) {
+    if (footprint[route] !== 'F1') continue;
+    const ri = routeInfo[route];
+    if (!ri || !ri.modelsNode) continue;
+    let aliasInside = null;
+    try {
+      visit(ri.modelsNode, { Node: function (k, n) { if (aliasInside === null && isAlias(n)) aliasInside = n.source; } });
+    } catch (e) { return refusal('VERIFY_FAILED', 'Owned-span alias scan failed.', String((e && e.message) || e)); }
+    if (aliasInside !== null) return refusal('ANCHOR_IN_MANAGED_SCOPE', 'An alias occurs inside a replaced models span.', { route, anchor: String(aliasInside).slice(0, 100) });
+  }
   // Anchor scope: any alias anywhere referencing owned anchor refuses.
   if (ownedAnchors.size > 0) {
     const aliases = collectAliasSources(doc);

@@ -101,7 +101,11 @@ describe('S3 T18 — planning and frozen-source regressions', () => {
       // Re-pinned by the B2 defect fix with the named reason: a bare models
       // key (null value, including the null-scalar form) is accepted as an
       // empty list via a synthetic span covering only that key line ending.
-      ['profile/surgical-render.mjs', 'ff2426b41a88b3b89e1f20f8f714c6087839276d8122f3fac9da63062a1bfeaa'],
+      // Re-pinned by the B4 defect fix with the named reason: an alias inside
+      // a replaced models span now refuses ANCHOR_IN_MANAGED_SCOPE instead of
+      // rendering READY and silently dropping a non-local reference.
+      ['profile/surgical-render.mjs', 'dd430ab94dfd4179ada87191583cf9ed5934ac4968d44b5c12b706641abc79b3'],
+
 
     ]);
     for (const [rel, hex] of REPINNED) {
