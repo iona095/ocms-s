@@ -34,7 +34,17 @@ function normalizeStatus(value) {
   }
   const safe = { state: value.state };
   if (typeof value.port === 'number') safe.port = value.port;
-  if (typeof value.url === 'string' && value.url.startsWith('http://127.0.0.1:')) safe.url = value.url;
+  // K3: a string prefix check accepts userinfo-smuggled URLs such as
+  // 'http://127.0.0.1:@evil.example/'. Parse and compare the origin, and
+  // reject any credentials; an untrusted url is dropped (no iframe).
+  if (typeof value.url === 'string' && value.url.startsWith('http://127.0.0.1:')) {
+    try {
+      const parsed = new URL(value.url);
+      if (parsed.protocol === 'http:' && parsed.hostname === '127.0.0.1' && parsed.port !== '' && !parsed.username && !parsed.password) {
+        safe.url = value.url;
+      }
+    } catch { /* unparseable url is dropped */ }
+  }
   if (typeof value.message === 'string') {
     const firstLine = safeErrorMessage(value.message);
     if (firstLine !== null) safe.message = firstLine;
