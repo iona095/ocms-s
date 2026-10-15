@@ -220,9 +220,13 @@ test('v1.4.7-rc2 Amendment B identity: sync.mjs pinned to the B bytes', { skip: 
 // exited 0 on every refusal and never printed the final UPDATED / NO CHANGE
 // verdict; main() now reports the verdict and exits 1 on refusal). The pin
 // keeps guarding the CURRENT reviewed bytes after that change.
+// Re-pinned by the C05 defect fix (missing --settings exits 2 with verdict
+// plus usage; YAML parse errors are coded SETTINGS_INVALID), the D04 defect
+// fix (unique backup names per tick), and the D05 defect fix (legacy Apply
+// preserves comments via document edit).
 test('v1.4.7-rc5 identity: sync.mjs pinned to the rc5 bytes plus the C02/C03 verdict fix', () => {
   const sha = sha256Hex(fs.readFileSync(path.join(REPO_ROOT, 'sync.mjs')));
-  assert.equal(sha, '60a8412f2a4f083cf89f67d0105d36de5aa67186cb2a8db8e87a06046508d3b7', 'sync.mjs drift beyond the C02/C03 verdict fix is forbidden');
+  assert.equal(sha, 'f61f09d822bfa182d20756f976bbe657f40db0b4dd59205d9cb90e376ef40ecb', 'sync.mjs drift beyond the C02/C03 verdict fix is forbidden');
 });
 
 test('v1.4.7-rc2 Amendment B identity: plan-builder pinned to the B bytes', () => {
@@ -239,9 +243,12 @@ test('v1.4.7-rc1 Amendment A identity: surgical-render pinned to the rc1 bytes',
 // line-ending join, and three call sites pre-converted block text to the file
 // eol, so an F1-add or F2 render on a CRLF patch emitted a stray CR per line
 // and refused GENERATED_MEMBERSHIP_MISMATCH).
+// Re-pinned by the B1 defect fix (same-line separator span), the B2 defect
+// fix (bare models key), the B4 defect fix (alias-inside refusal), and the
+// D07 defect fix (same-offset F1-add/F2 merge).
 test('C04 identity: surgical-render pinned after the CRLF indentBlock fix', () => {
   const sha = sha256Hex(fs.readFileSync(path.join(REPO_ROOT, 'profile', 'surgical-render.mjs')));
-  assert.equal(sha, 'f5444d64718ae0bd770e58070c3b061c306b8f3fa8ce2894813b421f0dbfa5ef', 'surgical-render drift beyond the C04/D01 CRLF fix is forbidden');
+  assert.equal(sha, '6b9ad428030f47b6b9417901b68bca459a292eb4e6e966217a6631fffa61dd2f', 'surgical-render drift beyond the C04/D01 CRLF fix is forbidden');
 });
 
 test('v1.4.6-rc2 identity: ui/index.html pinned to the rc2 bytes', { skip: 'superseded by contract v1.4.7-rc2 U5 (see rc2 pin below)' }, () => {

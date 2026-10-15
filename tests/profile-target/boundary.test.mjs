@@ -19,10 +19,13 @@ describe('S1 static boundary', () => {
   it('RED-S1-STATIC-EXPORTS exposes only the S1 seam', async () => {
     const mod = await import(`file://${IMPL}`);
     const names = Object.keys(mod).sort();
+    // anchorNameBesideFile added by the B5 defect fix: the shared row-name
+    // anchoring rule for S1 binding identity and S2 composition.
     assert.deepEqual(names, [
       'EXPECTED_VERSIONS',
       'REFUSAL_CODES',
       'admitDependencyPackages',
+      'anchorNameBesideFile',
       'classifyTarget',
       'findDshExecutable',
       'resolveProfileTarget',
