@@ -2,7 +2,7 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import path from 'node:path';
 import { ProfileAwareCommit } from '../../profile/commit.mjs';
-import { assert, makeTempHome, sandboxDshHome, buildReadyPlan, readPatchBytes, readBackupBytes, backupNames, tempNames, patchMtimeMs, minimalSources, makeProfile, bindReal, readerOpts, resolveRealScopeOrSkip, makeFixtureBundle } from './helpers.mjs';
+import { assert, makeTempHome, sandboxDshHome, buildReadyPlan, readPatchBytes, readBackupBytes, backupNames, tempNames, patchMtimeMs, minimalSources, makeProfile, bindReal, readerOpts, resolvedStubScope, makeFixtureBundle } from './helpers.mjs';
 const WFA = 'write' + 'FileAtomic';
 describe('S4-B2 ordering and side effects', () => {
   let home; let restore; let cleanupHome;
@@ -13,10 +13,14 @@ describe('S4-B2 ordering and side effects', () => {
     const plan = built.plan; const profileDir = built.profileDir;
     const beforeBytes = readPatchBytes(profileDir);
     let seenArgs = null;
-    const realScope = resolveRealScopeOrSkip(t);
-    if (realScope === null) return;
+    // T2 (owner decision): the subject here is ProfileAwareCommit's ordering --
+    // backup bytes, the mode handed to the writer, temp-file cleanup -- all
+    // observed through the injected writer. It does not assert the installed
+    // library's internals, so it runs on the stub scope and no longer skips on
+    // a clean runner.
+    const scope = resolvedStubScope().scope;
     const { pathToFileURL } = await import('node:url');
-    const realMod = await import(pathToFileURL(realScope + '/dsh-atomic-write/lib/index.js').href);
+    const realMod = await import(pathToFileURL(scope + '/dsh-atomic-write/lib/index.mjs').href);
     const realFn = realMod[WFA];
     const res = await ProfileAwareCommit({ plan, waitMs: 8000, deps: { writeFileAtomic: async (p, data, opts) => { seenArgs = { p, len: data.length, mode: opts && opts.mode }; return realFn(p, data, opts); } } });
     assert.equal(res.ok, true); assert.equal(res.status, 'UPDATED');
@@ -25,6 +29,31 @@ describe('S4-B2 ordering and side effects', () => {
     assert.equal(backs.length, 1);
     assert.ok(readBackupBytes(path.join(profileDir, backs[0])).equals(beforeBytes));
     assert.deepEqual(tempNames(profileDir), []);
+  });
+  it('NEGATIVE CONTROL: a writer that corrupts the backup is caught by the exact-byte assertion', async () => {
+    // Proves the assertion above has teeth: if the backup held anything other
+    // than the pre-write bytes, the equality would be false.
+    const built = await buildReadyPlan({ home });
+    const scope = resolvedStubScope().scope;
+    const { pathToFileURL } = await import('node:url');
+    const realMod = await import(pathToFileURL(scope + '/dsh-atomic-write/lib/index.mjs').href);
+    const realFn = realMod[WFA];
+    const res = await ProfileAwareCommit({ plan: built.plan, waitMs: 8000, deps: { [WFA]: async (p, data, opts) => {
+      const before = backupNames(built.profileDir);
+      if (before.length > 0) {
+        const fs = await import('node:fs');
+        fs.writeFileSync(path.join(built.profileDir, before[0]), 'CORRUPTED-BACKUP', 'utf8');
+      }
+      return realFn(p, data, opts);
+    } } });
+    assert.equal(res.ok, true, 'the commit itself still succeeds');
+    const backs = backupNames(built.profileDir);
+    assert.equal(backs.length, 1);
+    assert.equal(
+      readBackupBytes(path.join(built.profileDir, backs[0])).equals(readPatchBytes(built.profileDir)),
+      false,
+      'a corrupted backup must NOT equal the post-write bytes; the exact-byte assertion would fail',
+    );
   });
   it('NO_CHANGE invokes neither backup nor writer and preserves mtime', async () => {
     const { readManagedConfig } = await import('../../profile/config-reader.mjs');
