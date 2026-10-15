@@ -280,6 +280,8 @@ export async function startServer(options = {}) {
   let activePreview = null;
   let previewBusy = false;
   let applyBusy = false;
+  // Programmatic-only test seam for deterministic request concurrency tests.
+  const testHooks = options.testHooks && typeof options.testHooks === 'object' ? options.testHooks : null;
 
   const targetInfo = () => ({ displayPath, production });
 
@@ -773,7 +775,10 @@ export async function startServer(options = {}) {
     const retained = activePreview;
     let binding = null;
     try {
-      binding = await verifyProfileApplySelection(retained, parsed.selection);
+      const verify = testHooks && typeof testHooks.verifyProfileApplySelection === 'function'
+        ? testHooks.verifyProfileApplySelection
+        : verifyProfileApplySelection;
+      binding = await verify(retained, parsed.selection);
     } catch {
       binding = null;
     }
@@ -798,7 +803,10 @@ export async function startServer(options = {}) {
     try {
       let outcome;
       try {
-        outcome = await ProfileAwareCommit({ plan: retained.plan, waitMs: 15000 });
+        const commit = testHooks && typeof testHooks.profileAwareCommit === 'function'
+          ? testHooks.profileAwareCommit
+          : ProfileAwareCommit;
+        outcome = await commit({ plan: retained.plan, waitMs: 15000 });
       } catch (err) {
         refusal(res, 500, 'ERROR', 'Unexpected internal error.');
         return;

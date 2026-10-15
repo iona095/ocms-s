@@ -426,13 +426,13 @@ export async function startEphemeralTestServer(t, { port: _requestedPort, ...opt
   return startTestServer(t, { ...options, port: 0 });
 }
 
-export async function startTestServer(t, { settingsPath, port, fetchFn = fetchNever, openBrowser = false, dshHome, embedOrigin } = {}) {
+export async function startTestServer(t, { settingsPath, port, fetchFn = fetchNever, openBrowser = false, dshHome, embedOrigin, testHooks } = {}) {
   if (!hasUiServer) throw new Error('capability missing: ui.mjs does not exist yet');
   const ui = await loadUiServerModule();
   assert.equal(typeof ui.startServer, 'function', 'ui.mjs must export startServer(options)');
   if (settingsPath !== undefined) assertScratchTarget(settingsPath);
   const home = dshHome !== undefined ? dshHome : tempDshHome(t);
-  const started = await ui.startServer({ settingsPath, port, fetchFn, openBrowser, dshHome: home, embedOrigin });
+  const started = await ui.startServer({ settingsPath, port, fetchFn, openBrowser, dshHome: home, embedOrigin, testHooks });
   assert.equal(typeof started.port, 'number', 'started.port present');
   assert.equal(typeof started.token, 'string', 'started.token present (test seam only)');
   assert.equal(typeof started.close, 'function', 'started.close present');

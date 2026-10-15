@@ -59,6 +59,18 @@ function applyBody(preview) {
   return { previewId: preview.previewId, confirmed: true, selection: selectionFor(preview) };
 }
 
+function deferred() {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+async function waitFor(predicate, label) {
+  const deadline = Date.now() + 3000;
+  while (!predicate() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.ok(predicate(), 'TIMED_OUT waiting for ' + label);
+}
+
 describe('D02/C08 — Apply must commit the selection it verified', () => {
   let home; let cleanupHome; let restore;
   beforeEach(() => { restore = sandboxDshHome(); const h = makeTempHome(); home = h.home; cleanupHome = h.cleanup; });
@@ -82,11 +94,12 @@ describe('D02/C08 — Apply must commit the selection it verified', () => {
     assert.ok(handlerEnd > handlerStart, 'the handler body is bounded by the next handler');
     const handler = source.slice(handlerStart, handlerEnd);
     const captureAt = handler.indexOf('const retained = activePreview;');
-    const awaitAt = handler.indexOf('await verifyProfileApplySelection(');
+    const awaitAt = handler.indexOf('await verify(retained, parsed.selection)');
     assert.ok(captureAt > 0, 'the handler captures the retained preview');
     assert.ok(captureAt < awaitAt, 'the capture precedes the verification await');
-    assert.ok(handler.includes('verifyProfileApplySelection(retained, parsed.selection)'), 'verification binds the captured slot');
-    assert.ok(handler.includes('if (!applyBusy && activePreview !== retained)'), 'the slot is re-checked after the await');
+    assert.ok(handler.includes('verify(retained, parsed.selection)'), 'verification binds the captured slot');
+    assert.ok(handler.includes('if (activePreview !== retained)'), 'the slot is re-checked unconditionally after the await');
+    assert.ok(handler.includes("'APPLY_BUSY'"), 'a concurrent Apply is refused after verification');
     assert.ok(handler.includes('ProfileAwareCommit({ plan: retained.plan'), 'commit binds the captured plan');
     // No read after the capture may go through the mutable slot: the only
     // remaining uses are the pre-await guard, the scoped clears and the
@@ -127,5 +140,106 @@ describe('D02/C08 — Apply must commit the selection it verified', () => {
     assert.equal(stale.json.code, 'STALE_PREVIEW');
     const applied = await postJson(started.port, '/api/apply', applyBody(first.json), authHeaders(started.token));
     assert.equal(applied.json.ok, true, 'the retained Preview is still applicable: ' + JSON.stringify(applied.json).slice(0, 300));
+  });
+
+  it('only one concurrent Apply reaches ProfileAwareCommit', async (t) => {
+    const { anchor } = makeStubAnchor(t);
+    const dir = makeS4Profile(home, 'race-busy', { entries: [s4Row({ config: { providers: { other: { displayName: 'other', models: [] } } } })], bundles: ['@fixture/base'] });
+    makeFixtureBundle(dir);
+    const verifyGates = [deferred(), deferred()];
+    const bothVerifying = deferred();
+    const commitEntered = deferred();
+    const releaseCommit = deferred();
+    let verifyCalls = 0;
+    let commitCalls = 0;
+    const testHooks = {
+      verifyProfileApplySelection: async () => {
+        const at = verifyCalls++;
+        if (verifyCalls === 2) bothVerifying.resolve();
+        await verifyGates[at].promise;
+        return { ok: true };
+      },
+      profileAwareCommit: async () => {
+        commitCalls += 1;
+        if (commitCalls === 1) {
+          commitEntered.resolve();
+          await releaseCommit.promise;
+        }
+        return { ok: true, status: 'NO_CHANGE' };
+      },
+    };
+    t.after(() => { releaseCommit.resolve(); for (const gate of verifyGates) gate.resolve(); });
+    const started = await withR2Port(t, (port) => startTestServer(t, { settingsPath: scratchSettingsFile(t), port, fetchFn: fetchFromBodies(validSourceBodies()), dshHome: home, installAnchorDir: anchor, testHooks }));
+    const preview = await postJson(started.port, '/api/preview', { profileName: 'race-busy' }, authHeaders(started.token));
+    assert.equal(preview.json.ok, true, JSON.stringify(preview.json).slice(0, 300));
+    const headers = authHeaders(started.token);
+    const first = postJson(started.port, '/api/apply', applyBody(preview.json), headers);
+    const second = postJson(started.port, '/api/apply', applyBody(preview.json), headers);
+    await Promise.race([bothVerifying.promise, waitFor(() => verifyCalls === 2, 'both verifiers')]);
+    verifyGates[0].resolve();
+    await Promise.race([commitEntered.promise, waitFor(() => commitCalls > 0, 'first commit')]);
+    verifyGates[1].resolve();
+    let secondDone = false;
+    const secondObserved = second.then((response) => { secondDone = true; return response; });
+    await waitFor(() => secondDone || commitCalls > 1, 'second response or erroneous commit');
+    releaseCommit.resolve();
+    const responses = await Promise.all([first, secondObserved]);
+    assert.equal(commitCalls, 1, 'exactly one request reaches ProfileAwareCommit');
+    assert.equal(responses.filter((response) => response.status === 200).length, 1);
+    const refused = responses.find((response) => response.status === 409);
+    assert.ok(refused, 'the other request must be refused');
+    assert.equal(refused.json.code, 'APPLY_BUSY');
+  });
+
+  it('stale preview takes precedence over busy when slot changes during verification', async (t) => {
+    const { anchor } = makeStubAnchor(t);
+    for (const name of ['race-stale-a', 'race-stale-b']) {
+      const dir = makeS4Profile(home, name, { entries: [s4Row({ config: { providers: { other: { displayName: 'other', models: [] } } } })], bundles: ['@fixture/base'] });
+      makeFixtureBundle(dir);
+    }
+    const verifyGates = [deferred(), deferred()];
+    const bothVerifying = deferred();
+    const commitEntered = deferred();
+    const releaseCommit = deferred();
+    let verifyCalls = 0;
+    let commitCalls = 0;
+    const testHooks = {
+      verifyProfileApplySelection: async () => {
+        const at = verifyCalls++;
+        if (verifyCalls === 2) bothVerifying.resolve();
+        await verifyGates[at].promise;
+        return { ok: true };
+      },
+      profileAwareCommit: async () => {
+        commitCalls += 1;
+        if (commitCalls === 1) {
+          commitEntered.resolve();
+          await releaseCommit.promise;
+        }
+        return { ok: true, status: 'NO_CHANGE' };
+      },
+    };
+    t.after(() => { releaseCommit.resolve(); for (const gate of verifyGates) gate.resolve(); });
+    const started = await withR2Port(t, (port) => startTestServer(t, { settingsPath: scratchSettingsFile(t), port, fetchFn: fetchFromBodies(validSourceBodies()), dshHome: home, installAnchorDir: anchor, testHooks }));
+    const headers = authHeaders(started.token);
+    const previewA = await postJson(started.port, '/api/preview', { profileName: 'race-stale-a' }, headers);
+    assert.equal(previewA.json.ok, true, JSON.stringify(previewA.json).slice(0, 300));
+    const applyA = postJson(started.port, '/api/apply', applyBody(previewA.json), headers);
+    await waitFor(() => verifyCalls === 1, 'first verifier');
+    const previewB = await postJson(started.port, '/api/preview', { profileName: 'race-stale-b' }, headers);
+    assert.equal(previewB.json.ok, true, JSON.stringify(previewB.json).slice(0, 300));
+    const applyB = postJson(started.port, '/api/apply', applyBody(previewB.json), headers);
+    await Promise.race([bothVerifying.promise, waitFor(() => verifyCalls === 2, 'both verifiers')]);
+    verifyGates[1].resolve();
+    await Promise.race([commitEntered.promise, waitFor(() => commitCalls > 0, 'current preview commit')]);
+    verifyGates[0].resolve();
+    const staleA = await applyA;
+    assert.equal(staleA.status, 409);
+    assert.equal(staleA.json.code, 'STALE_PREVIEW');
+    assert.equal(commitCalls, 1, 'stale request must not enter the commit while another Apply is busy');
+    releaseCommit.resolve();
+    const appliedB = await applyB;
+    assert.equal(appliedB.status, 200);
+    assert.equal(commitCalls, 1);
   });
 });
