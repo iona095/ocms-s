@@ -53,7 +53,11 @@ export function createLifecycleController(deps) {
     log,
   } = deps;
 
-  const safeLog = log ?? { info() {}, warn() {}, error() {} };
+  // C11: `log` is a documented-optional dep, so a host may inject a logger with
+  // only some methods (or none). Each method is guarded individually; a missing
+  // method must never throw out of an EventEmitter handler.
+  const logMethod = (name) => (typeof (log && log[name]) === 'function' ? log[name].bind(log) : () => {});
+  const safeLog = { info: logMethod('info'), warn: logMethod('warn'), error: logMethod('error') };
 
   let state = 'OFFLINE';
   let ownedChild = null;
@@ -124,8 +128,15 @@ export function createLifecycleController(deps) {
   // the graceful signal means the handle itself is unusable, so the sequence
   // stops there and the caller keeps ownership.
   function requestTermination(child) {
-    if (termination !== null && termination.child === child) return termination.promise;
-    const task = { child, promise: null };
+    // §44 within one attempt: concurrent requesters join the in-flight attempt,
+    // and a child that already confirmed its exit is never signalled again.
+    // C12: once an attempt has settled as failed (no exit after force
+    // termination), a later requester starts a NEW attempt instead of reusing
+    // the cached false forever; the same child is undeniably still owned.
+    if (termination !== null && termination.child === child && (termination.settled !== true || termination.confirmed === true)) {
+      return termination.promise;
+    }
+    const task = { child, promise: null, settled: false, confirmed: false };
     task.promise = (async () => {
       try {
         child.kill('SIGTERM');
@@ -137,6 +148,11 @@ export function createLifecycleController(deps) {
       try { child.kill('SIGKILL'); } catch { /* already gone */ }
       return waitForExit(child, STOP_FORCE_MS);
     })();
+    const settle = (confirmed) => { task.settled = true; task.confirmed = confirmed === true; };
+    task.promise = task.promise.then(
+      (confirmed) => { settle(confirmed); return confirmed; },
+      (err) => { settle(false); throw err; },
+    );
     termination = task;
     return task.promise;
   }
@@ -188,13 +204,13 @@ export function createLifecycleController(deps) {
       if (state === 'STARTING') {
         clearOwnership();
         lastMessage = 'OCMS-S exited during startup (exit code ' + String(code) + ').';
-        log.error(lastMessage);
+        safeLog.error(lastMessage);
         emit('OFFLINE');
       } else if (state === 'ONLINE') {
         // §43: never retain stale ONLINE ownership after an unexpected exit.
         clearOwnership();
         lastMessage = 'OCMS-S server exited unexpectedly.';
-        log.warn(lastMessage);
+        safeLog.warn(lastMessage);
         emit('OFFLINE');
       } else if (state === 'ERROR') {
         clearOwnership();
@@ -212,11 +228,11 @@ export function createLifecycleController(deps) {
       if (exitInfo === null) exitInfo = { kind: 'error', err };
       if (state === 'STARTING') {
         lastMessage = 'OCMS-S failed to start.';
-        log.error(lastMessage);
+        safeLog.error(lastMessage);
         emit('ERROR');
       } else if (state === 'ONLINE') {
         lastMessage = 'OCMS-S server failed.';
-        log.warn(lastMessage);
+        safeLog.warn(lastMessage);
         emit('ERROR');
       }
       // STOPPING/ERROR: the pending stop or dispose flow owns the outcome.
