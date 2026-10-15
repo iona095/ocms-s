@@ -126,17 +126,25 @@ test('A2: explicit --settings and default target semantics remain unchanged', ()
 test('A3: ambient HOME cannot redirect the production target', () => {
   const savedUser = process.env.USERPROFILE;
   const savedHome = process.env.HOME;
+  const savedDsh = process.env.DSH_HOME;
   try {
     process.env.USERPROFILE = 'C:\\user-trap-v13';
     process.env.HOME = 'C:\\home-trap-v13';
     assert.equal(sync.defaultSettingsPath(), path.join('C:\\user-trap-v13', '.dsh', 'settings.yaml'));
+    // P1: the second anchor is DSH_HOME and a missing anchor refuses. Both are
+    // pinned so the assertion cannot pass by accident on a machine that
+    // happens to export DSH_HOME.
     delete process.env.USERPROFILE;
+    process.env.DSH_HOME = 'C:\\dsh-trap-v13';
     const fallback = sync.defaultSettingsPath();
     assert.notEqual(fallback, path.join('C:\\home-trap-v13', '.dsh', 'settings.yaml'));
-    assert.ok(fallback.endsWith(path.join('.dsh', 'settings.yaml')));
+    assert.equal(fallback, path.join('C:\\dsh-trap-v13', 'settings.yaml'));
+    delete process.env.DSH_HOME;
+    assert.throws(() => sync.defaultSettingsPath(), /USERPROFILE|DSH_HOME/, 'no anchor refuses');
   } finally {
     if (savedUser === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = savedUser;
     if (savedHome === undefined) delete process.env.HOME; else process.env.HOME = savedHome;
+    if (savedDsh === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = savedDsh;
   }
 });
 

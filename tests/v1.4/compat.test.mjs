@@ -226,7 +226,9 @@ test('v1.4.7-rc2 Amendment B identity: sync.mjs pinned to the B bytes', { skip: 
 // preserves comments via document edit).
 test('v1.4.7-rc5 identity: sync.mjs pinned to the rc5 bytes plus the C02/C03 verdict fix', () => {
   const sha = sha256Hex(fs.readFileSync(path.join(REPO_ROOT, 'sync.mjs')));
-  assert.equal(sha, 'f61f09d822bfa182d20756f976bbe657f40db0b4dd59205d9cb90e376ef40ecb', 'sync.mjs drift beyond the C02/C03 verdict fix is forbidden');
+  // Re-pinned by the P1 defect fix (report C14; named reason: the legacy
+  // default settings path no longer falls back to a literal machine path).
+  assert.equal(sha, 'a89f9bcdb35b8efa52ffa8a7ca658bff2f632e485b60a4482b13c59d70c4b478', 'sync.mjs drift beyond the C02/C03 verdict fix is forbidden');
 });
 
 test('v1.4.7-rc2 Amendment B identity: plan-builder pinned to the B bytes', () => {

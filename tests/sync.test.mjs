@@ -1147,19 +1147,26 @@ describe('19. default settings path derivation', () => {
   it('derives the default path from USERPROFILE and never from HOME', () => {
     const savedU = process.env.USERPROFILE;
     const savedH = process.env.HOME;
+    const savedD = process.env.DSH_HOME;
     try {
       process.env.USERPROFILE = 'C:\\user-trap';
       process.env.HOME = 'C:\\home-trap';
       assert.equal(defaultSettingsPath(), path.join('C:\\user-trap', '.dsh', 'settings.yaml'));
+      // P1: with USERPROFILE gone the second anchor is DSH_HOME, and with
+      // neither anchor the call refuses. Both anchors are pinned explicitly so
+      // the assertion never depends on this machine's ambient DSH_HOME.
       delete process.env.USERPROFILE;
-      const fallback = defaultSettingsPath();
-      assert.notEqual(fallback, path.join('C:\\home-trap', '.dsh', 'settings.yaml'));
-      assert.ok(fallback.endsWith(path.join('.dsh', 'settings.yaml')));
+      process.env.DSH_HOME = 'C:\\dsh-trap';
+      assert.equal(defaultSettingsPath(), path.join('C:\\dsh-trap', 'settings.yaml'));
+      delete process.env.DSH_HOME;
+      assert.throws(() => defaultSettingsPath(), /USERPROFILE|DSH_HOME/, 'no anchor refuses');
     } finally {
       if (savedU === undefined) delete process.env.USERPROFILE;
       else process.env.USERPROFILE = savedU;
       if (savedH === undefined) delete process.env.HOME;
       else process.env.HOME = savedH;
+      if (savedD === undefined) delete process.env.DSH_HOME;
+      else process.env.DSH_HOME = savedD;
     }
   });
 });

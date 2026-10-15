@@ -1134,9 +1134,18 @@ export function diffDesired(desired, priors) {
 // ---------------------------------------------------------------------------
 
 export function defaultSettingsPath() {
-  const home = process.env.USERPROFILE;
-  if (home) return path.join(home, '.dsh', 'settings.yaml');
-  return 'C:\\Users\\GNV\\.dsh\\settings.yaml';
+  // P1: never fall back to a literal machine path. USERPROFILE is the
+  // Windows anchor, DSH_HOME the cross-platform one; ambient HOME is
+  // deliberately ignored so a stray HOME cannot redirect the target.
+  // With neither anchor the run refuses with a typed error rather than
+  // guessing a target that belongs to no account on this machine.
+  const userProfile = process.env.USERPROFILE;
+  if (userProfile) return path.join(userProfile, '.dsh', 'settings.yaml');
+  // DSH_HOME is already the DSH home directory (the '.dsh' folder itself),
+  // so the settings file sits directly inside it.
+  const dshHome = process.env.DSH_HOME;
+  if (dshHome) return path.join(dshHome, 'settings.yaml');
+  throw unresolved('SETTINGS_UNRESOLVABLE: no USERPROFILE and no DSH_HOME; refusing to guess a settings path');
 }
 
 export function resolveSettingsPath(argv = process.argv) {

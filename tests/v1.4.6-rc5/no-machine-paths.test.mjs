@@ -36,22 +36,45 @@ function walk(dir, out) {
   }
 }
 
-describe('v1.4.6-rc5 no absolute machine paths in tests', () => {
+// Product sources that ship to users. P1 proved a literal machine path can
+// live in product code while the tests/ guard stays green.
+const PRODUCT_DIRS = ['sync.mjs', 'ui.mjs', 'profile', 'scripts', 'dsh', 'ui'];
+
+function scanForHomePaths(files) {
+  const hits = [];
+  for (const file of files) {
+    let text;
+    try { text = fs.readFileSync(file, 'utf8'); } catch { continue; }
+    const lines = text.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      if (DRIVE_HOME.test(lines[i]) || POSIX_HOME.test(lines[i])) {
+        hits.push(path.relative(REPO_ROOT, file) + ':' + (i + 1));
+      }
+    }
+  }
+  return hits;
+}
+
+describe('no absolute machine paths in tests/ or in product source', () => {
   it('Q5 guard: no file under tests/ carries an absolute home path', () => {
     const files = [];
     walk(TESTS_DIR, files);
     assert.ok(files.length > 50, 'expected to scan the tests tree, found ' + files.length);
-    const hits = [];
-    for (const file of files) {
-      let text;
-      try { text = fs.readFileSync(file, 'utf8'); } catch { continue; }
-      const lines = text.split('\n');
-      for (let i = 0; i < lines.length; i++) {
-        if (DRIVE_HOME.test(lines[i]) || POSIX_HOME.test(lines[i])) {
-          hits.push(path.relative(REPO_ROOT, file) + ':' + (i + 1));
-        }
-      }
-    }
+    const hits = scanForHomePaths(files);
     assert.deepEqual(hits, [], 'absolute home paths under tests/:\n' + hits.join('\n'));
+  });
+
+  it('P1 guard: no shipped product source carries an absolute home path', () => {
+    const files = [];
+    for (const entry of PRODUCT_DIRS) {
+      const full = path.join(REPO_ROOT, entry);
+      let st;
+      try { st = fs.statSync(full); } catch { continue; }
+      if (st.isDirectory()) walk(full, files);
+      else if (st.isFile()) files.push(full);
+    }
+    assert.ok(files.length > 5, 'expected to scan product source, found ' + files.length);
+    const hits = scanForHomePaths(files);
+    assert.deepEqual(hits, [], 'absolute home paths in product source:\n' + hits.join('\n'));
   });
 });

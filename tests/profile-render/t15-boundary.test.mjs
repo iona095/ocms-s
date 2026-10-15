@@ -86,7 +86,10 @@ describe('S3 T18 — planning and frozen-source regressions', () => {
     // Re-pinned by the D05 defect fix with the named reason: legacy Apply
     // edits managed arrays inside the existing document (surgicalLegacyUpdate)
     // so comments, key order, and unrelated styling survive the write.
-    assert.equal(sha('sync.mjs'), 'f61f09d822bfa182d20756f976bbe657f40db0b4dd59205d9cb90e376ef40ecb', 'sync.mjs drift beyond the CURRENT reviewed bytes is forbidden');
+    // Re-pinned by the P1 defect fix (report C14; named reason: the legacy
+  // default settings path no longer falls back to a literal machine path; it
+  // resolves USERPROFILE, then DSH_HOME, then refuses with a typed error).
+  assert.equal(sha('sync.mjs'), 'a89f9bcdb35b8efa52ffa8a7ca658bff2f632e485b60a4482b13c59d70c4b478', 'sync.mjs drift beyond the CURRENT reviewed bytes is forbidden');
     // The old "no profile/* modification" tripwire is replaced, not dropped:
     // the three files v1.4.7-rc6 §5 changed are now byte-pinned at their
     // re-pinned values under the named reason "version-skew reproducibility
