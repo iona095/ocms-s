@@ -4,21 +4,9 @@ All notable project-level changes are summarized here.
 
 This file is intentionally concise. The authoritative behavioral specification remains the current contract.
 
-## NB1 inference bases (unreleased)
-
-Sync recognizes the live per-provider inference endpoint bases observed in the
-2026-10-15 Go/Zen docs captures (fixtures under tests/nb1-inference-bases/):
-go gains /inference/go/openai/v1/, /inference/go/anthropic/v1/ and
-/inference/go/google/v1beta/; zen gains /inference/openai/v1/,
-/inference/anthropic/v1/, /inference/google/v1beta/ and /inference/systemone/v1/.
-Old bases are retained. Fail-closed ENDPOINT_BASE_UNKNOWN behaviour is unchanged;
-the two documented systemone rows resolve to ENDPOINT_UNSUPPORTED (skip), so the
-captured-docs preview reports zero ENDPOINT_BASE_UNKNOWN. No version bump (owner
-to decide).
-
 ## 1.4.7-rc7 (unreleased)
 
-Bug-fix pass from the eight-model bug hunt (baseline cc1a14f).
+Bug-fix pass from the eight-model bug hunt (baseline cc1a14f), plus NB1 inference bases (branch bugfix/nb1-inference-bases).
 
 ### Fixed
 
@@ -42,12 +30,14 @@ Bug-fix pass from the eight-model bug hunt (baseline cc1a14f).
 - K5 lifecycle-misc: ordered EXTERNAL message, no stale message or duplicate OFFLINE, slots released, port diagnostics.
 - K7 client-seq-persistence: ref-backed status generation survives re-renders.
 - CI: the clean-machine gate is now `scripts/ci-check-clean-machine.mjs` and works on Windows runners.
+- Sync: DOC_ENDPOINT_BASES gains the live per-provider inference bases (NB1 GREEN: extend DOC_ENDPOINT_BASES with live inference bases). Go recognizes /inference/go/openai/v1/, /inference/go/anthropic/v1/ and /inference/go/google/v1beta/; zen recognizes /inference/openai/v1/, /inference/anthropic/v1/, /inference/google/v1beta/ and /inference/systemone/v1/. Old bases are retained and fail-closed ENDPOINT_BASE_UNKNOWN behaviour is unchanged; the two documented systemone rows skip as ENDPOINT_UNSUPPORTED.
 
 ### Tests
 
 - Added a stub DSH tree, so `test:profile` has a machine-independent scope in a clean environment.
 - Product-file pins were re-pinned with named reasons.
 - Skip counts are unchanged (16 / 10 / 40).
+- NB1 gate (tests/nb1-inference-bases/gateway-nb1.test.mjs, 12 tests over the 2026-10-15 docs fixtures): RED 10-fail to GREEN 12/12; 4/4 table mutations killed; the captured-docs preview reports zero ENDPOINT_BASE_UNKNOWN.
 
 ### Not reproduced / by design (guard tests only)
 
@@ -61,6 +51,7 @@ Bug-fix pass from the eight-model bug hunt (baseline cc1a14f).
 ### Compatibility note
 
 - Digests change for inputs containing NaN, ±Infinity (all three canonical copies), or bigint (reader only; sync/plan-builder already emitted it). Inputs with only finite values digest identically. No persisted state carries digests, so no migration is required; only operators comparing digests across versions are affected.
+- Docs endpoint layout moved to /inference/... per-provider bases; these are now recognised. Old bases (/zen/v1, /zen/go/v1, /inference/v1, /inference/go/v1) are retained, so a docs rollback still matches.
 
 ## v1.4.7-rc6
 

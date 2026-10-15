@@ -94,17 +94,17 @@ test('package peers target DSH 0.2.1-alpha.2 exactly (old runtime dropped)', () 
   for (const [k, v] of Object.entries(pkg.peerDependencies)) {
     assert.doesNotMatch(String(v), /[\^~*]|>=|<=|x/, 'peer ' + k + ' must be exact (got ' + v + ')');
   }
-  assert.equal(pkg.version, '1.4.7-rc6', 'release metadata per contract v1.4.7-rc6 section 6');
+  assert.equal(pkg.version, '1.4.7-rc7', 'release metadata per contract v1.4.7-rc6 section 6');
   assert.equal(pkg.engines?.dsh, '0.2.1-alpha.2', 'engines.dsh declares the exact supported DSH target');
 });
 
-test('lockfile root peers mirror package.json and root version is 1.4.7-rc6', () => {
+test('lockfile root peers mirror package.json and root version is 1.4.7-rc7', () => {
   const lock = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package-lock.json'), 'utf8'));
   assert.equal(lock.name, 'ocms-s', 'lock root name');
-  assert.equal(lock.version, '1.4.7-rc6', 'lock root version must equal package version 1.4.7-rc6');
+  assert.equal(lock.version, '1.4.7-rc7', 'lock root version must equal package version 1.4.7-rc7');
   const rootPkg = lock.packages?.[''];
   assert.ok(rootPkg, 'lockfileVersion 3 root package entry must exist');
-  assert.equal(rootPkg.version, '1.4.7-rc6', 'lock root package version must equal package version 1.4.7-rc6');
+  assert.equal(rootPkg.version, '1.4.7-rc7', 'lock root package version must equal package version 1.4.7-rc7');
   assert.deepEqual(rootPkg.peerDependencies, { ...DSH_TARGET_PEERS }, 'lock root peers must mirror package.json peers');
 });
 
@@ -304,7 +304,7 @@ test('built client bundle carries the __ModuleLoader__ convention and no second 
   assert.ok(!/react-development|react-dom[^/]*\.min\.js/.test(text), 'no vendored react runtime copy');
 });
 
-test('root package version is 1.4.7-rc6 at release candidate', () => {
+test('root package version is 1.4.7-rc7 at release candidate', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8'));
-  assert.equal(pkg.version, '1.4.7-rc6');
+  assert.equal(pkg.version, '1.4.7-rc7');
 });
