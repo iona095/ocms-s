@@ -28,4 +28,20 @@ describe('commit lock acquisition error label', () => {
     assert.deepEqual(tempNames(built.profileDir), []);
     assert.ok(readPatchBytes(built.profileDir).equals(beforeBytes));
   });
+
+  it('a LOCK_TIMEOUT code keeps its taxonomy without the native sentence', async () => {
+    const built = await buildReadyPlan({ home });
+    const beforeBytes = readPatchBytes(built.profileDir);
+    const res = await ProfileAwareCommit({
+      plan: built.plan,
+      waitMs: 8000,
+      deps: { withFileLock: async () => { throw Object.assign(new Error('lock timeout'), { code: 'LOCK_TIMEOUT' }); } }
+    });
+    assert.equal(res.ok, false);
+    assert.equal(res.code, 'LOCK_TIMEOUT');
+    assert.equal(res.status, 'BLOCKED');
+    assert.deepEqual(backupNames(built.profileDir), []);
+    assert.deepEqual(tempNames(built.profileDir), []);
+    assert.ok(readPatchBytes(built.profileDir).equals(beforeBytes));
+  });
 });

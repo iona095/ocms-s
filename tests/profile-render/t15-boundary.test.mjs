@@ -83,7 +83,9 @@ describe('S3 T18 — planning and frozen-source regressions', () => {
       ['profile/target-resolver.mjs', '565d1356edf2030f03d7760a846644657482fa955145f00125eb522d711b90f5'],
       // Re-pinned by the 0b/D3 lock-label fix (named reason above: unexpected
       // lock-acquisition errors are no longer blanket-labeled INCOMPATIBLE_DSH).
-      ['profile/commit.mjs', '0a9b6517061fa982c5cc071e5102146778c01350bf2f268c10ffcba244f3f1f1'],
+      // 0b follow-up: recognize a LOCK_TIMEOUT code as well as the native sentence.
+      ['profile/commit.mjs', '6a3542b7afc7cff8a4851b6e635f0eb9bacaf9c1a060568efa1b37e2383298d9'],
+
 
       ['profile/config-reader.mjs', '846e34de8343c6a390bca41d487b9900d6fd7fb556db762635a447d8663ff7cf'],
       // Re-pinned by the C04/D01 defect fix with the named reason: indentBlock

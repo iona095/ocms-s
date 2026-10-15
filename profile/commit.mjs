@@ -405,7 +405,7 @@ export async function ProfileAwareCommit(input) {
     opResult = await lockFn(lockResource, async () => runLocked({ planSnap, targetSnap, waitMsRaw, installAnchorDir, pathEnv, telemetryDisabledEnv, utils: utilsRes.utils, installAnchor: utilsRes.anchor.installAnchor, atomicFn, backupFn, postReader }), { waitMs: waitMsRaw });
   } catch (err) {
     const msg = err && err.message ? String(err.message) : String(err);
-    if (msg.includes('timed out waiting for the writer lock')) return { ok: false, code: 'LOCK_TIMEOUT', message: 'The native writer lock timed out.', status: 'BLOCKED', lockResource, waitMs: waitMsRaw };
+    if (msg.includes('timed out waiting for the writer lock') || (err && err.code === 'LOCK_TIMEOUT')) return { ok: false, code: 'LOCK_TIMEOUT', message: 'The native writer lock timed out.', status: 'BLOCKED', lockResource, waitMs: waitMsRaw };
     if (err && err.ok === false && typeof err.code === 'string' && COMMIT_REFUSAL_CODES.includes(err.code)) {
       return { ...err, lockResource: err.lockResource ?? lockResource, waitMs: err.waitMs ?? waitMsRaw };
     }
