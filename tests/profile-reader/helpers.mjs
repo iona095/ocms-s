@@ -344,7 +344,14 @@ export function snapshotTree(dir) {
       if (e.isDirectory() && !e.isSymbolicLink()) walk(p);
       else if (e.isFile() || e.isSymbolicLink()) {
         const st = fs.lstatSync(p);
-        out.set(p, { size: st.size, mtimeMs: st.mtimeMs, isLink: e.isSymbolicLink() });
+        // P2-4: hash regular-file bytes so a same-size rewrite with a
+        // restored mtime cannot evade the comparison. Symlinks keep
+        // set/size/mtime only: hashing would follow the link target.
+        let sha256 = null;
+        if (!e.isSymbolicLink()) {
+          try { sha256 = crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex'); } catch { sha256 = null; }
+        }
+        out.set(p, { size: st.size, mtimeMs: st.mtimeMs, isLink: e.isSymbolicLink(), sha256 });
       }
     }
   };
@@ -360,5 +367,8 @@ export function assertNoMutation(snapBefore, dir, label) {
     assert.ok(a, `${label}: missing after: ${p}`);
     assert.equal(a.size, v.size, `${label}: size changed: ${p}`);
     assert.equal(a.mtimeMs, v.mtimeMs, `${label}: mtime changed: ${p}`);
+    if (!v.isLink && v.sha256 !== null && a.sha256 !== null) {
+      assert.equal(a.sha256, v.sha256, `${label}: bytes changed: ${p}`);
+    }
   }
 }
