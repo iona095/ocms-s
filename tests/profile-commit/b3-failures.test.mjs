@@ -29,6 +29,19 @@ describe('S4-B3 failure injection', () => {
     assert.ok(readPatchBytes(profileDir).equals(beforeBytes));
     assert.ok(readBackupBytes(res.backupPath).equals(beforeBytes));
   });
+  it('C24 EACCES from the writer refuses WRITE_FAILED; original intact; backup retained', async () => {
+    // In-repo half of C24: a permission-denied writer failure is contained
+    // (fail-closed with backup). The portable retry fallback itself lives in
+    // the admitted dsh-atomic-write dependency, not in this tree.
+    const built = await buildReadyPlan({ home });
+    const plan = built.plan; const profileDir = built.profileDir;
+    const beforeBytes = readPatchBytes(profileDir);
+    const res = await ProfileAwareCommit({ plan, waitMs: 8000, deps: { [WFA]: async () => { throw Object.assign(new Error('injected-eacces'), { code: 'EACCES' }); } } });
+    assert.equal(res.ok, false); assert.equal(res.code, 'WRITE_FAILED');
+    assert.ok(res.backupPath);
+    assert.ok(readPatchBytes(profileDir).equals(beforeBytes));
+    assert.ok(readBackupBytes(res.backupPath).equals(beforeBytes));
+  });
   it('rename contention exhausted refuses WRITE_FAILED via bounded seam', async () => {
     const built = await buildReadyPlan({ home });
     const plan = built.plan; const profileDir = built.profileDir;
