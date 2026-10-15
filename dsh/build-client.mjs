@@ -27,7 +27,7 @@ const banner =
   'var exports = module.exports;\n' +
   'var React = require("react");\n';
 const footer =
-  'var ocmsClient = createOcmsClient({ createElement: React.createElement, useState: React.useState, useEffect: React.useEffect });\n' +
+  'var ocmsClient = createOcmsClient({ createElement: React.createElement, useState: React.useState, useEffect: React.useEffect, useRef: React.useRef });\n' +
   'module.exports = { inject: ocmsClient.inject, apply: ocmsClient.apply };\n' +
   'return module.exports;\n' +
   '} });\n';

@@ -106,6 +106,10 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
       // Re-pinned by K5 lifecycle-misc (named reason: an invalid configured
       // port still falls back to the default but now names the rejected value
       // in a warn diagnostic instead of substituting silently).
+      // Re-pinned by K7 client-seq-persistence (named reason: the bundle footer
+      // now passes useRef through so the status sequence guard survives
+      // re-renders; transform and banner untouched).
+      ['dsh/build-client.mjs', '29a3cea74ed2c9170c4b7be0f4472b3ff407ce42badd61dd3478c648c1ba6234'],
       ['dsh/host.mjs', '537b90b5c462143bf5e68b91ef5b89d000f7124816641f6a84bd3e0ffc0d7900'],
     ]);
     for (const [rel, hex] of CURRENT_PINS) {

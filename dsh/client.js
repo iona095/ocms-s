@@ -247,7 +247,7 @@ const OCMS_REMOTE_CONTRIBUTION = Object.freeze({
 
 // The DSH plugin face. react arrives through the ModuleLoader factory
 // require (implicit external seed word); nothing else is requested.
-function createOcmsClient({ createElement: h, useState, useEffect }) {
+function createOcmsClient({ createElement: h, useState, useEffect, useRef }) {
   const PureView = makeModelsView(h, null);
 
   function OcmsModels(props) {
@@ -259,11 +259,21 @@ function createOcmsClient({ createElement: h, useState, useEffect }) {
     // the latest started operation may write status. A slow refresh that
     // settles after a fresh Stop is dropped instead of resurrecting ONLINE
     // with an iframe on a dead port.
+    // K7: the generation must survive re-renders — K2 kept it in the render
+    // closure, which React re-executes from zero. A host-provided useRef
+    // persists it across renders; without one the render-local counter keeps
+    // mount-scope ordering only.
+    const seqRef = typeof useRef === 'function' ? useRef(0) : null;
     let seq = 0;
-    const current = (my) => my === seq;
+    const take = () => {
+      if (seqRef !== null) { seqRef.current += 1; return seqRef.current; }
+      seq += 1;
+      return seq;
+    };
+    const current = (my) => (seqRef !== null ? my === seqRef.current : my === seq);
     useEffect(() => {
       let alive = true;
-      const my = ++seq;
+      const my = take();
       Promise.resolve(lifecycle.refresh && lifecycle.refresh())
         .then((s) => { if (alive && current(my)) setStatus(normalizeStatus(s)); })
         .catch((err) => {
@@ -273,13 +283,13 @@ function createOcmsClient({ createElement: h, useState, useEffect }) {
     }, [lifecycle]);
     const face = {
       refresh: async function () {
-        const my = ++seq;
+        const my = take();
         const s = normalizeStatus(await lifecycle.refresh());
         if (current(my)) setStatus(s);
         return s;
       },
       start: async function () {
-        const my = ++seq;
+        const my = take();
         try {
           const s = normalizeStatus(await lifecycle.start());
           if (current(my)) setStatus(s);
@@ -295,7 +305,7 @@ function createOcmsClient({ createElement: h, useState, useEffect }) {
         }
       },
       stop: async function () {
-        const my = ++seq;
+        const my = take();
         try {
           const s = normalizeStatus(await lifecycle.stop());
           if (current(my)) setStatus(s);
@@ -358,7 +368,7 @@ function createOcmsClient({ createElement: h, useState, useEffect }) {
 
   return { inject, apply };
 }
-var ocmsClient = createOcmsClient({ createElement: React.createElement, useState: React.useState, useEffect: React.useEffect });
+var ocmsClient = createOcmsClient({ createElement: React.createElement, useState: React.useState, useEffect: React.useEffect, useRef: React.useRef });
 module.exports = { inject: ocmsClient.inject, apply: ocmsClient.apply };
 return module.exports;
 } });
