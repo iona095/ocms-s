@@ -112,14 +112,14 @@ export function stubInstallScope() {
 // PATH) reports "skipped: <capability>" instead of an uncaught prerequisite
 // error. Callers must return immediately when it returns null.
 export function resolveRealScopeOrSkip(t, label = 'pinned DSH 0.2.1-alpha.2 installed on PATH (resolveInstalledScope)') {
-  try {
-    return resolveInstalledScope();
-  } catch (err) {
-    const message = String((err && err.message) || err);
-    if (!/no dsh executable on PATH/.test(message)) throw err;
-    t.skip(label + ': ' + message);
+  // The ambient stub prefix must not satisfy a REAL-install prerequisite. A
+  // missing non-stub executable is a declared skip; a present-but-skewed
+  // install still throws loudly.
+  if (!realDshInstalledOnPath()) {
+    t.skip(label + ': S2 fixture prerequisite missing: no dsh executable on PATH; cannot derive the install anchor.');
     return null;
   }
+  return resolveInstalledScope();
 }
 // The stub scope for this process (memoised through the shared helper).
 export function resolvedStubScope() {

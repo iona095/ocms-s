@@ -56,6 +56,9 @@ export function stubDshTree() {
     if (pkg === 'dsh-app-boot' || pkg === 'cordis-plugin-include') manifest.main = 'lib/index.mjs';
     fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(manifest), 'utf8');
   }
+  // Some inventory tests resolve the owning DSH manifest two levels above the
+  // utility scope; provide the pinned top-level manifest in the stub tree.
+  fs.writeFileSync(path.join(prefix, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh', version: STUB_VERSIONS.dsh }), 'utf8');
   const yamlDist = path.join(REPO_ROOT, 'node_modules', 'yaml', 'dist', 'index.js');
   const yamlUrl = pathToFileURL(yamlDist).href;
   fs.writeFileSync(path.join(scope, 'dsh-app-boot', 'lib', 'index.mjs'), [
@@ -95,7 +98,8 @@ export function stubDshTree() {
     'export function readProfilePatches(kind, context, initial) {',
     '  const base = [];',
     '  for (const layer of (initial.layers || [])) base.push(...layer.patches);',
-    '  return [...base, ...(initial.patches || [])];',
+    '  const overlays = context && Array.isArray(context.overlays) ? context.overlays : [];',
+    '  return [...base, ...(initial.patches || []), ...overlays];',
     '}',
     'export function composeEntries(patchesArray) {',
     '  const flat = [];',
@@ -127,9 +131,8 @@ export function stubDshTree() {
     'export async function withFileLock(lockPath, fn, options) {',
     '  const opts = options || {};',
     '  const declaredWait = typeof opts.waitMs === "number" ? opts.waitMs : null;',
-'  // The product passes the caller-supplied waitMs as the LOCK wait; the orchestration',
-'  // deadline is enforced by the caller itself, so the stub must not refuse before it.',
-'  const waitMs = declaredWait === null ? 60000 : Math.max(declaredWait + 30000, 60000);',
+    '  // Mirror the native lock contract: the caller-supplied waitMs is the LOCK wait.',
+    '  const waitMs = declaredWait === null ? 60000 : declaredWait;',
     '  const actualLockPath = lockPath + ".lock";',
     '  const started = Date.now();',
     '  for (;;) {',

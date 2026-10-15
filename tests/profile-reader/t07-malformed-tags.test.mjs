@@ -18,6 +18,7 @@ import {
   makeFixtureBundle,
   bindReal,
   readerOpts,
+  requireRealCompositionOrSkip,
   snapshotTree,
   assertNoMutation,
   assertNoSecrets,
@@ -68,6 +69,7 @@ describe('S2 T07 — malformed YAML and tag refusal', () => {
     });
   }
 
+  const NATIVE_DIALECT_LABELS = new Set(['unknown-tag-inside-entry', 'unknown-tag-outside-entry', 'unknown-tag-on-models', 'js-tag-on-mapping']);
   for (const [label, raw] of [
     ['unknown-tag-inside-entry', '- id: llm-pi-ai\n  name: X\n  config: !foo {providers: {}}\n'],
     ['unknown-tag-outside-entry', '- id: other\n  config: !foo {a: 1}\n- id: llm-pi-ai\n  config: {providers: {}}\n'],
@@ -77,7 +79,8 @@ describe('S2 T07 — malformed YAML and tag refusal', () => {
     ['null-row', '-\n- id: llm-pi-ai\n  config: {providers: {}}\n'],
     ['array-row', '- [a, b]\n- id: llm-pi-ai\n  config: {providers: {}}\n'],
   ]) {
-    it(`T07 ${label} refuses without writing`, async () => {
+    it(`T07 ${label} refuses without writing`, async (t) => {
+      if (NATIVE_DIALECT_LABELS.has(label) && !requireRealCompositionOrSkip(t, 'real DSH YAML-dialect semantics for unknown and custom tags')) return;
       const { profileDir, forged } = hostile(`tag-${label}`, raw);
       // llm row needs the fixture name for composition; raw rows here omit
       // names (absent names apply) except where the tag itself must fail.
@@ -89,7 +92,8 @@ describe('S2 T07 — malformed YAML and tag refusal', () => {
     });
   }
 
-  it('T07 unknown tags refuse even when outside the managed entry (never silently dropped)', async () => {
+  it('T07 unknown tags refuse even when outside the managed entry (never silently dropped)', async (t) => {
+    if (!requireRealCompositionOrSkip(t, 'real DSH YAML-dialect semantics for unknown tags')) return;
     const { profileDir, forged } = hostile(
       'tag-outside',
       '- id: unrelated\n  config:\n    keep: !custom-tag value\n- id: llm-pi-ai\n  config: {providers: {}}\n',
@@ -111,7 +115,8 @@ describe('S2 T07 — malformed YAML and tag refusal', () => {
     assertNoMutation(snap, profileDir, 'T07 cyclic: read mutated disk');
   });
 
-  it('T07 tag-shaped payloads never execute and never leak into refusals', async () => {
+  it('T07 tag-shaped payloads never execute and never leak into refusals', async (t) => {
+    if (!requireRealCompositionOrSkip(t, 'real DSH YAML-dialect semantics for custom tags')) return;
     const { profileDir, forged } = hostile(
       'tagexec',
       '- id: llm-pi-ai\n  config: !explode {providers: {}, note: SYNTHETIC_FAKE_KEY_alpha bravo 001}\n',
@@ -122,7 +127,8 @@ describe('S2 T07 — malformed YAML and tag refusal', () => {
     assertNoSecrets(r, 'T07 tagexec refusal');
   });
 
-  it('T07 js-tagged id is not an ownership candidate', async () => {
+  it('T07 js-tagged id is not an ownership candidate', async (t) => {
+    if (!requireRealCompositionOrSkip(t, 'real DSH YAML-dialect semantics for custom !!js tags')) return;
     // `id: !!js "llm-pi-ai"` boxes to an object in the composition dialect:
     // it must not count as the owned row.
     const { profileDir, forged } = hostile(

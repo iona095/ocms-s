@@ -241,14 +241,24 @@ export function resolveInstalledScope({ pathEnv = process.env.PATH ?? '' } = {})
 // t.skip('<missing capability>') and returns null. Callers must return
 // immediately when it returns null (never fall through and assert on null).
 export function resolveRealScopeOrSkip(t, label = 'pinned DSH 0.2.1-alpha.2 installed on PATH (resolveInstalledScope)') {
-  try {
-    return resolveInstalledScope();
-  } catch (err) {
-    const message = String((err && err.message) || err);
-    if (!/no dsh executable on PATH/.test(message)) throw err;
-    t.skip(label + ': ' + message);
+  // The ambient stub prefix must not satisfy a REAL-install prerequisite. A
+  // missing non-stub executable is a declared skip; a present-but-skewed
+  // install still throws loudly.
+  if (!realDshInstalledOnPath()) {
+    t.skip(label + ': S2 fixture prerequisite missing: no dsh executable on PATH; cannot derive the install anchor.');
     return null;
   }
+  return resolveInstalledScope();
+}
+
+// Tests that assert the installed loader's exact composition or YAML-dialect
+// behavior call this first. The flat test-only stub intentionally does not
+// reimplement those native semantics. A missing install is a declared skip;
+// callers return immediately when it returns false.
+export function requireRealCompositionOrSkip(t, label = 'real DSH composition semantics (pinned DSH 0.2.1-alpha.2 installed tree)') {
+  if (realDshInstalledOnPath()) return true;
+  t.skip(label);
+  return false;
 }
 
 // A1: the profile suites need a composition install scope. CI has the pinned DSH

@@ -6,6 +6,11 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { stringify as stringifyYaml } from 'yaml';
 import { resolveProfileTarget } from '../../profile/target-resolver.mjs';
+import { installStubDshOnAmbientPath } from '../support/dsh-stub-tree.mjs';
+
+// The UI and preview paths fall back to the ambient PATH. Install the stub
+// scope when no real DSH is installed so these tests are machine-independent.
+installStubDshOnAmbientPath();
 export { assert };
 let counter = 0;
 export function makeTempHome(prefix = 'ocms-s5-') {

@@ -24,6 +24,7 @@ import {
   bindReal,
   readerOpts,
   resolveRealScopeOrSkip,
+  requireRealCompositionOrSkip,
   snapshotTree,
   assertNoMutation,
   assertNoSecrets,
@@ -231,7 +232,8 @@ describe('S2 layer composition (bundles, user, home, overlays)', () => {
     assertNoMutation(snap, profileDir, 'S2 telemetry: read mutated disk');
   });
 
-  it('S2 name-mismatched user row is inert: OVERRIDDEN plus ADDRESSABILITY_UNVERIFIED', async () => {
+  it('S2 name-mismatched user row is inert: OVERRIDDEN plus ADDRESSABILITY_UNVERIFIED', async (t) => {
+    if (!requireRealCompositionOrSkip(t, 'real DSH loader addressability semantics (name mismatch and bundle mounting)')) return;
     const profileDir = makeProfile(home, 'mismatch', {
       entries: [llmRow({ config: userModels(), name: 'Wrong Name' })],
       bundles: [FIXTURE_BUNDLE_PKG],
@@ -246,7 +248,8 @@ describe('S2 layer composition (bundles, user, home, overlays)', () => {
     assertNoMutation(snap, profileDir, 'S2 mismatch: read mutated disk');
   });
 
-  it('S2 bundle-less profile leaves the user row inert: OVERRIDDEN plus ADDRESSABILITY_UNVERIFIED', async () => {
+  it('S2 bundle-less profile leaves the user row inert: OVERRIDDEN plus ADDRESSABILITY_UNVERIFIED', async (t) => {
+    if (!requireRealCompositionOrSkip(t, 'real DSH loader addressability semantics (bundle mounting)')) return;
     const profileDir = makeProfile(home, 'nobundle', { entries: [llmRow({ config: userModels() })], bundles: [] });
     const snap = snapshotTree(profileDir);
     const r = await readManagedConfig(readerOpts(bind('nobundle')));

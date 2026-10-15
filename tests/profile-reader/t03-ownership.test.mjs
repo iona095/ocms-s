@@ -21,6 +21,7 @@ import {
   makeFixtureBundle,
   bindReal,
   readerOpts,
+  requireRealCompositionOrSkip,
   snapshotTree,
   assertNoMutation,
   FIXTURE_LLM_NAME,
@@ -78,7 +79,8 @@ describe('S2 T03 — ownership and stored/effective distinction', () => {
     assertNoMutation(snap, profileDir, 'T03 bundle-owned: read mutated disk');
   });
 
-  it('T03 home-only definition refuses NOT_PROFILE_OWNED with home attribution', async () => {
+  it('T03 home-only definition refuses NOT_PROFILE_OWNED with home attribution', async (t) => {
+    if (!requireRealCompositionOrSkip(t, 'real DSH home-layer composition semantics')) return;
     // No user row at all; the home layer alone supplies managed arrays.
     // S1 refuses this shape at admission, so the binding is transplanted
     // from a valid donor: S2 discovers current bytes, never trusts shape.
@@ -112,7 +114,8 @@ describe('S2 T03 — ownership and stored/effective distinction', () => {
     assertNoMutation(snap, profileDir, 'T03 home-only: read mutated disk');
   });
 
-  it('T03 later home layer replacing managed arrays reports OVERRIDDEN with attribution', async () => {
+  it('T03 later home layer replacing managed arrays reports OVERRIDDEN with attribution', async (t) => {
+    if (!requireRealCompositionOrSkip(t, 'real DSH home-layer composition semantics')) return;
     const profileDir = makeProfile(home, 'homeoverride', { entries: [llmRow({ config: userModels() })], bundles: [FIXTURE_BUNDLE_PKG] });
     makeFixtureBundle(profileDir);
     const target = bind('homeoverride');

@@ -19,6 +19,7 @@ import {
   makeFixtureBundle,
   bindReal,
   readerOpts,
+  requireRealCompositionOrSkip,
   snapshotTree,
   assertNoMutation,
   SECRET_MARKERS,
@@ -73,7 +74,8 @@ describe('S2 read preservation (T05/T06 support)', () => {
     assertNoMutation(snap, profileDir, 'T05 styled: read mutated disk');
   });
 
-  it('T06 unrelated !!js tags are preserved as data, never executed', async () => {
+  it('T06 unrelated !!js tags are preserved as data, never executed', async (t) => {
+    if (!requireRealCompositionOrSkip(t, 'real DSH YAML-dialect semantics for custom !!js tags')) return;
     const profileDir = makeProfile(home, 'jstag', { bundles: [FIXTURE_BUNDLE_PKG], entries: null });
     makeFixtureBundle(profileDir);
     const raw = [

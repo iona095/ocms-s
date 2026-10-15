@@ -70,6 +70,17 @@ describe('real installed scope is never silently replaced by the stub', () => {
     });
   });
 
+  it('the ambient stub prefix alone still declares a skip', async (t) => {
+    const prefix = path.dirname(path.dirname(stubInstallScope()));
+    let skipped = null;
+    const fake = { skip(message) { skipped = message; } };
+    withPathEnv(prefix, () => {
+      assert.equal(resolveRealScopeOrSkip(fake), null);
+    });
+    assert.match(skipped, /pinned DSH/);
+    assert.match(skipped, /no dsh executable on PATH/);
+  });
+
   it('the stub remains available to tests that do not need a real install', async (t) => {
     const empty = tempDir(t, 'ocms-0c-stub-');
     assert.equal(resolveRealScope({ pathEnv: empty }), stubInstallScope());
