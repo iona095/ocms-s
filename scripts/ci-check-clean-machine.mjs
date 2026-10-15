@@ -12,6 +12,10 @@
 import path from 'node:path';
 import process from 'node:process';
 import { existsSync } from 'node:fs';
+// fileURLToPath, NOT new URL(...).pathname: pathname is percent-encoded, so a
+// checkout path containing a space made the invocation guard below never match
+// and this hermeticity gate silently exited 0 having checked nothing.
+import { fileURLToPath } from 'node:url';
 
 // Profile variables that must exist on this platform before the suites may run.
 // Windows runners set USERPROFILE/APPDATA/LOCALAPPDATA and not HOME; POSIX
@@ -80,7 +84,7 @@ function defaultHasCommand(name, { env, platform }) {
 }
 
 // Direct invocation: perform the real check.
-if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname.replace(/^\//, ''))) {
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
   const result = checkCleanMachine();
   if (result.ok) {
     console.log(

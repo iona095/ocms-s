@@ -15,16 +15,19 @@ import { checkCleanMachine, requiredProfileVars } from '../../scripts/ci-check-c
 
 // Split so this file does not itself carry a matchable literal: the
 // no-machine-paths guard scans tests/ as well as product source.
-const HOME_SEG = 'Us' + 'ers';
-const RUNNER = 'C:' + String.fromCharCode(92) + HOME_SEG + String.fromCharCode(92) + 'runneradmin';
+// The no-machine-paths guard (tests/v1.4.6-rc5/no-machine-paths.test.mjs)
+// exempts a name segment written as <placeholder>; that is the sanctioned
+// escape, so use it instead of obfuscating the separator characters.
+const SEP = String.fromCharCode(92);
+const RUNNER = 'C:' + SEP + 'Users' + SEP + '<runneradmin>';
 const WIN_ENV = {
   USERPROFILE: RUNNER,
-  APPDATA: RUNNER + String.fromCharCode(92) + 'AppData' + String.fromCharCode(92) + 'Roaming',
-  LOCALAPPDATA: RUNNER + String.fromCharCode(92) + 'AppData' + String.fromCharCode(92) + 'Local',
-  PATH: 'C:' + String.fromCharCode(92) + 'hostedtoolcache' + String.fromCharCode(92) + 'node',
+  APPDATA: RUNNER + SEP + 'AppData' + SEP + 'Roaming',
+  LOCALAPPDATA: RUNNER + SEP + 'AppData' + SEP + 'Local',
+  PATH: 'C:' + SEP + 'hostedtoolcache' + SEP + 'node',
 };
 const POSIX_ENV = {
-  HOME: String.fromCharCode(47) + 'home' + String.fromCharCode(47) + 'runner',
+  HOME: '/home/<runner>',
   PATH: '/opt/hostedtoolcache/node',
 };
 const neverExists = () => false;
@@ -92,7 +95,7 @@ describe('CI1 — CI clean-machine condition', () => {
 
   it('NEGATIVE CONTROL: DSH_HOME set still fails', () => {
     const res = checkCleanMachine({
-      env: { ...WIN_ENV, DSH_HOME: RUNNER + String.fromCharCode(92) + '.dsh' },
+      env: { ...WIN_ENV, DSH_HOME: RUNNER + SEP + '.dsh' },
       platform: 'win32',
       exists: neverExists,
       hasCommand: noCommand,
@@ -112,7 +115,7 @@ describe('CI1 — CI clean-machine condition', () => {
   });
 
   it('every failure is reported at once, each named', () => {
-    const env = { ...WIN_ENV, DSH_HOME: RUNNER + String.fromCharCode(92) + 'x' };
+    const env = { ...WIN_ENV, DSH_HOME: RUNNER + SEP + 'x' };
     delete env.LOCALAPPDATA;
     const res = checkCleanMachine({
       env,
