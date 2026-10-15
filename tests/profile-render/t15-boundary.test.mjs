@@ -81,7 +81,10 @@ describe('S3 T18 — planning and frozen-source regressions', () => {
     // in the legacy verdict instead of being dropped.
     // Re-pinned by the D04 defect fix with the named reason: backup names
     // stay unique inside one timestamp tick via legacyBackupPath.
-    assert.equal(sha('sync.mjs'), 'a06dd0911b9aee04c1fb8ce395f7d4a71cd75596541ae724119acf0e8d3df923', 'sync.mjs drift beyond the CURRENT reviewed bytes is forbidden');
+    // Re-pinned by the D05 defect fix with the named reason: legacy Apply
+    // edits managed arrays inside the existing document (surgicalLegacyUpdate)
+    // so comments, key order, and unrelated styling survive the write.
+    assert.equal(sha('sync.mjs'), 'f61f09d822bfa182d20756f976bbe657f40db0b4dd59205d9cb90e376ef40ecb', 'sync.mjs drift beyond the CURRENT reviewed bytes is forbidden');
     // The old "no profile/* modification" tripwire is replaced, not dropped:
     // the three files v1.4.7-rc6 §5 changed are now byte-pinned at their
     // re-pinned values under the named reason "version-skew reproducibility

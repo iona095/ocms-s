@@ -1622,3 +1622,36 @@ describe('21. exact terminal -free counterpart fallback', () => {
     assert.ok(report.indexOf('- go/b-free counterpart=go/b route=opencode-go-messages') < report.indexOf('- zen/z-free counterpart=zen/z route=opencode'));
   });
 });
+
+describe('D05 — legacy Apply preserves comments and layout', () => {
+  it('an end-to-end Apply keeps a leading comment and unrelated keys', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ocms-d05-'));
+    try {
+      const file = path.join(dir, 'settings.yaml');
+      const NL = String.fromCharCode(10);
+      const body = stringifyYaml({
+        'llm-pi-ai': { providers: { opencode: { displayName: 'opencode', models: [{ id: 'stale-model' }] } } },
+        keepMe: { nested: true },
+      });
+      fs.writeFileSync(file, '# operator note: do not lose me' + NL + body, 'utf8');
+      const before = fs.readFileSync(file, 'utf8');
+      const sources = sourcesFor({
+        goIds: ['model-a'],
+        zenIds: ['model-z'],
+        goModels: { 'model-a': catRecord({ provider: { npm: '@ai-sdk/openai-compatible' } }) },
+        zenModels: { 'model-z': catRecord({ id: 'model-z', name: 'Z', provider: { npm: '@ai-sdk/openai' } }) },
+        goDocs: { 'model-a': 'https://opencode.ai/zen/go/v1/chat/completions' },
+        zenDocs: { 'model-z': 'https://opencode.ai/zen/v1/responses' },
+      });
+      const outcome = syncFromSources({ settingsPath: file, sources });
+      assert.equal(outcome.result, 'UPDATED');
+      const after = fs.readFileSync(file, 'utf8');
+      assert.ok(after.startsWith('# operator note: do not lose me' + NL), 'leading comment preserved: ' + JSON.stringify(after.slice(0, 120)));
+      assert.ok(after.includes('keepMe:'), 'unrelated keys preserved');
+      const written = parseYaml(after);
+      assert.deepEqual(written['llm-pi-ai'].providers.opencode.models.map((m) => m.id), ['model-z']);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

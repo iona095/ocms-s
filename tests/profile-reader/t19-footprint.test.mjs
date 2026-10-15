@@ -60,7 +60,11 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
       // SETTINGS_INVALID and surface in the legacy verdict).
       // Re-pinned by the D04 defect fix (named reason: backup names stay
       // unique inside one timestamp tick via legacyBackupPath).
-      ['sync.mjs', 'a06dd0911b9aee04c1fb8ce395f7d4a71cd75596541ae724119acf0e8d3df923'],
+      // Re-pinned by the D05 defect fix (named reason: legacy Apply edits
+      // managed arrays inside the existing document via surgicalLegacyUpdate
+      // so comments, key order, and unrelated styling survive the write).
+      ['sync.mjs', 'f61f09d822bfa182d20756f976bbe657f40db0b4dd59205d9cb90e376ef40ecb'],
+
 
       // Re-pinned by the 0b/D3 lock-label fix (named reason: an unexpected
       // lock-acquisition failure was blanket-labeled INCOMPATIBLE_DSH; it is

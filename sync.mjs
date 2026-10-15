@@ -19,7 +19,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { isDeepStrictEqual as deepEqual } from 'node:util';
 import { pathToFileURL } from 'node:url';
-import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
+import { parse as parseYaml, stringify as stringifyYaml, parseDocument, isMap as isYamlMap } from 'yaml';
 import { parse as parseHtml } from 'node-html-parser';
 
 // ---------------------------------------------------------------------------
@@ -1588,6 +1588,50 @@ export function assertYamlRoundTrip(config) {
   return text;
 }
 
+// D05: update only the managed models arrays inside the existing settings
+// document instead of re-serializing the whole file. Parsing to a Document
+// and editing nodes in place keeps comments, key order, and scalar styles
+// of everything the sync does not own; only the replaced models arrays are
+// re-emitted. Throws an unresolved SETTINGS_INVALID on unparseable input.
+export function surgicalLegacyUpdate(text, desired) {
+  let doc = null;
+  try {
+    doc = parseDocument(String(text));
+  } catch {
+    throw unresolved('SETTINGS_INVALID: settings file is not valid YAML');
+  }
+  if (!doc || (doc.errors && doc.errors.length > 0) || !isYamlMap(doc.contents)) {
+    throw unresolved('SETTINGS_INVALID: settings root must be a mapping');
+  }
+  let llm = doc.contents.get('llm-pi-ai', true);
+  if (!llm || !isYamlMap(llm)) {
+    llm = doc.createNode({});
+    doc.contents.set('llm-pi-ai', llm);
+  }
+  let providers = llm.get('providers', true);
+  if (!providers || !isYamlMap(providers)) {
+    providers = doc.createNode({});
+    llm.set('providers', providers);
+  }
+  for (const route of MANAGED_ROUTE_KEYS) {
+    const wanted = (desired && Array.isArray(desired[route])) ? structuredClone(desired[route]) : [];
+    let provider = providers.get(route, true);
+    if (!provider || !isYamlMap(provider)) {
+      if (wanted.length === 0) continue;
+      const def = MANAGED_ROUTES[route] || {};
+      provider = doc.createNode({
+        displayName: route,
+        api: def.api || 'openai-responses',
+        baseURL: def.baseURL || 'https://example.com',
+        apiKeyEnv: def.apiKeyEnv || 'OPENCODE_API_KEY',
+      });
+      providers.set(route, provider);
+    }
+    provider.set('models', doc.createNode(wanted));
+  }
+  return String(doc.toString());
+}
+
 function timestampStamp() {
   return new Date().toISOString().replace(/[:.]/g, '-');
 }
@@ -1804,8 +1848,9 @@ export function commitPlan(plan) {
   const backupPath = legacyBackupPath(plan.settingsPath, stamp);
   const tempPath = plan.settingsPath + '.tmp';
   try {
-    const next = buildNewConfig(current, plan.desired);
-    const yamlText = assertYamlRoundTrip(next);
+    // D05: edit the managed arrays inside the existing document so
+    // comments, key order, and unrelated styling survive the write.
+    const yamlText = surgicalLegacyUpdate(currentBytes.toString('utf8'), plan.desired);
     const generated = parseYaml(yamlText);
     if (!generated || !isMapping(generated)) {
       throw unresolved('GENERATED_SETTINGS_INVALID: YAML root must be a mapping');
