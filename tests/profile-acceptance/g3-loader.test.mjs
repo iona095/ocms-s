@@ -13,7 +13,7 @@ import { makeTempHome, sandboxDshHome, buildReadyPlan, readPatchBytes, backupNam
 import { readManagedConfig } from "../../profile/config-reader.mjs";
 import { buildProfileAwarePlan } from "../../profile/plan-builder.mjs";
 import { ProfileAwareCommit } from "../../profile/commit.mjs";
-import { resolveRealScope } from "../profile-reader/helpers.mjs";
+import { resolveRealScopeOrSkip } from "../profile-reader/helpers.mjs";
 const NATIVE_ENTRY = {
   editorPkg: "@deepseek-ai/dsh-config-editor", editorVersion: "0.2.1-alpha.2",
   editorFile: "dsh-config-editor/lib/index.js", // Q1: joined onto the run-time scope at use
@@ -32,10 +32,12 @@ function adversarialCorpus() {
   ];
 }
 describe("G3 loader native (S6-R3 F1)", () => {
-  it("native entrypoint recorded read-only; TS declarations distinguished", async () => {
+  it("native entrypoint recorded read-only; TS declarations distinguished", async (t) => {
     assert.equal(NATIVE_ENTRY.editorVersion, "0.2.1-alpha.2");
     assert.equal(NATIVE_ENTRY.loaderVersion, "1.0.6-alpha.1");
-    const text = fs.readFileSync(path.join(resolveRealScope(), NATIVE_ENTRY.editorFile), "utf8");
+    const scope = resolveRealScopeOrSkip(t);
+    if (scope === null) return;
+    const text = fs.readFileSync(path.join(scope, NATIVE_ENTRY.editorFile), "utf8");
     assert.ok(text.includes("async edit(entry, change)"));
     assert.ok(text.includes('withFileLock(join(this.ownerContext.profileContext.dir, "package.json")'));
     assert.ok(text.includes("fiber.ctx.waterfall"));

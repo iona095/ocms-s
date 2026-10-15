@@ -2,18 +2,19 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import path from 'node:path';
 import { ProfileAwareCommit } from '../../profile/commit.mjs';
-import { assert, makeTempHome, sandboxDshHome, buildReadyPlan, readPatchBytes, readBackupBytes, backupNames, tempNames, patchMtimeMs, minimalSources, makeProfile, bindReal, readerOpts, resolveRealScope, makeFixtureBundle } from './helpers.mjs';
+import { assert, makeTempHome, sandboxDshHome, buildReadyPlan, readPatchBytes, readBackupBytes, backupNames, tempNames, patchMtimeMs, minimalSources, makeProfile, bindReal, readerOpts, resolveRealScopeOrSkip, makeFixtureBundle } from './helpers.mjs';
 const WFA = 'write' + 'FileAtomic';
 describe('S4-B2 ordering and side effects', () => {
   let home; let restore; let cleanupHome;
   beforeEach(() => { restore = sandboxDshHome(); const h = makeTempHome(); home = h.home; cleanupHome = h.cleanup; });
   afterEach(() => { try { cleanupHome(); } catch {} try { restore(); } catch {} });
-  it('backup exact-byte precedes writer; writer gets exact bytes and mode', async () => {
+  it('backup exact-byte precedes writer; writer gets exact bytes and mode', async (t) => {
     const built = await buildReadyPlan({ home });
     const plan = built.plan; const profileDir = built.profileDir;
     const beforeBytes = readPatchBytes(profileDir);
     let seenArgs = null;
-    const realScope = resolveRealScope();
+    const realScope = resolveRealScopeOrSkip(t);
+    if (realScope === null) return;
     const { pathToFileURL } = await import('node:url');
     const realMod = await import(pathToFileURL(realScope + '/dsh-atomic-write/lib/index.js').href);
     const realFn = realMod[WFA];

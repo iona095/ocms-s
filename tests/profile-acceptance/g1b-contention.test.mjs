@@ -7,6 +7,62 @@ import { pathToFileURL } from "node:url";
 import { makeTempHome, sandboxDshHome, buildReadyPlan, readPatchBytes, backupNames, tempNames, bindReal } from "../profile-commit/helpers.mjs";
 import { writeTextFile, joinPath } from "../profile-cli-ui/helpers.mjs";
 import { readManagedConfig } from "../../profile/config-reader.mjs";
+
+// Every wait below is bounded: on the deadline the child is killed and the wait
+// fails with a message naming what it waited for. Nothing here may hang.
+const CONTENTION_DEADLINE_MS = 45000;
+
+function boundedChildOutput(child, { timeoutMs, label }) {
+  return new Promise((resolve, reject) => {
+    let stdout = "";
+    child.stdout.on("data", (d) => { stdout += d; });
+    child.stderr.on("data", () => {});
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try { child.kill("SIGKILL"); } catch {}
+      reject(new Error("TIMED_OUT waiting for " + label + " to exit after " + timeoutMs + "ms; child killed (pid "
+        + String(child.pid) + "); output so far: " + JSON.stringify(stdout.slice(-200))));
+    }, timeoutMs);
+    child.on("close", () => { if (settled) return; settled = true; clearTimeout(timer); resolve(stdout); });
+    child.on("error", (err) => { if (settled) return; settled = true; clearTimeout(timer); reject(err); });
+  });
+}
+
+// Event-driven observation of the transient lock file, bounded by a deadline.
+// fs.watch on the directory reports the lock entry as it is created; the bounded
+// condition re-check (25 ms) only covers filesystems whose watcher misses the
+// event. Resolves true when observed, false once the children are gone or the
+// deadline expires. This replaces the 5 ms sampling loop that raced the lock.
+function waitForLockEvent(target, { timeoutMs, until }) {
+  return new Promise((resolve) => {
+    const dir = path.dirname(target);
+    const name = path.basename(target);
+    let watcher = null;
+    let done = false;
+    const finish = (observed) => {
+      if (done) return;
+      done = true;
+      clearTimeout(deadline);
+      clearInterval(recheck);
+      if (watcher !== null) { try { watcher.close(); } catch {} }
+      resolve(observed);
+    };
+    const deadline = setTimeout(() => finish(false), timeoutMs);
+    const recheck = setInterval(() => { try { if (fs.existsSync(target)) finish(true); } catch {} }, 25);
+    if (until !== undefined) until.then(() => finish(false));
+    if (fs.existsSync(target)) { finish(true); return; }
+    try {
+      watcher = fs.watch(dir, (event, filename) => {
+        if (filename === undefined || filename === null || String(filename) === name) finish(true);
+        else { try { if (fs.existsSync(target)) finish(true); } catch {} }
+      });
+      if (watcher.on) watcher.on("error", () => { /* the bounded re-check still runs */ });
+    } catch { watcher = null; }
+  });
+}
+
 describe("G1-B contention", () => {
   it("two adapters contend same package.json lock", async (t) => {
     const restore = sandboxDshHome();
@@ -26,14 +82,20 @@ describe("G1-B contention", () => {
         const spawnFn = mod["spawn"];
         const env1 = { ...process.env, PLAN_FILE: planFile, COMMIT_URL: commitUrl };
         const env2 = { ...process.env, PLAN_FILE: planFile, COMMIT_URL: commitUrl };
+        // The lock observer is armed BEFORE the children start, so its creation
+        // event cannot be missed by a sampling race; the wait is bounded and
+        // stops as soon as both children are gone.
+        let childrenDone;
+        const childrenGone = new Promise((res) => { childrenDone = res; });
+        const lockSeen = waitForLockEvent(lockPath, { timeoutMs: CONTENTION_DEADLINE_MS, until: childrenGone });
         const c1 = spawnFn(process.execPath, ["-e", childJs], { env: env1, stdio: ["ignore", "pipe", "pipe"] });
         const c2 = spawnFn(process.execPath, ["-e", childJs], { env: env2, stdio: ["ignore", "pipe", "pipe"] });
-        let sawLock = false;
-        const poll = setInterval(() => { try { if (fs.existsSync(lockPath)) sawLock = true; } catch {} }, 5);
-        const p1 = new Promise((res, rej) => { let s=""; c1.stdout.on("data", d=>s+=d); c1.stderr.on("data",()=>{}); c1.on("close", ()=>res(s)); c1.on("error", rej); });
-        const p2 = new Promise((res, rej) => { let s=""; c2.stdout.on("data", d=>s+=d); c2.stderr.on("data",()=>{}); c2.on("close", ()=>res(s)); c2.on("error", rej); });
-        const outs = await Promise.all([p1, p2]);
-        clearInterval(poll);
+        const outs = await Promise.all([
+          boundedChildOutput(c1, { timeoutMs: CONTENTION_DEADLINE_MS, label: "contending adapter 1 (ProfileAwareCommit waitMs=15000)" }),
+          boundedChildOutput(c2, { timeoutMs: CONTENTION_DEADLINE_MS, label: "contending adapter 2 (ProfileAwareCommit waitMs=15000)" }),
+        ]);
+        childrenDone();
+        const sawLock = await lockSeen;
         const j1 = JSON.parse(outs[0].trim().split("\n").pop());
         const j2 = JSON.parse(outs[1].trim().split("\n").pop());
         const r1 = j1.res || j1;
@@ -48,7 +110,7 @@ describe("G1-B contention", () => {
           console.log(`T11 intervals c1=[${j1.s0},${j1.e0}] c2=[${j2.s0},${j2.e0}] overlap=${overlap}`);
           assert.ok(overlap || sawLock, "genuine overlapping interval");
         }
-        assert.ok(sawLock, "overlapping lock observed");
+        assert.ok(sawLock, "the contended package.json.lock was never observed within " + CONTENTION_DEADLINE_MS + "ms (event-driven fs.watch on the profile dir, armed before the children started, plus a bounded 25 ms condition re-check)");
         assert.ok(!fs.existsSync(lockPath), "lock cleanup");
         assert.equal(backupNames(dir).length, 1);
         assert.deepEqual(tempNames(dir), []);

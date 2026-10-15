@@ -36,12 +36,12 @@ assert.equal(bS2.canonicalTarget, bS.canonicalTarget);
 it("direct runSettingsSync with PRODUCTION refuses before fetch", async () => {
 const prod = makeProductionHome();
 try {
-const p = writeTextFile(joinPath(prod.home, "settings.yaml"), "llm-pi-ai:\\n  providers: {}\\n");
+const p = writeTextFile(joinPath(prod.home, "settings.yaml"), "llm-pi-ai:\n  providers: {}\n");
 let calls = 0;
 const inner = fetchFromBodies(validSourceBodies());
 const res = await runSettingsSync({ settingsPath: p, dshHome: prod.home, fetchFn: async (...a) => { calls += 1; return inner(...a); }, confirmFn: async () => true, print: () => {} });
 assert.equal(res.ok, false);
-assert.ok(["PRODUCTION_SETTINGS_REFUSED","SCRATCH_MODE_PRODUCTION_REFUSED","SETTINGS_UNREADABLE"].includes(res.code));
+assert.ok(["PRODUCTION_SETTINGS_REFUSED","SCRATCH_MODE_PRODUCTION_REFUSED"].includes(res.code), "a PRODUCTION settings target must be refused by classification before any parse or fetch; got " + JSON.stringify(res.code) + " " + JSON.stringify(res.detail ?? null));
 assert.equal(calls, 0);
 assert.equal(backupCount(path.dirname(p)), 0);
 } finally { try { prod.cleanup(); } catch {} try { prod.restore(); } catch {} }

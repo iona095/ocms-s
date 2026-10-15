@@ -67,11 +67,18 @@ const escapeRe = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 // '@deepseek-ai/cordis' still counts as the bare token 'cordis'.
 const tokenPattern = (name) => '(?<![A-Za-z0-9_-])' + escapeRe(name) + '(?![A-Za-z0-9_-])';
 
+// Version boundaries: '1.0.10-alpha.1' must never match inside
+// '1.0.10-alpha.10', and '@deepseek-ai/dsh@0.2.1-alpha.2' must never match
+// inside '@deepseek-ai/dsh@0.2.1-alpha.20'. A bare substring test accepts the
+// longer version and turns the pin into a false green.
+const versionPattern = (version) => '(?<![0-9A-Za-z.-])' + escapeRe(version) + '(?![0-9A-Za-z.-])';
+const includesVersion = (text, version) => new RegExp(versionPattern(version)).test(String(text));
+
 // A package/version pair counts as asserted when both appear on ONE line: a
 // print step that lists a name and its expected version, then throws.
 const pairAsserted = (text, pkg, version) => String(text)
   .split(/\r?\n/)
-  .some((line) => new RegExp(tokenPattern(pkg)).test(line) && line.includes(version));
+  .some((line) => new RegExp(tokenPattern(pkg)).test(line) && includesVersion(line, version));
 
 const missingPairs = (text, set) => Object.entries(set)
   .filter(([pkg, version]) => !pairAsserted(text, pkg, version))
@@ -214,7 +221,7 @@ describe('v1.4.7-rc6 §7.3 CI pin', () => {
 
   it('RC6-CI-BEFORE the pinned DSH install carries --before=2026-10-14T11:40:00Z', () => {
     const pinned = installSteps(readWorkflow())
-      .filter(({ run }) => run.includes(BEFORE_FLAG) && run.includes(DSH_SPEC));
+      .filter(({ run }) => run.includes(BEFORE_FLAG) && includesVersion(run, DSH_SPEC));
     assert.ok(
       pinned.length > 0,
       'no "npm install -g --prefix <prefix> ' + BEFORE_FLAG + ' ' + DSH_SPEC + '" step exists; an '
@@ -247,7 +254,7 @@ describe('v1.4.7-rc6 §7.3 CI pin', () => {
   it('RC6-CI-MATRIX-ALPHA2 two entry-specific matrix entries, each asserting its own eleven versions', () => {
     const doc = readWorkflow();
     const dshJob = allJobs(doc).find(([, job]) => stepsOf(job)
-      .some((step) => typeof step.run === 'string' && step.run.includes(DSH_SPEC)));
+      .some((step) => typeof step.run === 'string' && includesVersion(step.run, DSH_SPEC)));
     assert.ok(dshJob, 'no job installs ' + DSH_SPEC);
     const [jobId, job] = dshJob;
 
@@ -286,7 +293,7 @@ describe('v1.4.7-rc6 §7.3 CI pin', () => {
     // 3. One install per entry, and the two installs are different steps: the
     //    --before install runs only for the verified entry, the unpinned install
     //    only for the alpha2 entry.
-    const installs = (entry, other) => entrySpecificSteps(job, entry, other, (run) => run.includes('npm install') && run.includes(DSH_SPEC));
+    const installs = (entry, other) => entrySpecificSteps(job, entry, other, (run) => run.includes('npm install') && includesVersion(run, DSH_SPEC));
     const pinned = (entry, other) => installs(entry, other).filter((step) => renderRun(step.run, entry).includes(BEFORE_FLAG));
     const unpinned = (entry, other) => installs(entry, other).filter((step) => !renderRun(step.run, entry).includes(BEFORE_FLAG));
 
@@ -304,12 +311,12 @@ describe('v1.4.7-rc6 §7.3 CI pin', () => {
     const [verified, alpha2] = firstIsPinned ? [first, second] : [second, first];
 
     assert.equal(
-      stepsFor(job, verified).filter((step) => typeof step.run === 'string' && step.run.includes('npm install') && step.run.includes(DSH_SPEC)).length,
+      stepsFor(job, verified).filter((step) => typeof step.run === 'string' && step.run.includes('npm install') && includesVersion(step.run, DSH_SPEC)).length,
       1,
       'the verified entry must run exactly one DSH install step (the pinned one)',
     );
     assert.equal(
-      stepsFor(job, alpha2).filter((step) => typeof step.run === 'string' && step.run.includes('npm install') && step.run.includes(DSH_SPEC)).length,
+      stepsFor(job, alpha2).filter((step) => typeof step.run === 'string' && step.run.includes('npm install') && includesVersion(step.run, DSH_SPEC)).length,
       1,
       'the alpha2 entry must run exactly one DSH install step (the unpinned one)',
     );
@@ -347,5 +354,35 @@ describe('v1.4.7-rc6 §7.3 CI pin', () => {
     };
     assertSteps(verified, alpha2, PINNED_SET, 'verified/--before (alpha.1 set)');
     assertSteps(alpha2, verified, ALPHA_2_SET, 'alpha2/unpinned (alpha.2 set)');
+  });
+
+  // Negative control for the pairing predicate itself. A bare substring test
+  // lets a LONGER version satisfy a SHORTER pin: '1.0.10-alpha.10' contains
+  // '1.0.10-alpha.1'. This control fails against such a predicate and passes
+  // only while every version comparison keeps a version boundary.
+  it('RC6-CI-PIN-EXACT a longer version never satisfies a shorter pin', () => {
+    const pkg = 'cordis-plugin-include';
+    const line = (version) => 'node_modules/@deepseek-ai/' + pkg + ': ' + version;
+    assert.deepEqual(
+      missingPairs(line('1.0.10-alpha.10'), { [pkg]: '1.0.10-alpha.1' }),
+      [pkg + ' 1.0.10-alpha.1'],
+      "'1.0.10-alpha.10' must NOT satisfy the '1.0.10-alpha.1' pin",
+    );
+    assert.deepEqual(
+      missingPairs(line('1.0.10-alpha.1'), { [pkg]: '1.0.10-alpha.1' }),
+      [],
+      "'1.0.10-alpha.1' must satisfy its own pin",
+    );
+    // The same exactness applies to the DSH spec the install-step checks use.
+    assert.equal(
+      includesVersion('npm install -g @deepseek-ai/dsh@0.2.1-alpha.20', DSH_SPEC),
+      false,
+      "'@deepseek-ai/dsh@0.2.1-alpha.20' must not count as the pinned '@deepseek-ai/dsh@0.2.1-alpha.2' install",
+    );
+    assert.equal(
+      includesVersion('npm install -g --prefix "$PREFIX" ' + DSH_SPEC, DSH_SPEC),
+      true,
+      'the exact pinned spec must count',
+    );
   });
 });

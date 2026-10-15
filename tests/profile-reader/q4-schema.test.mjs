@@ -18,7 +18,7 @@ import {
   makeFixtureBundle,
   bindReal,
   readerOpts,
-  resolveRealScope,
+  resolveRealScopeOrSkip,
   EXPECTED,
   FIXTURE_BUNDLE_PKG,
 } from './helpers.mjs';
@@ -42,16 +42,18 @@ afterEach(() => {
 });
 
 describe('S2 Q4 — installed schema evidence (read-only)', () => {
-  it('Q4 schema anchor resolves at the pinned version', () => {
-    const scope = resolveRealScope();
+  it('Q4 schema anchor resolves at the pinned version', (t) => {
+    const scope = resolveRealScopeOrSkip(t);
+    if (scope === null) return;
     const pkgDir = path.join(scope, 'dsh-llm-pi-ai');
     const manifest = JSON.parse(fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8'));
     assert.equal(manifest.name, '@deepseek-ai/dsh-llm-pi-ai');
     assert.equal(manifest.version, EXPECTED.dsh);
   });
 
-  it('Q4 config shape: providers mapping with optional models arrays', () => {
-    const scope = resolveRealScope();
+  it('Q4 config shape: providers mapping with optional models arrays', (t) => {
+    const scope = resolveRealScopeOrSkip(t);
+    if (scope === null) return;
     const configTypes = fs.readFileSync(path.join(scope, 'dsh-llm-pi-ai', 'lib', 'types', 'config.d.ts'), 'utf8');
     // Applicable symbols/paths (frozen shape expectations trace to these).
     assert.ok(configTypes.includes('PiAiProviderProfile'), 'missing PiAiProviderProfile');

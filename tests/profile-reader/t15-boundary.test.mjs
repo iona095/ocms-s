@@ -25,7 +25,7 @@ import {
   makeFixtureBundle,
   bindReal,
   readerOpts,
-  resolveRealScope,
+  resolveRealScopeOrSkip,
   EXPECTED,
   FIXTURE_BUNDLE_PKG,
 } from './helpers.mjs';
@@ -202,12 +202,13 @@ describe('S2 dependency admission fails closed (T15 behavioral)', () => {
     fs.rmSync(empty, { recursive: true, force: true });
   });
 
-  it('T15 retired-bundle pin matches the admitted installed source (read-only)', () => {
+  it('T15 retired-bundle pin matches the admitted installed source (read-only)', (t) => {
     // The reader refuses retired-bundle listings before any load call
     // because the loader would normalize the manifest on disk. That pin is
     // version-scoped: if the installed source names a different retired set,
     // this fails loudly instead of refusing the wrong profiles.
-    const scope = resolveRealScope();
+    const scope = resolveRealScopeOrSkip(t);
+    if (scope === null) return;
     const src = fs.readFileSync(
       path.join(scope, 'dsh-app-boot', 'lib', 'index.js'),
       'utf8',

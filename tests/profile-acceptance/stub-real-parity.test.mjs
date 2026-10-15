@@ -8,8 +8,9 @@
 //
 // Lives with the profile suites (runs in test:profile and the profile CI
 // job, never in npm test). Flat fixture shapes only, like the stub itself;
-// never a general DSH reimplementation. Requires the pinned real DSH on
-// PATH — resolveRealScope fails loudly without one, never skips.
+// never a general DSH reimplementation. Needs the pinned real DSH on PATH:
+// when it is absent this reports a declared skip naming that capability
+// (resolveRealScopeOrSkip), never an uncaught prerequisite error.
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import { readManagedConfig } from '../../profile/config-reader.mjs';
 import {
@@ -22,7 +23,7 @@ import {
   makeFixtureBundle,
   bindReal,
   readerOpts,
-  resolveRealScope,
+  resolveRealScopeOrSkip,
   FIXTURE_BUNDLE_PKG,
 } from '../profile-reader/helpers.mjs';
 import { makeStubAnchor } from '../v1.4.6-rc2/helpers.mjs';
@@ -69,11 +70,19 @@ describe('v1.4.6-rc4 stub/real parity (rc2 fixtures)', () => {
       const profileDir = makeProfile(home, fixture.profile, { entries, bundles: [FIXTURE_BUNDLE_PKG] });
       makeFixtureBundle(profileDir);
       const stub = makeStubAnchor(t);
-      const realScope = resolveRealScope();
+      const realScope = resolveRealScopeOrSkip(t);
+      if (realScope === null) return;
       const target = bindReal(home, fixture.profile);
       const viaStub = await readManagedConfig(readerOpts(target, { installAnchorDir: stub.anchor }));
       const viaReal = await readManagedConfig(readerOpts(target, { installAnchorDir: realScope }));
+      // Both paths must SUCCEED before their results can be compared. With two
+      // failing paths the equality assertions below hold vacuously
+      // (ok false === false, undefined status === undefined, undefined config
+      // deep-equal undefined) and the parity claim is a false green.
+      assert.equal(viaStub.ok, true, 'stub path must succeed before parity can be claimed: ' + JSON.stringify(viaStub).slice(0, 400));
+      assert.equal(viaReal.ok, true, 'real path must succeed before parity can be claimed: ' + JSON.stringify(viaReal).slice(0, 400));
       assert.equal(viaStub.ok, viaReal.ok, 'ok differs: stub=' + JSON.stringify(viaStub).slice(0, 300) + ' real=' + JSON.stringify(viaReal).slice(0, 300));
+      assert.equal(viaStub.status, viaReal.status, 'status differs: stub=' + viaStub.status + ' real=' + viaReal.status);
       assert.equal(viaStub.status, viaReal.status, 'status differs: stub=' + viaStub.status + ' real=' + viaReal.status);
       assert.deepEqual(viaStub.effectiveConfig, viaReal.effectiveConfig, 'parsed managed config differs');
     });

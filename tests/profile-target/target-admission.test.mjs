@@ -154,24 +154,27 @@ describe('S1 T17 — home/profile path admission (P0-R2 §8.1–8.2)', () => {
     }
   });
 
-  it('RED-S1-PATH-FILE-SYMLINK refuses patch file symlinked outside the profile', { todo: process.platform !== 'win32' ? false : undefined }, () => {
+  it('RED-S1-PATH-FILE-SYMLINK refuses patch file symlinked outside the profile', { todo: process.platform !== 'win32' ? false : undefined }, (t) => {
     const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'ocms-s1-outside-'));
     try {
       const target = path.join(outside, 'evil-patch.yml');
       fs.writeFileSync(target, '- id: llm-pi-ai\n', 'utf8');
       const dir = makeProfile(home, 'linked', { entries: standardEntries() });
       fs.rmSync(path.join(dir, 'cordis.patch.yml'));
+      const linkPath = path.join(dir, 'cordis.patch.yml');
       try {
-        fs.symlinkSync(target, path.join(dir, 'cordis.patch.yml'), 'file');
+        fs.symlinkSync(target, linkPath, 'file');
       } catch (err) {
         if (err && (err.code === 'EPERM' || err.code === 'EACCES')) {
-          assert.ok(true, 'file-symlink privilege unavailable; junction cases cover containment');
-          return;
+          // Declared skip, never a silent pass: the escape assertion below is
+          // the property under test and it cannot run without symlink privilege.
+          return t.skip('symlink creation requires Windows developer mode (file symlink refused with ' + err.code + ')');
         }
         throw err;
       }
+      assert.ok(fs.lstatSync(linkPath).isSymbolicLink(), 'fixture precondition: the patch path must be a real file symlink');
       const r = resolveProfileTarget(opts({ profileName: 'linked' }));
-      assert.equal(r.ok, false);
+      assert.equal(r.ok, false, 'a patch file symlinked outside the profile must be refused: ' + JSON.stringify(r).slice(0, 300));
       assert.equal(r.code, 'SYMLINK_ESCAPE');
     } finally {
       fs.rmSync(outside, { recursive: true, force: true });

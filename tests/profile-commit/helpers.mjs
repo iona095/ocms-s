@@ -82,6 +82,17 @@ export function resolveRealScope({ pathEnv = process.env.PATH ?? '' } = {}) {
   }
   throw new Error('S4 fixture prerequisite missing: no exact-version scope. ' + problems.join('; '));
 }
+// Declared-skip variant of resolveRealScope: a clean runner (no global dsh on
+// PATH) reports "skipped: <capability>" instead of an uncaught prerequisite
+// error. Callers must return immediately when it returns null.
+export function resolveRealScopeOrSkip(t, label = 'pinned DSH 0.2.1-alpha.2 installed on PATH (resolveRealScope)') {
+  try {
+    return resolveRealScope();
+  } catch (err) {
+    t.skip(label + ': ' + String((err && err.message) || err));
+    return null;
+  }
+}
 export function bindReal(home, name, extra = {}) {
   const r = resolveProfileTarget({ profileName: name, dshHome: home, pathEnv: process.env.PATH ?? '', ...extra });
   assert.equal(r.ok, true, 'S1 real-PATH bind failed: ' + JSON.stringify(r).slice(0, 800));

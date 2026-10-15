@@ -189,8 +189,10 @@ export function makeAnchor(dir, { skew = null, drop = null, dshVersion = EXPECTE
 // Resolve the REAL installed DSH nested utility scope
 // (<npmRoot>/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai) via the
 // specified PATH-executable mechanism, version-asserted. Read-only library
-// code only; never profile data. Throws when unavailable (environment
-// prerequisite — callers must fail loudly, never skip).
+// code only; never profile data. resolveRealScope still throws when the
+// prerequisite is absent; tests whose property genuinely NEEDS the installed
+// DSH call resolveRealScopeOrSkip(t) so a clean runner reports a declared skip
+// naming the missing capability instead of an uncaught prerequisite error.
 export function resolveRealScope({ pathEnv = process.env.PATH ?? '' } = {}) {
   const exePath = findDshExecutable({ pathEnv });
   if (exePath === null) {
@@ -225,6 +227,18 @@ export function resolveRealScope({ pathEnv = process.env.PATH ?? '' } = {}) {
     if (usable) return scope;
   }
   throw new Error(`S2 fixture prerequisite missing: no exact-version utility scope. ${problems.join('; ')}`);
+}
+
+// Declared-skip variant: returns the pinned installed scope, or calls
+// t.skip('<missing capability>') and returns null. Callers must return
+// immediately when it returns null (never fall through and assert on null).
+export function resolveRealScopeOrSkip(t, label = 'pinned DSH 0.2.1-alpha.2 installed on PATH (resolveRealScope)') {
+  try {
+    return resolveRealScope();
+  } catch (err) {
+    t.skip(label + ': ' + String((err && err.message) || err));
+    return null;
+  }
 }
 
 export function realDshPackageDir(scope = resolveRealScope()) {

@@ -2,16 +2,17 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import path from 'node:path';
 import { ProfileAwareCommit } from '../../profile/commit.mjs';
-import { assert, makeTempHome, sandboxDshHome, buildReadyPlan, backupNames, readPatchBytes, readBackupBytes, resolveRealScope } from './helpers.mjs';
+import { assert, makeTempHome, sandboxDshHome, buildReadyPlan, backupNames, readPatchBytes, readBackupBytes, resolveRealScopeOrSkip } from './helpers.mjs';
 const WFA = 'write' + 'FileAtomic';
 describe('R2-B4 writer truth', () => {
   let home; let restore; let cleanupHome;
   beforeEach(() => { restore = sandboxDshHome(); const h = makeTempHome(); home = h.home; cleanupHome = h.cleanup; });
   afterEach(() => { try { cleanupHome(); } catch {} try { restore(); } catch {} });
-  it('replace-then-throw enters post-write safe-error with observed new digest', async () => {
+  it('replace-then-throw enters post-write safe-error with observed new digest', async (t) => {
     const built = await buildReadyPlan({ home });
     const before = readPatchBytes(built.profileDir);
-    const realScope = resolveRealScope();
+    const realScope = resolveRealScopeOrSkip(t);
+    if (realScope === null) return;
     const { pathToFileURL } = await import('node:url');
     const realMod = await import(pathToFileURL(realScope + '/dsh-atomic-write/lib/index.js').href);
     const realFn = realMod[WFA];

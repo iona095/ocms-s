@@ -5,32 +5,38 @@ import path from "node:path";
 import assert from "node:assert/strict";
 import { makeS6Root, makeS6Profile } from "./helpers.mjs";
 import { makeTempHome, sandboxDshHome } from "../profile-commit/helpers.mjs";
-import { resolveRealScope } from "../profile-reader/helpers.mjs";
+import { resolveRealScopeOrSkip } from "../profile-reader/helpers.mjs";
 // Q1: every install path below is derived at run time from the dsh executable
 // on PATH (was hard-coded to the developer install).
-function dshScope() { return resolveRealScope(); }
-function editorIndex() { return path.join(dshScope(), "dsh-config-editor", "lib", "index.js"); }
-function llmPackageDir() { return path.join(dshScope(), "dsh-llm-pi-ai"); }
+function dshScope(t) { return resolveRealScopeOrSkip(t); }
+function editorIndex(scope) { return path.join(scope, "dsh-config-editor", "lib", "index.js"); }
+function llmPackageDir(scope) { return path.join(scope, "dsh-llm-pi-ai"); }
 describe("G1-A schema discovery", () => {
-  it("editor package at nested anchor with edit+lock lines", () => {
-    assert.ok(fs.existsSync(editorIndex()), "editor index exists");
-    const text = fs.readFileSync(editorIndex(), "utf8");
+  it("editor package at nested anchor with edit+lock lines", (t) => {
+    const scope = dshScope(t);
+    if (scope === null) return;
+    assert.ok(fs.existsSync(editorIndex(scope)), "editor index exists");
+    const text = fs.readFileSync(editorIndex(scope), "utf8");
     assert.ok(text.includes("async edit(entry, change)"));
     assert.ok(text.includes('withFileLock(join(this.ownerContext.profileContext.dir, "package.json")'));
-    const pkg = JSON.parse(fs.readFileSync(path.join(dshScope(), "dsh-config-editor", "package.json"), "utf8"));
+    const pkg = JSON.parse(fs.readFileSync(path.join(scope, "dsh-config-editor", "package.json"), "utf8"));
     assert.equal(pkg.version, "0.2.1-alpha.2");
   });
-  it("llm-pi-ai schema surface", () => {
-    assert.ok(fs.existsSync(llmPackageDir()));
-    const pkg = JSON.parse(fs.readFileSync(path.join(llmPackageDir(), "package.json"), "utf8"));
+  it("llm-pi-ai schema surface", (t) => {
+    const scope = dshScope(t);
+    if (scope === null) return;
+    assert.ok(fs.existsSync(llmPackageDir(scope)));
+    const pkg = JSON.parse(fs.readFileSync(path.join(llmPackageDir(scope), "package.json"), "utf8"));
     assert.equal(pkg.version, "0.2.1-alpha.2");
-    assert.ok(fs.existsSync(path.join(llmPackageDir(), "lib", "types", "config.d.ts")));
-    assert.ok(fs.existsSync(path.join(llmPackageDir(), "lib", "types", "provider.d.ts")));
+    assert.ok(fs.existsSync(path.join(llmPackageDir(scope), "lib", "types", "config.d.ts")));
+    assert.ok(fs.existsSync(path.join(llmPackageDir(scope), "lib", "types", "provider.d.ts")));
   });
-  it("file-side corpus agrees with native definition shape (executable vs declaration distinguished)", async () => {
+  it("file-side corpus agrees with native definition shape (executable vs declaration distinguished)", async (t) => {
+    const scope = dshScope(t);
+    if (scope === null) return;
     const { MANAGED_ROUTE_KEYS } = await import("../../profile/config-reader.mjs");
     assert.deepEqual([...MANAGED_ROUTE_KEYS].sort(), ["opencode", "opencode-completions", "opencode-go", "opencode-go-messages", "opencode-go-responses", "opencode-messages"].sort());
-    const dts = fs.readFileSync(path.join(llmPackageDir(), "lib", "types", "config.d.ts"), "utf8");
+    const dts = fs.readFileSync(path.join(llmPackageDir(scope), "lib", "types", "config.d.ts"), "utf8");
     assert.ok(dts.includes("PiAiProviderProfile") && dts.includes("apiKeyEnv") && dts.includes("displayName"), "native TS declares provider fields");
     assert.ok(dts.includes("api?") && dts.includes("baseURL?") && dts.includes("models?"), "native TS declares api/baseURL/models");
     const { MANAGED_ROUTES } = await import("../../sync.mjs");

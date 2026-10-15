@@ -23,7 +23,7 @@ import {
   makeFixtureBundle,
   bindReal,
   readerOpts,
-  resolveRealScope,
+  resolveRealScopeOrSkip,
   snapshotTree,
   assertNoMutation,
   assertNoSecrets,
@@ -194,13 +194,15 @@ describe('S2 layer composition (bundles, user, home, overlays)', () => {
     for (const p of [badParse, badRoot, badRow]) fs.rmSync(p, { force: true });
   });
 
-  it('S2 explicit real scope composes identically (operative nested anchor)', async () => {
+  it('S2 explicit real scope composes identically (operative nested anchor)', async (t) => {
     const profileDir = makeProfile(home, 'explicit', { entries: [llmRow({ config: userModels() })], bundles: [FIXTURE_BUNDLE_PKG] });
     makeFixtureBundle(profileDir);
     const target = bind('explicit');
     const snap = snapshotTree(profileDir);
     const viaEvidence = await readManagedConfig(readerOpts(target));
-    const viaExplicit = await readManagedConfig(readerOpts(target, { installAnchorDir: resolveRealScope() }));
+    const realScope = resolveRealScopeOrSkip(t);
+    if (realScope === null) return;
+    const viaExplicit = await readManagedConfig(readerOpts(target, { installAnchorDir: realScope }));
     assert.equal(viaExplicit.ok, true, `expected success: ${JSON.stringify(viaExplicit)}`);
     assert.equal(viaExplicit.status, 'MATCHED');
     assert.equal(viaExplicit.composition.anchorKind, 'explicit');

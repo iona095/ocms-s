@@ -170,7 +170,7 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
     const recorded = new Map([
       ['profile/target-resolver.mjs', '565d1356edf2030f03d7760a846644657482fa955145f00125eb522d711b90f5'],
       ['tests/profile-target/helpers.mjs', '535be36cad699d729c0eb5e9afde0aaf5ad9517b67b052eb7c2026a560c42c6f'],
-      ['tests/profile-target/target-admission.test.mjs', 'c1d4cc56ddd7e2ed01844895b678d82921de9f49dd79c1fc36dc1a2d48db94a8'],
+      ['tests/profile-target/target-admission.test.mjs', 'ed8225f5c92461768b92b8a6571bd22720d5f54dfefedee79572f37564883ed5'],
       ['tests/profile-target/boundary.test.mjs', 'b4b0638a77ade1deee4c8033c62225541e596745dd5de60c52b4e7439ed717ea'],
     ]);
     for (const [rel, hex] of recorded) {

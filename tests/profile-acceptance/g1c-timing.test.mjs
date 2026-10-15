@@ -7,7 +7,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { buildLargePatchText, makeTempHome, sandboxDshHome, makeProfile, makeFixtureBundle, bindReal, readerOpts, minimalSources, buildReadyPlan, readPatchBytes, backupNames, tempNames, patchMtimeMs, resolveRealScope } from "../profile-commit/helpers.mjs";
+import { buildLargePatchText, makeTempHome, sandboxDshHome, makeProfile, makeFixtureBundle, bindReal, readerOpts, minimalSources, buildReadyPlan, readPatchBytes, backupNames, tempNames, patchMtimeMs, resolveRealScopeOrSkip } from "../profile-commit/helpers.mjs";
 import { readManagedConfig } from "../../profile/config-reader.mjs";
 import { buildProfileAwarePlan } from "../../profile/plan-builder.mjs";
 import { ProfileAwareCommit, DEFAULT_WAIT_MS } from "../../profile/commit.mjs";
@@ -15,7 +15,7 @@ function quantile(a, q) { const s = [...a].sort((x, y) => x - y); return s[Math.
 function stats(samples) { const s = [...samples].sort((a, b) => a - b); return { n: s.length, raw: s.map((v) => Number(v.toFixed(2))), median: quantile(s, 0.5), p95: quantile(s, 0.95), max: s[s.length - 1] }; }
 function fmt(st) { return "n=" + st.n + " median=" + st.median.toFixed(2) + "ms p95=" + st.p95.toFixed(2) + "ms max=" + st.max.toFixed(2) + "ms"; }
 describe("G1-C timing Q5 — large patch IN target (S6-R3 F3 correction)", () => {
-  it("representative 21-entry ~5000-line patch is the measured target", async () => {
+  it("representative 21-entry ~5000-line patch is the measured target", async (t) => {
     const restore = sandboxDshHome();
     try {
       const h = makeTempHome("ocms-s6-timing-");
@@ -61,7 +61,8 @@ describe("G1-C timing Q5 — large patch IN target (S6-R3 F3 correction)", () =>
         const ps = stats(planSamples);
         console.log("TIMING_PLAN_RENDER_VERIFY " + fmt(ps));
         assert.equal(plan0.status, "READY");
-        const scope = resolveRealScope({});
+        const scope = resolveRealScopeOrSkip(t);
+        if (scope === null) return;
         const atomicEntry = path.join(scope, "dsh-atomic-write", "lib", "index.js");
         const { pathToFileURL } = await import("node:url");
         const atomicMod = await import(pathToFileURL(atomicEntry).href);

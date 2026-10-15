@@ -3,6 +3,7 @@
 import { describe, it } from 'node:test';
 import { buildProfileAwarePlan } from '../../profile/plan-builder.mjs';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { stringify as stringifyYaml } from 'yaml';
@@ -70,10 +71,30 @@ describe('S3 plan-builder — thin wrapper', () => {
   });
   it('performs no disk mutation', () => {
     const sources = minimalSources();
-    const before = process.cwd();
-    const rr = boundReader({});
-    const res = buildProfileAwarePlan({ target: structuredClone(rr.target), readerResult: rr, sources });
-    assert.equal(process.cwd(), before);
-    assert.ok(res.ok === true || res.ok === false);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ocms-s3-plan-nomut-'));
+    try {
+      // A real scratch patch the planner is pointed at. Its bytes, mtime and
+      // the directory entries around it must all survive planning untouched;
+      // this replaces the tautology "res.ok === true || res.ok === false".
+      const patchPath = path.join(dir, 'cordis.patch.yml');
+      fs.writeFileSync(patchPath, decoyPatchText(), 'utf8');
+      const beforeStat = fs.statSync(patchPath);
+      const beforeBytes = fs.readFileSync(patchPath);
+      const beforeEntries = fs.readdirSync(dir).sort();
+      const beforeCwd = process.cwd();
+      const rr = boundReader({});
+      const target = { ...structuredClone(rr.target), profileDirReal: dir, patchPathReal: patchPath, dshHomeReal: dir };
+      const res = buildProfileAwarePlan({ target, readerResult: { ...rr, target: structuredClone(target) }, sources });
+      assert.equal(res.ok, true, 'plan must succeed: ' + JSON.stringify(res).slice(0, 300));
+      assert.equal(res.status, 'READY');
+      assert.equal(process.cwd(), beforeCwd, 'planning must not change the working directory');
+      const afterStat = fs.statSync(patchPath);
+      assert.equal(afterStat.mtimeMs, beforeStat.mtimeMs, 'planning must not rewrite the scratch patch file');
+      assert.equal(afterStat.size, beforeStat.size, 'planning must not resize the scratch patch file');
+      assert.deepEqual([...fs.readFileSync(patchPath)], [...beforeBytes], 'planning must not alter the scratch patch bytes');
+      assert.deepEqual(fs.readdirSync(dir).sort(), beforeEntries, 'planning must not create or remove files next to the patch');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

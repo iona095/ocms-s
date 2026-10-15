@@ -258,46 +258,78 @@ export function sha256Hex(data) {
   return crypto.createHash('sha256').update(data).digest('hex');
 }
 
+// Every spawned wait is bounded: on the deadline the child is killed and the
+// wait fails with a message naming what it waited for. A marker or exit that
+// never arrives must fail the test, never hang it.
+export const SPAWN_WAIT_TIMEOUT_MS = 30000;
+
+function spawnDeadline(child, options, what) {
+  const timeoutMs = Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
+    ? options.timeoutMs
+    : SPAWN_WAIT_TIMEOUT_MS;
+  const label = options.label || what;
+  const state = { settled: false, stdout: '', stderr: '', timer: null, fire: null };
+  state.fire = () => {
+    if (state.settled) return;
+    state.settled = true;
+    try { child.kill('SIGKILL'); } catch { /* already gone */ }
+    const tail = (text) => (text ? '; observed output: ' + JSON.stringify(text.slice(-300)) : '');
+    state.fail(new Error('TIMED_OUT waiting for ' + label + ' after ' + timeoutMs
+      + 'ms (child pid ' + String(child.pid) + ' killed)' + tail(state.stdout) + tail(state.stderr)));
+  };
+  state.timer = setTimeout(state.fire, timeoutMs);
+  return { timeoutMs, state };
+}
+
 // Spawn a child process and resolve as soon as stdout contains marker (event
-// driven; no timing sleeps). The caller owns child.kill().
+// driven; no timing sleeps). The caller owns child.kill(). Bounded by
+// options.timeoutMs (default SPAWN_WAIT_TIMEOUT_MS).
 export function spawnUntilStdout(args, marker, options = {}) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, args, {
       cwd: options.cwd || REPO_ROOT,
       env: { ...process.env, ...(options.env || {}) },
       shell: false,
     });
-    let stdout = '';
-    let settled = false;
+    const { state } = spawnDeadline(child, options, 'stdout marker ' + JSON.stringify(marker));
     const finish = (outcome) => {
-      if (settled) return;
-      settled = true;
-      resolve({ child, stdout, stderr: outcome.stderr || '', code: outcome.code, matched: outcome.matched });
+      if (state.settled) return;
+      state.settled = true;
+      clearTimeout(state.timer);
+      resolve({ child, stdout: state.stdout, stderr: outcome.stderr || '', code: outcome.code, matched: outcome.matched, timedOut: false });
     };
+    // Reject only after the child has been killed, so a failing wait leaves no
+    // orphan process behind.
+    state.fail = (err) => { clearTimeout(state.timer); reject(err); };
     child.stdout.on('data', (d) => {
-      stdout += String(d);
-      if (stdout.includes(marker)) finish({ matched: true });
+      state.stdout += String(d);
+      if (state.stdout.includes(marker)) finish({ matched: true });
     });
-    let stderr = '';
-    child.stderr.on('data', (d) => { stderr += String(d); });
-    child.on('close', (code) => finish({ code, stderr, matched: stdout.includes(marker) }));
+    child.stderr.on('data', (d) => { state.stderr += String(d); });
+    child.on('close', (code) => finish({ code, stderr: state.stderr, matched: state.stdout.includes(marker) }));
     child.on('error', (err) => finish({ code: null, stderr: String(err), matched: false }));
   });
 }
 
 export function nodeSpawn(args, options = {}) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, args, {
       cwd: options.cwd || REPO_ROOT,
       env: { ...process.env, ...(options.env || {}) },
       shell: false,
     });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (d) => { stdout += String(d); });
-    child.stderr.on('data', (d) => { stderr += String(d); });
-    child.on('close', (code, signal) => resolve({ code, stdout, stderr }));
-    child.on('error', (err) => resolve({ code: null, stdout, stderr: String(err) }));
+    const { state } = spawnDeadline(child, options, 'child ' + JSON.stringify(args.slice(0, 2)) + ' to exit');
+    const finish = (outcome) => {
+      if (state.settled) return;
+      state.settled = true;
+      clearTimeout(state.timer);
+      resolve({ code: outcome.code, stdout: state.stdout, stderr: state.stderr, timedOut: false });
+    };
+    state.fail = (err) => { clearTimeout(state.timer); reject(err); };
+    child.stdout.on('data', (d) => { state.stdout += String(d); });
+    child.stderr.on('data', (d) => { state.stderr += String(d); });
+    child.on('close', (code) => finish({ code }));
+    child.on('error', (err) => finish({ code: null, stderr: String(err) }));
   });
 }
 
