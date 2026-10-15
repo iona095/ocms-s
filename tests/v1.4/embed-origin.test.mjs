@@ -99,6 +99,9 @@ test('embed mode changes ONLY the frame policy (headers otherwise identical)', {
   const names = new Set([...standalone.res.headers.keys(), ...embedded.res.headers.keys()]);
   for (const name of names) {
     if (name.toLowerCase() === 'content-security-policy') continue;
+    // The Date header legitimately advances between the two sequential
+    // responses; it carries no framing policy.
+    if (name.toLowerCase() === 'date') continue;
     const a = String(standalone.res.headers.get(name));
     const b = String(embedded.res.headers.get(name));
     if (a !== b) assert.fail('header ' + name + ' must not change between standalone and embed mode (' + a + ' -> ' + b + ')');

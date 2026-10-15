@@ -335,7 +335,9 @@ export function spawnUntilStdout(args, marker, options = {}) {
 export async function spawnServerOnFreePort(t, makePortArgs, baseArgs, marker, options = {}) {
   const allocatePort = options.allocatePort ?? nextTestPort;
   const attempts = options.attempts ?? 12;
-  const timeoutMs = options.timeoutMs ?? 5000;
+  // Startup timeout stays generous: only EADDRINUSE retries (fast failures),
+  // never marker timeouts, so a slow cold start cannot flake a healthy tree.
+  const timeoutMs = options.timeoutMs ?? 30000;
   let lastCollision = null;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const requested = makePortArgs(allocatePort());
