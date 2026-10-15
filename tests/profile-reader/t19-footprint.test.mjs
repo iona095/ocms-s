@@ -67,7 +67,10 @@ describe('S2 T19 — frozen files unchanged; S2 footprint exact', () => {
       // overlays array either spread a string per character or threw a TypeError
       // that surfaced as a 500; both are now typed 400 refusals).
       ['profile/preview-session.mjs', '7863d287a36f863ecd96842b710089c4cc1477ea29b0dd7399bd13a5dd4a27f1'],
-      ['ui/index.html', '4e8491022f5c0f1b4cc5493434a32d56a7f46abd1f752c6905114e129b8fc2c0'],
+      // Re-pinned by the C07/C25 confirmation and busy-state fix (named reason:
+      // the confirmation dialog showed UNKNOWN for profile targets, suppressed the
+      // PRODUCTION warning, and a 409 busy Apply left the page in APPLYING).
+      ['ui/index.html', 'f4db7da417ce1d69a65ed50bdc68e3666c8c96fbc4f6781b6dc82a976a32ada8'],
     ]);
     for (const [rel, hex] of CURRENT_PINS) {
       assert.equal(shaFile(rel), hex, `CURRENT surface drift: ${rel}`);

@@ -264,7 +264,14 @@ test('v1.4.7-rc4 identity: ui/index.html pinned to the rc4 bytes', { skip: 'supe
   assert.equal(sha, 'ae3c0aff69f5a90367bdc23f44ca93bf8fcbf0be6fe24d24f441f745a43ffab9', 'ui/index.html drift beyond v1.4.7-rc4 plus density Amendment B plus Amendment C counters and lede is forbidden');
 });
 
-test('v1.4.7-rc5 identity: ui/index.html pinned to the rc5 bytes', () => {
+// Re-pinned by the C07/C25 fix (named reason: profile confirmation badge/path
+// and the APPLYING restore on a busy refusal). The rc5 pin below is superseded.
+test('C07/C25 identity: ui/index.html pinned after the confirmation fix', () => {
+  const sha = sha256Hex(fs.readFileSync(path.join(REPO_ROOT, 'ui', 'index.html'), 'utf8'));
+  assert.equal(sha, 'f4db7da417ce1d69a65ed50bdc68e3666c8c96fbc4f6781b6dc82a976a32ada8', 'ui/index.html drift beyond the C07/C25 fix is forbidden');
+});
+
+test('v1.4.7-rc5 identity: ui/index.html pinned to the rc5 bytes', { skip: 'superseded by the C07/C25 confirmation fix (see the C07/C25 pin above)' }, () => {
   const sha = sha256Hex(fs.readFileSync(path.join(REPO_ROOT, 'ui', 'index.html'), 'utf8'));
   assert.equal(sha, '4e8491022f5c0f1b4cc5493434a32d56a7f46abd1f752c6905114e129b8fc2c0', 'ui/index.html drift beyond the v1.4.7-rc5 withdrawn-docs reason rows is forbidden');
 });
