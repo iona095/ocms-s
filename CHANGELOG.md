@@ -4,6 +4,39 @@ All notable project-level changes are summarized here.
 
 This file is intentionally concise. The authoritative behavioral specification remains the current contract.
 
+## 1.4.7-rc7 (unreleased)
+
+Bug-fix pass from the eight-model bug hunt (baseline cc1a14f).
+
+### Fixed
+
+- Package: `profile/` is now in the npm `files` list (C01).
+- Legacy `--settings` path: the exit code now reflects every non-success result, not only `NOT WRITTEN` (C02).
+- Profile Apply: the retained preview is captured before the await, which closes a window where a stale plan could be applied (C08/D02).
+- Legacy Apply preserves comments by editing the Document (8108c98).
+- Digest: null and NaN no longer produce the same digest (S8).
+- Confirm prompt: EOF on stdin now declines immediately instead of hanging (S9).
+- Preview: display errors are no longer swallowed, and the UI no longer shows a blind UPDATED (S10).
+- Build client: the atomic-write guard hole is closed (S12).
+- Legacy Apply: the temp-file race is fixed (C1/C20).
+- CI: the clean-machine gate is now `scripts/ci-check-clean-machine.mjs` and works on Windows runners.
+
+### Tests
+
+- Added a stub DSH tree, so `test:profile` has a machine-independent scope in a clean environment.
+- Product-file pins were re-pinned with named reasons.
+- Skip counts are unchanged (16 / 10 / 40).
+
+### Not reproduced / by design (guard tests only)
+
+- S11 watcher atomic replace: not reproducible on Windows.
+- S14 empty providers: SPEC 9.15 mandates the refusal.
+- The CRLF `\r\r\n` renderer defect (C04/D01) fails closed and never writes corrupted bytes.
+
+### Compatibility note
+
+- Digests change for inputs containing NaN, which previously collided with null.
+
 ## v1.4.7-rc6
 
 **Release candidate: reproducible profile CI plus the alpha.2 admission (contract v1.4.7-rc6).**
