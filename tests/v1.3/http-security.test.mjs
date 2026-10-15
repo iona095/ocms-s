@@ -118,6 +118,20 @@ test('F3: Host allowlist accepts only exact loopback forms on the bound port', {
   }
 });
 
+test('C27: X-Forwarded-Host never overrides the Host allowlist', { skip: SKIP }, async (t) => {
+  const file = scratchSettingsFile(t, currentWithExtras());
+  const started = await startEphemeralTestServer(t, { settingsPath: file, fetchFn: fetchFromBodies(validSourceBodies()) });
+  const port = started.port;
+  // A valid Host stays valid even with a hostile forwarded header: forwarded
+  // headers are ignored, never trusted.
+  const okRes = await httpRequest({ port, method: 'GET', urlPath: '/api/state', headers: { 'X-Forwarded-Host': 'evil.example' } });
+  assert.equal(okRes.status, 200, 'forwarded header must not disturb a valid Host');
+  // A hostile Host is refused even when X-Forwarded-Host names loopback.
+  const badRes = await httpRequest({ port, method: 'GET', urlPath: '/api/state', hostValue: 'evil.example:' + port, headers: { 'X-Forwarded-Host': '127.0.0.1:' + port } });
+  assert.equal(badRes.status, 403, 'forwarded header must not rescue a bad Host');
+  assert.equal(JSON.parse(badRes.body).code, 'BAD_HOST');
+});
+
 test('F3b: Host refusals fetch nothing and write nothing', { skip: SKIP }, async (t) => {
   const file = scratchSettingsFile(t, currentWithExtras());
   const beforeBytes = fs.readFileSync(file);
