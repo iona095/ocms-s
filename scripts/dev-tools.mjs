@@ -11,6 +11,11 @@ const BACKSLASH = String.fromCharCode(92);
 const PROFILE_PATTERN = /^[A-Za-z0-9._-]+$/;
 const USAGE_WATCH = "Usage: npm run watch\n" + "  Rebuild dsh/client.js when its inputs change.\n" + "  Accepts no arguments.";
 const USAGE_BUILD = "Usage: npm run build\n" + "  Rebuild dsh/client.js from its inputs.\n" + "  Accepts no arguments.";
+const USAGE_DEV_TOOLS = "Usage: node scripts/dev-tools.mjs <command>\n" +
+  "  build      Rebuild dsh/client.js from its inputs.\n" +
+  "  register   Register the local checkout into one explicit DSH profile.\n" +
+  "  watch      Rebuild dsh/client.js when its inputs change.\n" +
+  "  dev:web    Build, register, and launch the selected DSH profile.";
 export const WATCH_DEBOUNCE_MS = 150;
 const WATCH_REBUILT_LINE = "ocms-s watch: rebuilt dsh/client.js";
 const WATCH_FAILED_LINE = "ocms-s watch: build failed (watching continues)";
@@ -729,7 +734,7 @@ if (invokedAsMain) {
     process.removeListener("SIGTERM", onDevSigTerm);
     process.exitCode = devCode;
   } else {
-    console.error("ocms-s dev-tools: unknown subcommand " + JSON.stringify(sub || "") + "\n" + USAGE_REGISTER);
+    console.error("ocms-s dev-tools: unknown subcommand " + JSON.stringify(sub || "") + "\n" + USAGE_DEV_TOOLS);
     process.exitCode = 1;
   }
 }
