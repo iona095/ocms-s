@@ -5,7 +5,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { hostAllowed, originAllowed } from '../../ui.mjs';
-import { httpRequest, startTestServer, scratchSettingsFile, fetchFromBodies, validSourceBodies, withR2Port } from '../v1.3/helpers.mjs';
+import { httpRequest, startTestServer, scratchSettingsFile, fetchFromBodies, validSourceBodies } from '../v1.3/helpers.mjs';
+import { withR2Port } from './helpers.mjs';
 
 const hostReq = (host) => ({ rawHeaders: ['Host', host], headers: { host } });
 const originReq = (origin) => ({ headers: { origin } });

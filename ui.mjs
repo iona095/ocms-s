@@ -124,7 +124,9 @@ function tokenMatches(provided, expected) {
   }
 }
 
-function hostAllowed(req, boundPort) {
+// Exported for tests (same precedent as translateChanges): pure validators of
+// the Host/Origin allowlist, parameterized by the bound port.
+export function hostAllowed(req, boundPort) {
   try {
     const raw = req.rawHeaders || [];
     let count = 0;
@@ -135,17 +137,24 @@ function hostAllowed(req, boundPort) {
     const value = req.headers.host;
     if (typeof value !== 'string') return false;
     const lower = value.toLowerCase();
-    return lower === ('127.0.0.1:' + boundPort) || lower === ('localhost:' + boundPort);
+    if (lower === ('127.0.0.1:' + boundPort) || lower === ('localhost:' + boundPort)) return true;
+    // P3-3: browsers omit the default HTTP port, so a UI bound to port 80
+    // receives bare loopback Host values. Accept them exactly on port 80.
+    if (boundPort === 80 && (lower === '127.0.0.1' || lower === 'localhost')) return true;
+    return false;
   } catch {
     return false;
   }
 }
 
-function originAllowed(req, boundPort) {
+export function originAllowed(req, boundPort) {
   const origin = req.headers.origin;
   if (origin === undefined) return true;
   if (typeof origin !== 'string') return false;
-  return origin === ('http://127.0.0.1:' + boundPort) || origin === ('http://localhost:' + boundPort);
+  if (origin === ('http://127.0.0.1:' + boundPort) || origin === ('http://localhost:' + boundPort)) return true;
+  // P3-3: same default-port omission as Host above.
+  if (boundPort === 80 && (origin === 'http://127.0.0.1' || origin === 'http://localhost')) return true;
+  return false;
 }
 
 function applySecurityHeaders(res) {
