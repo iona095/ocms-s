@@ -19,10 +19,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
@@ -31,21 +31,103 @@ jobs:
         run: npm ci
 
       - name: Syntax check
+        # Enumerate instead of listing: every shipped module is checked, and a
+        # file that disappeared fails the step rather than being skipped.
         shell: pwsh
         run: |
-          node --check sync.mjs
-          node --check ui.mjs
-          node --check dsh/host.mjs
-          node --check dsh/lifecycle.mjs
-          node --check dsh/build-client.mjs
-          node --check tests/sync.test.mjs
-          node --check tests/v1.4/disposal-race.test.mjs
+          $ErrorActionPreference = 'Stop'
+          $script:checked = 0
+          function Assert-Syntax([string]$Path, [string]$Label) {
+            if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+              throw "syntax gate: $Label is missing on disk ($Path); a shipped module must not be dropped silently"
+            }
+            node --check $Path
+            if ($LASTEXITCODE -ne 0) {
+              throw "syntax gate: node --check failed for $Label ($Path); fix the syntax error printed above"
+            }
+            $script:checked = $script:checked + 1
+          }
+          function Get-MjsModules([string]$Dir) {
+            if (-not (Test-Path -LiteralPath $Dir -PathType Container)) {
+              throw "syntax gate: expected module directory $Dir/ is missing"
+            }
+            $found = @(Get-ChildItem -LiteralPath $Dir -Filter '*.mjs' -File | Sort-Object Name)
+            if ($found.Count -eq 0) {
+              throw "syntax gate: no *.mjs found under $Dir/; the enumeration itself is broken"
+            }
+            return $found
+          }
+          $root = (Get-Location).Path
+          function Get-Label([string]$FullPath) { return $FullPath.Substring($root.Length + 1).Replace('\', '/') }
+
+          # Shipped root entry modules: both must exist.
+          Assert-Syntax 'sync.mjs' 'sync.mjs'
+          Assert-Syntax 'ui.mjs' 'ui.mjs'
+
+          # Every module in the shipped directories, including dsh/build-client.mjs.
+          foreach ($dir in @('dsh', 'profile', 'scripts')) {
+            $files = Get-MjsModules $dir
+            foreach ($file in $files) { Assert-Syntax $file.FullName (Get-Label $file.FullName) }
+          }
+
+          # Every committed test entry file, plus the acceptance smoke entry.
+          $entries = @(Get-ChildItem -LiteralPath 'tests' -Filter '*.test.mjs' -File -Recurse | Sort-Object FullName)
+          if (Test-Path -LiteralPath 'tests/acceptance/smoke.mjs' -PathType Leaf) {
+            $entries += Get-Item -LiteralPath 'tests/acceptance/smoke.mjs'
+          }
+          if ($entries.Count -eq 0) {
+            throw 'syntax gate: no test entry files found under tests/; the enumeration itself is broken'
+          }
+          foreach ($file in $entries) { Assert-Syntax $file.FullName (Get-Label $file.FullName) }
+
+          Write-Host "syntax gate: node --check passed for $script:checked files"
+
+      - name: Bundle drift (dsh/client.js must equal a fresh build of dsh/client.mjs)
+        # The committed ModuleLoader bundle is a build artifact: rebuild it with
+        # the repo's own build path, byte-compare, then restore the committed
+        # bytes so the tests still read exactly what the repository ships.
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = 'dsh/client.mjs'
+          $committed = 'dsh/client.js'
+          if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "bundle drift: $source is missing; the client bundle has no source" }
+          if (-not (Test-Path -LiteralPath $committed -PathType Leaf)) { throw "bundle drift: $committed is missing; the built client bundle must be committed" }
+          $tempRoot = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [System.IO.Path]::GetTempPath() }
+          $baseline = Join-Path $tempRoot 'ocms-s-client.committed.js'
+          Copy-Item -LiteralPath $committed -Destination $baseline -Force
+          try {
+            npm run build
+            if ($LASTEXITCODE -ne 0) { throw "bundle drift: 'npm run build' failed with exit code $LASTEXITCODE; the bundle could not be rebuilt" }
+            $committedBytes = [System.IO.File]::ReadAllBytes($baseline)
+            $rebuiltBytes = [System.IO.File]::ReadAllBytes($committed)
+            if ($committedBytes.Length -ne $rebuiltBytes.Length) {
+              throw "bundle drift: $committed is $($committedBytes.Length) bytes but building $source produces $($rebuiltBytes.Length) bytes; run 'npm run build' and commit $committed"
+            }
+            for ($i = 0; $i -lt $committedBytes.Length; $i++) {
+              if ($committedBytes[$i] -ne $rebuiltBytes[$i]) {
+                throw "bundle drift: $committed differs from the build of $source at byte offset $i (committed $($committedBytes[$i]) vs rebuilt $($rebuiltBytes[$i])); run 'npm run build' and commit $committed"
+              }
+            }
+            Write-Host "bundle drift: $committed is byte-identical to the build of $source ($($committedBytes.Length) bytes)"
+          } finally {
+            Copy-Item -LiteralPath $baseline -Destination $committed -Force
+          }
 
       - name: Prove clean-machine condition
         shell: pwsh
         run: |
           if (Test-Path (Join-Path $env:USERPROFILE '.dsh')) { throw 'runner has a real ~/.dsh; tests must be hermetic' }
           if (Get-Command dsh -ErrorAction SilentlyContinue) { throw 'runner has dsh on PATH; tests must be hermetic' }
+          if (Test-Path Env:DSH_HOME) { throw "runner has DSH_HOME set ('$env:DSH_HOME'); the suites must derive a temp home, not inherit one" }
+          $missing = @()
+          foreach ($name in @('USERPROFILE', 'HOME', 'APPDATA', 'LOCALAPPDATA')) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) { $missing += $name }
+          }
+          if ($missing.Count -gt 0) {
+            throw "required temp-profile variable(s) not set: $($missing -join ', '); the suites cannot redirect the user profile"
+          }
+          Write-Host 'clean-machine condition holds: no real ~/.dsh, no dsh on PATH, DSH_HOME unset, profile variables present'
 
       - name: Run tests
         run: npm test
@@ -78,10 +160,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: 22.x
           cache: npm
@@ -201,10 +283,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: 22.x
           cache: npm
