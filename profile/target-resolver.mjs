@@ -176,9 +176,18 @@ function isJsonLike(v, seen = new Set()) {
 // instances, malformed shapes, and cyclic graphs without throwing); then
 // order-sensitive array and key-exact object comparison on the validated,
 // hence acyclic, values. Reference identity alone never suffices.
+function structuredKind(v) {
+  if (Array.isArray(v)) return 'array';
+  const t = typeof v;
+  return t === 'object' ? 'object' : t;
+}
 function structuredEqual(a, b) {
   if (!isJsonLike(a) || !isJsonLike(b)) return false;
   if (a === null || b === null) return a === b;
+  // S1: compare KIND before value. Without this an object left side fell
+  // through to Object.keys(), so {} compared equal to '' and 0 (both have no
+  // own keys) and a drifted identity passed sameTarget.
+  if (structuredKind(a) !== structuredKind(b)) return false;
   const t = typeof a;
   if (t === 'string' || t === 'number' || t === 'boolean') return a === b;
   if (Array.isArray(a) && Array.isArray(b)) {
