@@ -2,16 +2,22 @@
 // to port 80 refuses every ordinary browser request. The validators must
 // accept bare loopback Host/Origin exactly when bound to port 80, and keep
 // refusing them on every other port. Loopback HTTP only; no live network.
-import { describe, it } from 'node:test';
+import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { hostAllowed, originAllowed } from '../../ui.mjs';
 import { httpRequest, startTestServer, scratchSettingsFile, fetchFromBodies, validSourceBodies } from '../v1.3/helpers.mjs';
-import { withR2Port } from './helpers.mjs';
+import { withR2Port, sandboxDshHome } from './helpers.mjs';
 
 const hostReq = (host) => ({ rawHeaders: ['Host', host], headers: { host } });
 const originReq = (origin) => ({ headers: { origin } });
 
 describe('P3-3 default-port Host/Origin', () => {
+  // The server resolves the default settings path from the ambient profile
+  // even when a test supplies an explicit settings file, so sandbox the DSH
+  // home exactly like the other UI suites do.
+  let restoreDshHome;
+  beforeEach(() => { restoreDshHome = sandboxDshHome(); });
+  afterEach(() => { try { restoreDshHome(); } catch {} });
   it('unit: bare loopback Host/Origin accepted only when bound to port 80', () => {
     assert.equal(hostAllowed(hostReq('localhost'), 80), true);
     assert.equal(hostAllowed(hostReq('127.0.0.1'), 80), true);
